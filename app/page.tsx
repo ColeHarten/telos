@@ -1,12 +1,5 @@
-import { Container, Typography, Button } from '@mui/material';
+import { redirect } from "next/navigation";
 
-export default function Home() {
-  return (
-    <Container maxWidth="sm" sx={{ mt: 4 }}>
-      <Typography variant="h1" component="h1" gutterBottom>
-        Welcome
-      </Typography>
-      <Button variant="contained">Get Started</Button>
-    </Container>
-  );
+export default function HomePage() {
+  redirect("/dashboard");
 }
