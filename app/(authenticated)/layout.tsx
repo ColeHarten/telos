@@ -82,7 +82,7 @@ export default function AuthenticatedLayout({
       <AppBar
         position="fixed"
         elevation={0}
-        sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}
+        sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: "background.paper", color: "text.primary" }}
       >
         <Toolbar>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
