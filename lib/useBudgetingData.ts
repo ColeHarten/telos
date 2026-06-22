@@ -25,6 +25,29 @@ import type {
     DefaultBudgetMonth,
 } from "./types";
 
+type AccountUpdate = Partial<
+  Pick<
+    Account,
+    | "name"
+    | "accountType"
+    | "normalBalance"
+    | "startingBalance"
+    | "currentBalance"
+    | "isArchived"
+  >
+>;
+
+type CashflowUpdate = Partial<
+  Pick<
+    Cashflow,
+    | "name"
+    | "kind"
+    | "sortOrder"
+    | "isDefault"
+    | "isArchived"
+  >
+>;
+
 function getCurrentMonthKey() {
   const today = new Date();
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
@@ -35,9 +58,12 @@ function getCurrentMonthKey() {
 
 export function useBudgetingData(initialMonthKey?: string) {
   const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   const [cashflows, setCashflows] = useState<Cashflow[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [cashflowsLoading, setCashflowsLoading] = useState(false);
+  const [accountsLoading, setAccountsLoading] = useState(false);
 
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>(
     initialMonthKey ?? getCurrentMonthKey()
@@ -46,28 +72,48 @@ export function useBudgetingData(initialMonthKey?: string) {
   const [budgetValues, setBudgetValues] = useState<Record<string, string>>({});
   const [budgetLines, setBudgetLines] = useState<BudgetLines>({});
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [budgetLoading, setBudgetLoading] = useState(false);
 
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isLoading = authLoading || cashflowsLoading || accountsLoading || budgetLoading;
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
+      if (!nextUser) {
+        setCashflows([]);
+        setAccounts([]);
+        setBudgetValues({});
+        setBudgetLines({});
+        setSettings(null);
+        setCashflowsLoading(false);
+        setAccountsLoading(false);
+        setBudgetLoading(false);
+      }
+
       setUser(nextUser);
+      setAuthLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (!user) {
-      setCashflows([]);
-      setAccounts([]);
-      setIsLoading(false);
+    if (authLoading) {
       return;
     }
 
-    setIsLoading(true);
+    if (!user) {
+      setCashflows([]);
+      setAccounts([]);
+      setCashflowsLoading(false);
+      setAccountsLoading(false);
+      return;
+    }
+
+    setCashflowsLoading(true);
+    setAccountsLoading(true);
 
     const cashflowsQuery = query(
       collection(db, "users", user.uid, "cashflows"),
@@ -97,12 +143,12 @@ export function useBudgetingData(initialMonthKey?: string) {
         });
 
         setCashflows(next);
-        setIsLoading(false);
+        setCashflowsLoading(false);
       },
       (err) => {
         console.error(err);
         setError("Could not load cashflows.");
-        setIsLoading(false);
+        setCashflowsLoading(false);
       }
     );
 
@@ -126,12 +172,12 @@ export function useBudgetingData(initialMonthKey?: string) {
         });
 
         setAccounts(next);
-        setIsLoading(false);
+        setAccountsLoading(false);
       },
       (err) => {
         console.error(err);
         setError("Could not load accounts.");
-        setIsLoading(false);
+        setAccountsLoading(false);
       }
     );
 
@@ -139,21 +185,30 @@ export function useBudgetingData(initialMonthKey?: string) {
       unsubscribeCashflows();
       unsubscribeAccounts();
     };
-  }, [user]);
+  }, [authLoading, user]);
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
     if (!user) {
       setBudgetValues({});
+      setBudgetLines({});
+      setBudgetLoading(false);
       return;
     }
 
     const ref = doc(db, "users", user.uid, "budgets", selectedMonthKey);
+    setBudgetLoading(true);
 
     const unsubscribe = onSnapshot(
       ref,
       (snapshot) => {
         if (!snapshot.exists()) {
           setBudgetValues({});
+          setBudgetLines({});
+          setBudgetLoading(false);
           return;
         }
 
@@ -167,17 +222,23 @@ export function useBudgetingData(initialMonthKey?: string) {
 
         setBudgetValues(next);
         setBudgetLines(lines);
+        setBudgetLoading(false);
       },
       (err) => {
         console.error(err);
         setError("Could not load budget.");
+        setBudgetLoading(false);
       }
     );
 
     return () => unsubscribe();
-  }, [user, selectedMonthKey]);
+  }, [authLoading, user, selectedMonthKey]);
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
     if (!user) {
       setSettings(null);
       return;
@@ -223,7 +284,7 @@ export function useBudgetingData(initialMonthKey?: string) {
     );
 
     return () => unsubscribe();
-  }, [user]);
+  }, [authLoading, user]);
 
   async function addCashflow(payload: { name: string; kind: CashflowKind }) {
     if (!user) throw new Error("Not signed in");
@@ -241,12 +302,12 @@ export function useBudgetingData(initialMonthKey?: string) {
     });
   }
 
-  async function updateCashflow(id: string, changes: Partial<Cashflow>) {
+  async function updateCashflow(id: string, changes: CashflowUpdate) {
     if (!user) throw new Error("Not signed in");
     await updateDoc(doc(db, "users", user.uid, "cashflows", id), {
       ...changes,
       updatedAt: serverTimestamp(),
-    } as any);
+    });
   }
 
   async function archiveCashflow(id: string) {
@@ -280,12 +341,12 @@ export function useBudgetingData(initialMonthKey?: string) {
     });
   }
 
-  async function updateAccount(id: string, changes: Partial<Account>) {
+  async function updateAccount(id: string, changes: AccountUpdate) {
     if (!user) throw new Error("Not signed in");
     await updateDoc(doc(db, "users", user.uid, "accounts", id), {
       ...changes,
       updatedAt: serverTimestamp(),
-    } as any);
+    });
   }
 
   async function archiveAccount(id: string) {
@@ -313,10 +374,14 @@ export function useBudgetingData(initialMonthKey?: string) {
 
   async function updateSettings(next: Partial<AppSettings>) {
     if (!user) throw new Error("Not signed in");
-    await setDoc(doc(db, "users", user.uid, "settings", "app"), {
-      ...next,
-      updatedAt: serverTimestamp(),
-    }, { merge: true } as any);
+    await setDoc(
+      doc(db, "users", user.uid, "settings", "app"),
+      {
+        ...next,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true } as any
+    );
   }
 
   async function ensureUserProfile() {
@@ -377,6 +442,7 @@ export function useBudgetingData(initialMonthKey?: string) {
     budgetValues,
     budgetLines,
     setBudgetValue,
+    authLoading,
     isLoading,
     isSaving,
     error,

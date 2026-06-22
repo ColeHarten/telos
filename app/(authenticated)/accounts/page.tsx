@@ -254,7 +254,7 @@ export default function AccountsPage() {
           normalBalance,
           startingBalance: parsedBalance,
           currentBalance: parsedBalance,
-        } as any);
+        });
 
         setEditingAccountId(null);
         setNewAccountName("");

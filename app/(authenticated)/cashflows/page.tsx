@@ -135,7 +135,7 @@ export default function CashflowsPage() {
       setError(null);
       setIsSaving(true);
 
-      await updateCashflow(editingCashflowId, { name: trimmedName, kind: newCashflowKind } as any);
+      await updateCashflow(editingCashflowId, { name: trimmedName, kind: newCashflowKind });
 
       setEditingCashflowId(null);
       setNewCashflowName("");
