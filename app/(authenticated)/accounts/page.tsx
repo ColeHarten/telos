@@ -1,6 +1,6 @@
 "use client";
 
-import { auth, db } from "@/lib/firebaseClient";
+
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import AddBusinessRoundedIcon from "@mui/icons-material/AddBusinessRounded";
@@ -32,18 +32,8 @@ import {
     TextField,
     Typography,
 } from "@mui/material";
-import { User, onAuthStateChanged } from "firebase/auth";
-import {
-    collection,
-    doc,
-    onSnapshot,
-    orderBy,
-    query,
-    serverTimestamp,
-    setDoc,
-    updateDoc,
-} from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
+import useBudgetingData from "@/lib/useBudgetingData";
 import type { AccountType, NormalBalance, Account } from "@/lib/types";
 
 const accountTypeStyles: Record<
@@ -132,9 +122,7 @@ function formatCurrency(value: number) {
 }
 
 export default function AccountsPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
+  const { user, accounts, isLoading, addAccount, updateAccount, archiveAccount } = useBudgetingData();
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -146,67 +134,11 @@ export default function AccountsPage() {
   const isEditingAccount = editingAccountId !== null;
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
-      setUser(nextUser);
-    });
+    // clear page-level errors when user/account list changes
+    setError(null);
+  }, [user, accounts]);
 
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!user) {
-      setAccounts([]);
-      setIsLoadingAccounts(false);
-      return;
-    }
-
-    setIsLoadingAccounts(true);
-
-    const accountsQuery = query(
-      collection(db, "users", user.uid, "accounts"),
-      orderBy("createdAt", "asc")
-    );
-
-    const unsubscribe = onSnapshot(
-      accountsQuery,
-      (snapshot) => {
-        const nextAccounts = snapshot.docs.map((accountDoc) => {
-          const data = accountDoc.data();
-
-          return {
-            id: accountDoc.id,
-            name: data.name ?? "",
-            accountType: data.accountType ?? "cash",
-            normalBalance: data.normalBalance ?? "asset",
-            startingBalance: Number(data.startingBalance ?? 0),
-            currentBalance:
-              data.currentBalance === undefined
-                ? undefined
-                : Number(data.currentBalance),
-            isManual: Boolean(data.isManual ?? true),
-            isArchived: Boolean(data.isArchived ?? false),
-            createdAt: data.createdAt,
-            updatedAt: data.updatedAt,
-          } as Account;
-        });
-
-        setAccounts(nextAccounts);
-        setIsLoadingAccounts(false);
-      },
-      (snapshotError) => {
-        console.error(snapshotError);
-        setError("Could not load accounts.");
-        setIsLoadingAccounts(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [user]);
-
-  const activeAccounts = useMemo(
-    () => accounts.filter((account) => !account.isArchived),
-    [accounts]
-  );
+  const activeAccounts = useMemo(() => accounts.filter((account) => !account.isArchived), [accounts]);
 
   const accountSummary = useMemo(() => {
     let assetTotal = 0;
@@ -236,11 +168,6 @@ export default function AccountsPage() {
   }, [activeAccounts]);
 
   async function handleAddAccount() {
-    if (!user) {
-      setError("You must be signed in to add an account.");
-      return;
-    }
-
     const trimmedName = newAccountName.trim();
 
     if (!trimmedName) {
@@ -259,20 +186,13 @@ export default function AccountsPage() {
       setError(null);
       setIsSaving(true);
 
-      const accountRef = doc(collection(db, "users", user.uid, "accounts"));
-
       const normalBalance = getNormalBalance(newAccountType);
 
-      await setDoc(accountRef, {
+      await addAccount({
         name: trimmedName,
         accountType: newAccountType,
         normalBalance,
         startingBalance: parsedStartingBalance,
-        currentBalance: parsedStartingBalance,
-        isManual: true,
-        isArchived: false,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
       });
 
       setNewAccountName("");
@@ -304,7 +224,7 @@ export default function AccountsPage() {
 
     async function handleSaveEditedAccount() {
     if (!user || !editingAccountId) {
-        return;
+      return;
     }
 
     const trimmedName = newAccountName.trim();
@@ -323,43 +243,37 @@ export default function AccountsPage() {
 
     try {
         setError(null);
-        setIsSaving(true);
+      setIsSaving(true);
 
-        const normalBalance = getNormalBalance(newAccountType);
+      const normalBalance = getNormalBalance(newAccountType);
 
-        await updateDoc(doc(db, "users", user.uid, "accounts", editingAccountId), {
-        name: trimmedName,
-        accountType: newAccountType,
-        normalBalance,
-        startingBalance: parsedBalance,
-        currentBalance: parsedBalance,
-        updatedAt: serverTimestamp(),
-        });
+      try {
+        await updateAccount(editingAccountId, {
+          name: trimmedName,
+          accountType: newAccountType,
+          normalBalance,
+          startingBalance: parsedBalance,
+          currentBalance: parsedBalance,
+        } as any);
 
         setEditingAccountId(null);
         setNewAccountName("");
         setNewAccountType("cash");
         setNewStartingBalance("");
-    } catch (saveError) {
+      } catch (saveError) {
         console.error(saveError);
         setError("Could not update account.");
-    } finally {
+      } finally {
         setIsSaving(false);
-    }
+      }
+    } catch (saveError) {
+    } 
     }
 
   async function handleArchiveAccount(accountId: string) {
-    if (!user) {
-      return;
-    }
-
     try {
       setError(null);
-
-      await updateDoc(doc(db, "users", user.uid, "accounts", accountId), {
-        isArchived: true,
-        updatedAt: serverTimestamp(),
-      });
+      await archiveAccount(accountId);
     } catch (archiveError) {
       console.error(archiveError);
       setError("Could not archive account.");
@@ -729,7 +643,7 @@ export default function AccountsPage() {
             )}
           </Box>
 
-          {isLoadingAccounts ? (
+          {isLoading ? (
             <Box sx={{ p: 2.25 }}>
               <Typography variant="body2" color="text.secondary">
                 Loading accounts...

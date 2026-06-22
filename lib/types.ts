@@ -49,3 +49,13 @@ export type BudgetLine = {
 };
 
 export type BudgetLines = Record<string, BudgetLine>;
+
+export type Currency = "USD";
+export type DefaultBudgetMonth = "current" | "next";
+
+export type AppSettings = {
+  currency: Currency;
+  defaultBudgetMonth: DefaultBudgetMonth;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};

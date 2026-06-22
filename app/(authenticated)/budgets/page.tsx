@@ -1,6 +1,6 @@
 "use client";
 
-import { auth, db } from "@/lib/firebaseClient";
+import useBudgetingData from "@/lib/useBudgetingData";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
@@ -17,17 +17,6 @@ import {
   TextField,
   Typography
 } from "@mui/material";
-import { User, onAuthStateChanged } from "firebase/auth";
-import {
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-} from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import type {
   CashflowKind,
@@ -73,145 +62,27 @@ function parseBudgetInput(value: string) {
 }
 
 export default function BudgetsPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [monthKey, setMonthKey] = useState("2026-06");
+  const {
+    user,
+    cashflows,
+    accounts,
+    budgetValues,
+    setBudgetValue,
+    selectedMonthKey: monthKey,
+    setSelectedMonthKey: setMonthKey,
+    saveBudget,
+    copyPreviousMonth,
+    isLoading,
+    isSaving,
+    error,
+  } = useBudgetingData();
 
-  const [cashflows, setCashflows] = useState<Cashflow[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [budgetValues, setBudgetValues] = useState<Record<string, string>>({});
-
-  const [isLoadingData, setIsLoadingData] = useState(true);
-  const [isLoadingBudget, setIsLoadingBudget] = useState(true);
-  const [isSavingBudget, setIsSavingBudget] = useState(false);
-
-  const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
-      setUser(nextUser);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!user) {
-      setCashflows([]);
-      setAccounts([]);
-      setIsLoadingData(false);
-      return;
-    }
-
-    setIsLoadingData(true);
-
-    const cashflowsQuery = query(
-      collection(db, "users", user.uid, "cashflows"),
-      orderBy("sortOrder", "asc")
-    );
-
-    const accountsQuery = query(
-      collection(db, "users", user.uid, "accounts"),
-      orderBy("createdAt", "asc")
-    );
-
-    const unsubscribeCashflows = onSnapshot(
-      cashflowsQuery,
-      (snapshot) => {
-        const nextCashflows = snapshot.docs.map((cashflowDoc) => {
-          const data = cashflowDoc.data();
-
-          return {
-            id: cashflowDoc.id,
-            name: data.name ?? "",
-            kind: data.kind ?? "expense",
-            sortOrder: Number(data.sortOrder ?? 0),
-            isArchived: Boolean(data.isArchived ?? false),
-          } as Cashflow;
-        });
-
-        setCashflows(nextCashflows);
-        setIsLoadingData(false);
-      },
-      (cashflowError) => {
-        console.error(cashflowError);
-        setError("Could not load cashflows.");
-        setIsLoadingData(false);
-      }
-    );
-
-    const unsubscribeAccounts = onSnapshot(
-      accountsQuery,
-      (snapshot) => {
-        const nextAccounts = snapshot.docs.map((accountDoc) => {
-          const data = accountDoc.data();
-
-          return {
-            id: accountDoc.id,
-            name: data.name ?? "",
-            accountType: data.accountType ?? "cash",
-            normalBalance: data.normalBalance ?? "asset",
-            isArchived: Boolean(data.isArchived ?? false),
-          } as Account;
-        });
-
-        setAccounts(nextAccounts);
-        setIsLoadingData(false);
-      },
-      (accountError) => {
-        console.error(accountError);
-        setError("Could not load accounts.");
-        setIsLoadingData(false);
-      }
-    );
-
-    return () => {
-      unsubscribeCashflows();
-      unsubscribeAccounts();
-    };
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) {
-      setBudgetValues({});
-      setIsLoadingBudget(false);
-      return;
-    }
-
-    setIsLoadingBudget(true);
-
-    const budgetRef = doc(db, "users", user.uid, "budgets", monthKey);
-
-    const unsubscribe = onSnapshot(
-      budgetRef,
-      (snapshot) => {
-        if (!snapshot.exists()) {
-          setBudgetValues({});
-          setIsLoadingBudget(false);
-          return;
-        }
-
-        const data = snapshot.data();
-        const lines = (data.lines ?? {}) as BudgetLines;
-
-        const nextBudgetValues: Record<string, string> = {};
-
-        for (const [lineId, line] of Object.entries(lines)) {
-          nextBudgetValues[lineId] = String(line.planned ?? 0);
-        }
-
-        setBudgetValues(nextBudgetValues);
-        setIsLoadingBudget(false);
-      },
-      (budgetError) => {
-        console.error(budgetError);
-        setError("Could not load budget.");
-        setIsLoadingBudget(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [user, monthKey]);
+    // clear success message when month changes
+    setSuccessMessage(null);
+  }, [monthKey]);
 
   const activeCashflows = useMemo(
     () => cashflows.filter((cashflow) => !cashflow.isArchived),
@@ -339,22 +210,16 @@ export default function BudgetsPage() {
   ]);
 
   function handleBudgetValueChange(lineId: string, nextValue: string) {
-    setBudgetValues((currentValues) => ({
-      ...currentValues,
-      [lineId]: nextValue,
-    }));
+    setBudgetValue(lineId, nextValue);
   }
 
   async function handleSaveBudget() {
     if (!user) {
-      setError("You must be signed in to save a budget.");
       return;
     }
 
     try {
-      setError(null);
       setSuccessMessage(null);
-      setIsSavingBudget(true);
 
       const lines: BudgetLines = {};
 
@@ -380,65 +245,20 @@ export default function BudgetsPage() {
         };
       }
 
-      await setDoc(
-        doc(db, "users", user.uid, "budgets", monthKey),
-        {
-          monthKey,
-          currency: "USD",
-          lines,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      await saveBudget(monthKey, lines);
 
       setSuccessMessage("Budget saved.");
     } catch (saveError) {
       console.error(saveError);
-      setError("Could not save budget.");
-    } finally {
-      setIsSavingBudget(false);
     }
   }
 
   async function handleCopyPreviousMonth() {
-    if (!user) {
-      setError("You must be signed in to copy a budget.");
-      return;
-    }
-
-    const [year, month] = monthKey.split("-").map(Number);
-    const previousMonthDate = new Date(year, month - 2, 1);
-    const previousMonthKey = `${previousMonthDate.getFullYear()}-${String(
-      previousMonthDate.getMonth() + 1
-    ).padStart(2, "0")}`;
-
     try {
-      setError(null);
-      setSuccessMessage(null);
-
-      const previousBudgetSnapshot = await getDoc(
-        doc(db, "users", user.uid, "budgets", previousMonthKey)
-      );
-
-      if (!previousBudgetSnapshot.exists()) {
-        setError(`No budget found for ${previousMonthKey}.`);
-        return;
-      }
-
-      const previousBudget = previousBudgetSnapshot.data();
-      const previousLines = (previousBudget.lines ?? {}) as BudgetLines;
-
-      const copiedValues: Record<string, string> = {};
-
-      for (const [lineId, line] of Object.entries(previousLines)) {
-        copiedValues[lineId] = String(line.planned ?? 0);
-      }
-
-      setBudgetValues(copiedValues);
-      setSuccessMessage(`Copied budget from ${previousMonthKey}.`);
+      await copyPreviousMonth(monthKey);
+      setSuccessMessage(`Copied budget from previous month.`);
     } catch (copyError) {
       console.error(copyError);
-      setError("Could not copy previous month.");
     }
   }
 
@@ -456,15 +276,15 @@ export default function BudgetsPage() {
         </Typography>
 
         {(error || successMessage) && <Snackbar
-          open={(!error|| !successMessage)}
+          open={Boolean(error || successMessage)}
           autoHideDuration={5000}
-          onClose={error ? () => setError(null) : () => setSuccessMessage(null)}
+          onClose={() => setSuccessMessage(null)}
           anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
         >
           <Alert
             severity={error ? "error" : "success"}
             variant="filled"
-            onClose={error ? () => setError(null) : () => setSuccessMessage(null)}
+            onClose={() => setSuccessMessage(null)}
             sx={{
               borderRadius: 2,
               boxShadow: "0 12px 32px rgba(15, 23, 42, 0.18)",
@@ -522,7 +342,7 @@ export default function BudgetsPage() {
               variant="outlined"
               startIcon={<ContentCopyRoundedIcon />}
               onClick={handleCopyPreviousMonth}
-              disabled={isLoadingData || isLoadingBudget || isSavingBudget}
+              disabled={isLoading || isSaving}
               sx={{
                 borderRadius: 2,
                 textTransform: "none",
@@ -537,7 +357,7 @@ export default function BudgetsPage() {
               variant="contained"
               startIcon={<SaveRoundedIcon />}
               onClick={handleSaveBudget}
-              disabled={isLoadingData || isLoadingBudget || isSavingBudget}
+              disabled={isLoading || isSaving}
               sx={{
                 borderRadius: 2,
                 textTransform: "none",
@@ -545,13 +365,13 @@ export default function BudgetsPage() {
                 whiteSpace: "nowrap",
               }}
             >
-              {isSavingBudget ? "Saving..." : "Save Budget"}
+              {isSaving ? "Saving..." : "Save Budget"}
             </Button>
           </Box>
         </Stack>
       </Stack>
 
-      {isLoadingData || isLoadingBudget ? (
+      {isLoading ? (
         <Card
           elevation={0}
           sx={{

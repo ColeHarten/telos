@@ -1,0 +1,397 @@
+"use client";
+
+import { auth, db } from "@/lib/firebaseClient";
+import { onAuthStateChanged, type User } from "firebase/auth";
+import {
+    collection,
+    doc,
+    getDoc,
+    onSnapshot,
+    orderBy,
+    query,
+    serverTimestamp,
+    setDoc,
+    updateDoc,
+} from "firebase/firestore";
+import { useEffect, useState } from "react";
+import type {
+    Account,
+    AccountType,
+    AppSettings,
+    BudgetLines,
+    Cashflow,
+    CashflowKind,
+    Currency,
+    DefaultBudgetMonth,
+} from "./types";
+
+function getCurrentMonthKey() {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}`;
+}
+
+export function useBudgetingData(initialMonthKey?: string) {
+  const [user, setUser] = useState<User | null>(null);
+
+  const [cashflows, setCashflows] = useState<Cashflow[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+
+  const [selectedMonthKey, setSelectedMonthKey] = useState<string>(
+    initialMonthKey ?? getCurrentMonthKey()
+  );
+
+  const [budgetValues, setBudgetValues] = useState<Record<string, string>>({});
+  const [budgetLines, setBudgetLines] = useState<BudgetLines>({});
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
+      setUser(nextUser);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setCashflows([]);
+      setAccounts([]);
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+
+    const cashflowsQuery = query(
+      collection(db, "users", user.uid, "cashflows"),
+      orderBy("sortOrder", "asc")
+    );
+
+    const accountsQuery = query(
+      collection(db, "users", user.uid, "accounts"),
+      orderBy("createdAt", "asc")
+    );
+
+    const unsubscribeCashflows = onSnapshot(
+      cashflowsQuery,
+      (snapshot) => {
+        const next = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            name: data.name ?? "",
+            kind: data.kind ?? ("expense" as CashflowKind),
+            sortOrder: Number(data.sortOrder ?? 0),
+            isDefault: Boolean(data.isDefault ?? false),
+            isArchived: Boolean(data.isArchived ?? false),
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt,
+          } as Cashflow;
+        });
+
+        setCashflows(next);
+        setIsLoading(false);
+      },
+      (err) => {
+        console.error(err);
+        setError("Could not load cashflows.");
+        setIsLoading(false);
+      }
+    );
+
+    const unsubscribeAccounts = onSnapshot(
+      accountsQuery,
+      (snapshot) => {
+        const next = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            name: data.name ?? "",
+            accountType: (data.accountType ?? ("cash" as AccountType)) as AccountType,
+            normalBalance: (data.normalBalance ?? "asset") as any,
+            startingBalance: data.startingBalance === undefined ? undefined : Number(data.startingBalance),
+            currentBalance: data.currentBalance === undefined ? undefined : Number(data.currentBalance),
+            isManual: Boolean(data.isManual ?? true),
+            isArchived: Boolean(data.isArchived ?? false),
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt,
+          } as Account;
+        });
+
+        setAccounts(next);
+        setIsLoading(false);
+      },
+      (err) => {
+        console.error(err);
+        setError("Could not load accounts.");
+        setIsLoading(false);
+      }
+    );
+
+    return () => {
+      unsubscribeCashflows();
+      unsubscribeAccounts();
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setBudgetValues({});
+      return;
+    }
+
+    const ref = doc(db, "users", user.uid, "budgets", selectedMonthKey);
+
+    const unsubscribe = onSnapshot(
+      ref,
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setBudgetValues({});
+          return;
+        }
+
+        const data = snapshot.data();
+        const lines = (data.lines ?? {}) as BudgetLines;
+
+        const next: Record<string, string> = {};
+        for (const [id, line] of Object.entries(lines)) {
+          next[id] = String((line as any).planned ?? 0);
+        }
+
+        setBudgetValues(next);
+        setBudgetLines(lines);
+      },
+      (err) => {
+        console.error(err);
+        setError("Could not load budget.");
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user, selectedMonthKey]);
+
+  useEffect(() => {
+    if (!user) {
+      setSettings(null);
+      return;
+    }
+
+    const settingsRef = doc(db, "users", user.uid, "settings", "app");
+
+    const unsubscribe = onSnapshot(
+      settingsRef,
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          (async () => {
+            const defaultSettings: AppSettings = {
+              currency: "USD",
+              defaultBudgetMonth: "current",
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            };
+
+            try {
+              await setDoc(settingsRef, defaultSettings);
+              setSettings(defaultSettings);
+            } catch (err) {
+              console.error(err);
+            }
+          })();
+
+          return;
+        }
+
+        const data = snapshot.data();
+
+        setSettings({
+          currency: (data.currency ?? "USD") as Currency,
+          defaultBudgetMonth: (data.defaultBudgetMonth ?? "current") as DefaultBudgetMonth,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
+        });
+      },
+      (err) => {
+        console.error(err);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user]);
+
+  async function addCashflow(payload: { name: string; kind: CashflowKind }) {
+    if (!user) throw new Error("Not signed in");
+
+    const ref = doc(collection(db, "users", user.uid, "cashflows"));
+
+    await setDoc(ref, {
+      name: payload.name,
+      kind: payload.kind,
+      sortOrder: Date.now(),
+      isDefault: false,
+      isArchived: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  async function updateCashflow(id: string, changes: Partial<Cashflow>) {
+    if (!user) throw new Error("Not signed in");
+    await updateDoc(doc(db, "users", user.uid, "cashflows", id), {
+      ...changes,
+      updatedAt: serverTimestamp(),
+    } as any);
+  }
+
+  async function archiveCashflow(id: string) {
+    if (!user) throw new Error("Not signed in");
+    await updateDoc(doc(db, "users", user.uid, "cashflows", id), {
+      isArchived: true,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  async function addAccount(payload: {
+    name: string;
+    accountType: AccountType;
+    normalBalance: string;
+    startingBalance?: number;
+  }) {
+    if (!user) throw new Error("Not signed in");
+
+    const ref = doc(collection(db, "users", user.uid, "accounts"));
+
+    await setDoc(ref, {
+      name: payload.name,
+      accountType: payload.accountType,
+      normalBalance: payload.normalBalance,
+      startingBalance: payload.startingBalance ?? 0,
+      currentBalance: payload.startingBalance ?? 0,
+      isManual: true,
+      isArchived: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  async function updateAccount(id: string, changes: Partial<Account>) {
+    if (!user) throw new Error("Not signed in");
+    await updateDoc(doc(db, "users", user.uid, "accounts", id), {
+      ...changes,
+      updatedAt: serverTimestamp(),
+    } as any);
+  }
+
+  async function archiveAccount(id: string) {
+    if (!user) throw new Error("Not signed in");
+    await updateDoc(doc(db, "users", user.uid, "accounts", id), {
+      isArchived: true,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  async function saveBudget(monthKey: string, lines: BudgetLines) {
+    if (!user) throw new Error("Not signed in");
+    setIsSaving(true);
+    try {
+      await setDoc(doc(db, "users", user.uid, "budgets", monthKey), {
+        monthKey,
+        currency: "USD",
+        lines,
+        updatedAt: serverTimestamp(),
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function updateSettings(next: Partial<AppSettings>) {
+    if (!user) throw new Error("Not signed in");
+    await setDoc(doc(db, "users", user.uid, "settings", "app"), {
+      ...next,
+      updatedAt: serverTimestamp(),
+    }, { merge: true } as any);
+  }
+
+  async function ensureUserProfile() {
+    if (!user) throw new Error("Not signed in");
+    await setDoc(
+      doc(db, "users", user.uid),
+      {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
+
+  async function copyPreviousMonth(monthKey: string) {
+    if (!user) throw new Error("Not signed in");
+
+    const [year, month] = monthKey.split("-").map(Number);
+    const previousMonthDate = new Date(year, month - 2, 1);
+    const previousMonthKey = `${previousMonthDate.getFullYear()}-${String(
+      previousMonthDate.getMonth() + 1
+    ).padStart(2, "0")}`;
+
+    const previousBudgetSnapshot = await getDoc(
+      doc(db, "users", user.uid, "budgets", previousMonthKey)
+    );
+
+    if (!previousBudgetSnapshot.exists()) {
+      throw new Error("No previous budget");
+    }
+
+    const previousBudget = previousBudgetSnapshot.data();
+    const previousLines = (previousBudget.lines ?? {}) as BudgetLines;
+
+    const copiedValues: Record<string, string> = {};
+
+    for (const [lineId, line] of Object.entries(previousLines)) {
+      copiedValues[lineId] = String(line.planned ?? 0);
+    }
+
+    setBudgetValues(copiedValues);
+    setBudgetLines(previousLines);
+  }
+
+  function setBudgetValue(lineId: string, nextValue: string) {
+    setBudgetValues((cur) => ({ ...cur, [lineId]: nextValue }));
+  }
+
+  return {
+    user,
+    cashflows,
+    accounts,
+    selectedMonthKey,
+    setSelectedMonthKey,
+    budgetValues,
+    budgetLines,
+    setBudgetValue,
+    isLoading,
+    isSaving,
+    error,
+    addCashflow,
+    updateCashflow,
+    archiveCashflow,
+    addAccount,
+    updateAccount,
+    archiveAccount,
+    saveBudget,
+    settings,
+    updateSettings,
+    ensureUserProfile,
+    copyPreviousMonth,
+  };
+}
+
+export default useBudgetingData;

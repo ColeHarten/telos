@@ -17,15 +17,7 @@ import {
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
-import { User, onAuthStateChanged } from "firebase/auth";
-import {
-  collection,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-} from "firebase/firestore";
-import { auth, db } from "@/lib/firebaseClient";
+import useBudgetingData from "@/lib/useBudgetingData";
 import type {
   CashflowKind,
   Cashflow,
@@ -73,133 +65,7 @@ function getPercentage(value: number, denominator: number) {
 }
 
 export default function DashboardPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [monthKey, setMonthKey] = useState("");
-  const [cashflows, setCashflows] = useState<Cashflow[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [budgetLines, setBudgetLines] = useState<BudgetLines>({});
-  const [isLoadingData, setIsLoadingData] = useState(true);
-  const [isLoadingBudget, setIsLoadingBudget] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setMonthKey(getCurrentMonthKey());
-
-    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
-      setUser(nextUser);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!user) {
-      setCashflows([]);
-      setAccounts([]);
-      setIsLoadingData(false);
-      return;
-    }
-
-    setIsLoadingData(true);
-
-    const cashflowsQuery = query(
-      collection(db, "users", user.uid, "cashflows"),
-      orderBy("sortOrder", "asc")
-    );
-
-    const accountsQuery = query(
-      collection(db, "users", user.uid, "accounts"),
-      orderBy("createdAt", "asc")
-    );
-
-    const unsubscribeCashflows = onSnapshot(
-      cashflowsQuery,
-      (snapshot) => {
-        const nextCashflows = snapshot.docs.map((cashflowDoc) => {
-          const data = cashflowDoc.data();
-
-          return {
-            id: cashflowDoc.id,
-            name: data.name ?? "",
-            kind: data.kind ?? "expense",
-            sortOrder: Number(data.sortOrder ?? 0),
-            isArchived: Boolean(data.isArchived ?? false),
-          } as Cashflow;
-        });
-
-        setCashflows(nextCashflows);
-        setIsLoadingData(false);
-      },
-      (cashflowError) => {
-        console.error(cashflowError);
-        setError("Could not load cashflows.");
-        setIsLoadingData(false);
-      }
-    );
-
-    const unsubscribeAccounts = onSnapshot(
-      accountsQuery,
-      (snapshot) => {
-        const nextAccounts = snapshot.docs.map((accountDoc) => {
-          const data = accountDoc.data();
-
-          return {
-            id: accountDoc.id,
-            name: data.name ?? "",
-            normalBalance: data.normalBalance ?? "asset",
-            isArchived: Boolean(data.isArchived ?? false),
-          } as Account;
-        });
-
-        setAccounts(nextAccounts);
-        setIsLoadingData(false);
-      },
-      (accountError) => {
-        console.error(accountError);
-        setError("Could not load accounts.");
-        setIsLoadingData(false);
-      }
-    );
-
-    return () => {
-      unsubscribeCashflows();
-      unsubscribeAccounts();
-    };
-  }, [user]);
-
-  useEffect(() => {
-    if (!user || !monthKey) {
-      setBudgetLines({});
-      setIsLoadingBudget(false);
-      return;
-    }
-
-    setIsLoadingBudget(true);
-
-    const budgetRef = doc(db, "users", user.uid, "budgets", monthKey);
-
-    const unsubscribe = onSnapshot(
-      budgetRef,
-      (snapshot) => {
-        if (!snapshot.exists()) {
-          setBudgetLines({});
-          setIsLoadingBudget(false);
-          return;
-        }
-
-        const data = snapshot.data();
-        setBudgetLines((data.lines ?? {}) as BudgetLines);
-        setIsLoadingBudget(false);
-      },
-      (budgetError) => {
-        console.error(budgetError);
-        setError("Could not load budget.");
-        setIsLoadingBudget(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [user, monthKey]);
+  const { selectedMonthKey: monthKey, setSelectedMonthKey: setMonthKey, cashflows, accounts, budgetLines, isLoading, error } = useBudgetingData();
 
   const cashflowsById = useMemo(() => {
     return new Map(cashflows.map((cashflow) => [cashflow.id, cashflow]));
@@ -377,7 +243,7 @@ export default function DashboardPage() {
     return `conic-gradient(${segments.join(", ")})`;
   }, [breakdown, dashboardData.totalAllocated]);
 
-  const isLoading = isLoadingData || isLoadingBudget;
+  // loading is provided by the data hook
 
   return (
     <Box
@@ -391,13 +257,11 @@ export default function DashboardPage() {
         <Snackbar
           open={error !== null}
           autoHideDuration={5000}
-          onClose={() => setError(null)}
           anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
         >
           <Alert
             severity="error"
             variant="filled"
-            onClose={() => setError(null)}
             sx={{
               borderRadius: "8px",
               boxShadow: "0 12px 32px rgba(15, 23, 42, 0.18)",

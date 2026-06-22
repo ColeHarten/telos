@@ -16,10 +16,10 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { User, onAuthStateChanged, signOut } from "firebase/auth";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebaseClient";
 import { useRouter } from "next/navigation";
-import { doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
-import { auth, db } from "@/lib/firebaseClient";
+import useBudgetingData from "@/lib/useBudgetingData";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
@@ -38,115 +38,45 @@ type AppSettings = {
 export default function SettingsPage() {
   const router = useRouter();
 
-  const [user, setUser] = useState<User | null>(null);
+  const { user, settings, updateSettings, ensureUserProfile } = useBudgetingData();
   const [currency, setCurrency] = useState<Currency>("USD");
   const [defaultMonth, setDefaultMonth] =
     useState<DefaultBudgetMonth>("current");
-
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (nextUser) => {
-      setUser(nextUser);
-
-      if (!nextUser) {
-        setIsLoadingSettings(false);
-        return;
-      }
-
+    if (!user) return;
+    (async () => {
       try {
-        await setDoc(
-          doc(db, "users", nextUser.uid),
-          {
-            uid: nextUser.uid,
-            email: nextUser.email,
-            displayName: nextUser.displayName,
-            photoURL: nextUser.photoURL,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      } catch (profileError) {
-        console.error(profileError);
-        setError("Could not update user profile.");
+        await ensureUserProfile();
+      } catch (err) {
+        console.error(err);
       }
-    });
-
-    return () => unsubscribe();
-  }, []);
+    })();
+  }, [user, ensureUserProfile]);
 
   useEffect(() => {
-    if (!user) {
-      return;
-    }
-
-    setIsLoadingSettings(true);
-
-    const settingsRef = doc(db, "users", user.uid, "settings", "app");
-
-    const unsubscribe = onSnapshot(
-      settingsRef,
-      async (snapshot) => {
-        if (!snapshot.exists()) {
-          const defaultSettings: AppSettings = {
-            currency: "USD",
-            defaultBudgetMonth: "current",
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          };
-
-          await setDoc(settingsRef, defaultSettings);
-
-          setCurrency("USD");
-          setDefaultMonth("current");
-          setIsLoadingSettings(false);
-          return;
-        }
-
-        const data = snapshot.data();
-
-        setCurrency((data.currency ?? "USD") as Currency);
-        setDefaultMonth(
-          (data.defaultBudgetMonth ?? "current") as DefaultBudgetMonth
-        );
-        setIsLoadingSettings(false);
-      },
-      (settingsError) => {
-        console.error(settingsError);
-        setError("Could not load settings.");
-        setIsLoadingSettings(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [user]);
+    if (!settings) return;
+    setCurrency(settings.currency);
+    setDefaultMonth(settings.defaultBudgetMonth);
+    setIsLoadingSettings(false);
+  }, [settings]);
 
   async function handleSaveSettings(
     nextCurrency: Currency,
     nextDefaultMonth: DefaultBudgetMonth
   ) {
-    if (!user) {
-      setError("You must be signed in to update settings.");
-      return;
-    }
-
     try {
       setError(null);
       setSuccessMessage(null);
       setIsSavingSettings(true);
 
-      await setDoc(
-        doc(db, "users", user.uid, "settings", "app"),
-        {
-          currency: nextCurrency,
-          defaultBudgetMonth: nextDefaultMonth,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      await updateSettings({
+        currency: nextCurrency,
+        defaultBudgetMonth: nextDefaultMonth,
+      });
 
       setSuccessMessage("Settings saved.");
     } catch (saveError) {

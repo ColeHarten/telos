@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import type { Cashflow, CashflowKind } from "@/lib/types";
+import useBudgetingData from "@/lib/useBudgetingData";
+import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
+import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
+import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import {
   Alert,
-  Snackbar,
   Box,
   Button,
   Card,
@@ -16,29 +20,12 @@ import {
   InputLabel,
   MenuItem,
   Select,
+  Snackbar,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
-import AddRoundedIcon from "@mui/icons-material/AddRounded";
-import EditRoundedIcon from "@mui/icons-material/EditRounded";
-import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
-import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
-import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
-import { User, onAuthStateChanged } from "firebase/auth";
-import {
-  collection,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-} from "firebase/firestore";
-import { auth, db } from "@/lib/firebaseClient";
-
-import type { CashflowKind, Cashflow } from "@/lib/types";
+import { useEffect, useMemo, useState } from "react";
 
 const cashflowStyles: Record<
   CashflowKind,
@@ -64,9 +51,7 @@ const cashflowStyles: Record<
 };
 
 export default function CashflowsPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [cashflows, setCashflows] = useState<Cashflow[]>([]);
-  const [isLoadingCashflows, setIsLoadingCashflows] = useState(true);
+  const { user, cashflows, addCashflow, updateCashflow, archiveCashflow, isLoading } = useBudgetingData();
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,57 +65,8 @@ export default function CashflowsPage() {
     useState<CashflowKind>("expense");
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
-      setUser(nextUser);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!user) {
-      setCashflows([]);
-      setIsLoadingCashflows(false);
-      return;
-    }
-
-    setIsLoadingCashflows(true);
-
-    const cashflowsQuery = query(
-      collection(db, "users", user.uid, "cashflows"),
-      orderBy("sortOrder", "asc")
-    );
-
-    const unsubscribe = onSnapshot(
-      cashflowsQuery,
-      (snapshot) => {
-        const nextCashflows = snapshot.docs.map((cashflowDoc) => {
-          const data = cashflowDoc.data();
-
-          return {
-            id: cashflowDoc.id,
-            name: data.name ?? "",
-            kind: data.kind ?? "expense",
-            sortOrder: Number(data.sortOrder ?? 0),
-            isDefault: Boolean(data.isDefault ?? false),
-            isArchived: Boolean(data.isArchived ?? false),
-            createdAt: data.createdAt,
-            updatedAt: data.updatedAt,
-          } as Cashflow;
-        });
-
-        setCashflows(nextCashflows);
-        setIsLoadingCashflows(false);
-      },
-      (snapshotError) => {
-        console.error(snapshotError);
-        setError("Could not load cashflows.");
-        setIsLoadingCashflows(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [user]);
+    setError(null);
+  }, [user, cashflows]);
 
   const activeCashflows = useMemo(
     () => cashflows.filter((cashflow) => !cashflow.isArchived),
@@ -146,11 +82,6 @@ export default function CashflowsPage() {
   ).length;
 
   async function handleAddCashflow() {
-    if (!user) {
-      setError("You must be signed in to add a cashflow.");
-      return;
-    }
-
     const trimmedName = newCashflowName.trim();
 
     if (!trimmedName) {
@@ -162,17 +93,7 @@ export default function CashflowsPage() {
       setError(null);
       setIsSaving(true);
 
-      const cashflowRef = doc(collection(db, "users", user.uid, "cashflows"));
-
-      await setDoc(cashflowRef, {
-        name: trimmedName,
-        kind: newCashflowKind,
-        sortOrder: activeCashflows.length,
-        isDefault: false,
-        isArchived: false,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      await addCashflow({ name: trimmedName, kind: newCashflowKind });
 
       setNewCashflowName("");
       setNewCashflowKind("expense");
@@ -214,11 +135,7 @@ export default function CashflowsPage() {
       setError(null);
       setIsSaving(true);
 
-      await updateDoc(doc(db, "users", user.uid, "cashflows", editingCashflowId), {
-        name: trimmedName,
-        kind: newCashflowKind,
-        updatedAt: serverTimestamp(),
-      });
+      await updateCashflow(editingCashflowId, { name: trimmedName, kind: newCashflowKind } as any);
 
       setEditingCashflowId(null);
       setNewCashflowName("");
@@ -241,18 +158,9 @@ export default function CashflowsPage() {
   }
 
   async function handleArchiveCashflow(cashflowId: string) {
-    if (!user) {
-      setError("You must be signed in to archive a cashflow.");
-      return;
-    }
-
     try {
       setError(null);
-
-      await updateDoc(doc(db, "users", user.uid, "cashflows", cashflowId), {
-        isArchived: true,
-        updatedAt: serverTimestamp(),
-      });
+      await archiveCashflow(cashflowId);
 
       if (editingCashflowId === cashflowId) {
         handleCancelEditCashflow();
@@ -601,7 +509,7 @@ export default function CashflowsPage() {
             </Typography>
           </Box>
 
-          {isLoadingCashflows ? (
+          {isLoading ? (
             <Box sx={{ p: 2.25 }}>
               <Typography variant="body2" color="text.secondary">
                 Loading cashflows...
