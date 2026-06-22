@@ -314,5 +314,7 @@ The data hook should come before better month support because month support will
 
 
 ## Long-term TODOs 
-### DO NOT DELETE!
+- Add linked expenses (such as tax)
+- Add better support for tax accounting such as by pulling tax bracket data
+    - Lot of potential here
 - Add better support for debt (interest, compounding, etc.)
