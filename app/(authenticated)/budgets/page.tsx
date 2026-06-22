@@ -1,7 +1,11 @@
 "use client";
 
+import type {
+  BudgetLines
+} from "@/lib/types";
 import useBudgetingData from "@/lib/useBudgetingData";
-import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
+import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import {
@@ -10,26 +14,65 @@ import {
   Button,
   Card,
   CardContent,
+  Divider,
   Grid,
+  IconButton,
   InputAdornment,
+  Popover,
   Snackbar,
   Stack,
   TextField,
   Typography
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
-import type {
-  CashflowKind,
-  Cashflow,
-  AccountType,
-  NormalBalance,
-  Account,
-  BudgetLineType,
-  BudgetLine,
-  BudgetLines,
-} from "@/lib/types";
 
+const MONTH_SHORT_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
+function getCurrentMonthKey() {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}`;
+}
+
+function formatMonthLabel(monthKey: string) {
+  if (!monthKey) {
+    return "Loading month";
+  }
+
+  const [year, month] = monthKey.split("-").map(Number);
+  const date = new Date(year, month - 1, 1);
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
+// Shifts a "YYYY-MM" key by a number of months (negative goes back).
+function shiftMonthKey(monthKey: string, delta: number) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const date = new Date(year, month - 1 + delta, 1);
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}`;
+}
 
 type BudgetGroup = {
   title: string;
@@ -79,10 +122,49 @@ export default function BudgetsPage() {
 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null);
+  const isPickerOpen = Boolean(pickerAnchor);
+
+  // Year currently shown inside the picker popover. Separate from monthKey's
+  // year so the user can browse years without changing the selected month
+  // until they actually click one.
+  const [pickerYear, setPickerYear] = useState<number>(() =>
+    Number(monthKey.split("-")[0])
+  );
+
+  const isCurrentMonth = monthKey === getCurrentMonthKey();
+
   useEffect(() => {
     // clear success message when month changes
     setSuccessMessage(null);
   }, [monthKey]);
+
+  function openPicker(event: React.MouseEvent<HTMLElement>) {
+    setPickerYear(Number(monthKey.split("-")[0]));
+    setPickerAnchor(event.currentTarget);
+  }
+
+  function closePicker() {
+    setPickerAnchor(null);
+  }
+
+  function selectMonthFromPicker(monthIndex: number) {
+    // monthIndex is 0-based (0 = January)
+    setMonthKey(`${pickerYear}-${String(monthIndex + 1).padStart(2, "0")}`);
+    closePicker();
+  }
+
+  function goToPreviousMonth() {
+    setMonthKey(shiftMonthKey(monthKey, -1));
+  }
+
+  function goToNextMonth() {
+    setMonthKey(shiftMonthKey(monthKey, 1));
+  }
+
+  function goToCurrentMonth() {
+    setMonthKey(getCurrentMonthKey());
+  }
 
   const activeCashflows = useMemo(
     () => cashflows.filter((cashflow) => !cashflow.isArchived),
@@ -294,40 +376,184 @@ export default function BudgetsPage() {
             {error ? error : successMessage}
           </Alert>
         </Snackbar>}
-
         <Stack
           spacing={2}
           sx={{
             display: "flex",
-            flexDirection: "row",
-            alignItems: "center",
+            flexDirection: { xs: "column", sm: "row" },
+            alignItems: { xs: "flex-start", sm: "center" },
             justifyContent: "space-between",
           }}
         >
-          <TextField
-            label="Budget month"
-            type="month"
-            size="small"
-            value={monthKey}
-            onChange={(event) => setMonthKey(event.target.value)}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <CalendarMonthRoundedIcon sx={{ fontSize: 18 }} />
-                  </InputAdornment>
-                ),
-              },
-            }}
+          <Box
             sx={{
-              width: { xs: "100%", sm: 190 },
-              bgcolor: "background.paper",
-              "& .MuiOutlinedInput-root": {
-                height: 40,
-                borderRadius: 2,
-              },
+              display: "flex",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: "8px",
             }}
-          />
+          >
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "row",
+                alignItems: "center",
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: "8px",
+                bgcolor: "background.paper",
+                height: "40px",
+                overflow: "hidden",
+              }}
+            >
+              <IconButton
+                onClick={goToPreviousMonth}
+                aria-label="Previous month"
+                sx={{
+                  borderRadius: 0,
+                  height: "100%",
+                  px: "8px",
+                }}
+              >
+                <ChevronLeftRoundedIcon sx={{ fontSize: 20 }} />
+              </IconButton>
+
+              <Divider orientation="vertical" flexItem />
+
+              <Box
+                onClick={openPicker}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  px: "12px",
+                  height: "100%",
+                  cursor: "pointer",
+                  "&:hover": {
+                    bgcolor: "action.hover",
+                  },
+                }}
+              >
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    minWidth: "120px",
+                    textAlign: "center",
+                  }}
+                >
+                  {formatMonthLabel(monthKey)}
+                </Typography>
+              </Box>
+
+              <Divider orientation="vertical" flexItem />
+
+              <IconButton
+                onClick={goToNextMonth}
+                aria-label="Next month"
+                sx={{
+                  borderRadius: 0,
+                  height: "100%",
+                  px: "8px",
+                }}
+              >
+                <ChevronRightRoundedIcon sx={{ fontSize: 20 }} />
+              </IconButton>
+            </Box>
+
+            <Popover
+              open={isPickerOpen}
+              anchorEl={pickerAnchor}
+              onClose={closePicker}
+              anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+              transformOrigin={{ vertical: "top", horizontal: "left" }}
+              slotProps={{
+                paper: {
+                  sx: {
+                    borderRadius: "12px",
+                    border: "1px solid",
+                    borderColor: "divider",
+                    boxShadow: "0 12px 32px rgba(15, 23, 42, 0.12)",
+                    mt: "4px",
+                  },
+                },
+              }}
+            >
+              <Box sx={{ p: "16px", width: "280px" }}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    mb: "12px",
+                  }}
+                >
+                  <IconButton
+                    onClick={() => setPickerYear((year) => year - 1)}
+                    aria-label="Previous year"
+                    size="small"
+                  >
+                    <ChevronLeftRoundedIcon sx={{ fontSize: 20 }} />
+                  </IconButton>
+
+                  <Typography variant="body1" sx={{ fontWeight: 700 }}>
+                    {pickerYear}
+                  </Typography>
+
+                  <IconButton
+                    onClick={() => setPickerYear((year) => year + 1)}
+                    aria-label="Next year"
+                    size="small"
+                  >
+                    <ChevronRightRoundedIcon sx={{ fontSize: 20 }} />
+                  </IconButton>
+                </Box>
+
+                <Grid container spacing="8px">
+                  {MONTH_SHORT_LABELS.map((label, index) => {
+                    const candidateKey = `${pickerYear}-${String(
+                      index + 1
+                    ).padStart(2, "0")}`;
+                    const isSelected = candidateKey === monthKey;
+
+                    return (
+                      <Grid key={label} size={4}>
+                        <Button
+                          onClick={() => selectMonthFromPicker(index)}
+                          variant={isSelected ? "contained" : "text"}
+                          fullWidth
+                          sx={{
+                            borderRadius: "8px",
+                            textTransform: "none",
+                            fontWeight: 600,
+                            minWidth: 0,
+                            height: "36px",
+                          }}
+                        >
+                          {label}
+                        </Button>
+                      </Grid>
+                    );
+                  })}
+                </Grid>
+              </Box>
+            </Popover>
+                        {!isCurrentMonth && (
+              <Button
+                onClick={goToCurrentMonth}
+                variant="text"
+                size="small"
+                sx={{
+                  borderRadius: "8px",
+                  textTransform: "none",
+                  fontWeight: 600,
+                }}
+              >
+                Today
+              </Button>
+            )}
+          </Box>
 
           <Box
             sx={{
@@ -370,6 +596,46 @@ export default function BudgetsPage() {
           </Box>
         </Stack>
       </Stack>
+
+      <Card
+        elevation={0}
+        sx={{
+          border: "1px solid",
+          borderColor: "divider",
+          borderRadius: 3,
+          bgcolor: "background.paper",
+        }}
+      >
+        <CardContent sx={{ p: 2.5 }}>
+          <Grid container spacing={2}>
+            {summary.map((item) => (
+              <Grid key={item.label} size={{ xs: 12, sm: 6, md: 2.4 }}>
+                <Box>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ fontWeight: 600 }}
+                  >
+                    {item.label}
+                  </Typography>
+
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      mt: 0.5,
+                      color: item.color,
+                      fontWeight: 800,
+                      letterSpacing: "-0.03em",
+                    }}
+                  >
+                    {formatCurrency(item.value)}
+                  </Typography>
+                </Box>
+              </Grid>
+            ))}
+          </Grid>
+        </CardContent>
+      </Card>
 
       {isLoading ? (
         <Card
@@ -483,46 +749,6 @@ export default function BudgetsPage() {
           </Card>
         ))
       )}
-
-      <Card
-        elevation={0}
-        sx={{
-          border: "1px solid",
-          borderColor: "divider",
-          borderRadius: 3,
-          bgcolor: "background.paper",
-        }}
-      >
-        <CardContent sx={{ p: 2.5 }}>
-          <Grid container spacing={2}>
-            {summary.map((item) => (
-              <Grid key={item.label} size={{ xs: 12, sm: 6, md: 2.4 }}>
-                <Box>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ fontWeight: 600 }}
-                  >
-                    {item.label}
-                  </Typography>
-
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      mt: 0.5,
-                      color: item.color,
-                      fontWeight: 800,
-                      letterSpacing: "-0.03em",
-                    }}
-                  >
-                    {formatCurrency(item.value)}
-                  </Typography>
-                </Box>
-              </Grid>
-            ))}
-          </Grid>
-        </CardContent>
-      </Card>
     </Stack>
   );
 }

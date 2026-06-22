@@ -22,9 +22,9 @@ const drawerWidth = 240;
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard" },
-  { label: "Budgets", href: "/budgets" },
-  { label: "Cashflows", href: "/cashflows" },
   { label: "Accounts", href: "/accounts" },
+  { label: "Cashflows", href: "/cashflows" },
+  { label: "Budgets", href: "/budgets" },
   { label: "Settings", href: "/settings" },
 ];
 

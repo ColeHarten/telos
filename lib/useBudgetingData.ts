@@ -5,13 +5,16 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import {
     collection,
     doc,
+    documentId,
     getDoc,
+    getDocs,
     onSnapshot,
     orderBy,
     query,
     serverTimestamp,
     setDoc,
     updateDoc,
+    where,
 } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import type {
@@ -78,6 +81,17 @@ export function useBudgetingData(initialMonthKey?: string) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Range state: a one-shot fetch of multiple budget docs for an arbitrary
+  // [startMonthKey, endMonthKey] window, used by multi-month dashboard views.
+  // This is intentionally separate from the live single-month subscription
+  // above (budgetLines/budgetValues), since a 12-listener subscription for a
+  // read-mostly trend view isn't worth the realtime overhead.
+  const [rangeBudgets, setRangeBudgets] = useState<
+    Record<string, BudgetLines>
+  >({});
+  const [rangeLoading, setRangeLoading] = useState(false);
+  const [rangeError, setRangeError] = useState<string | null>(null);
+
   const isLoading = authLoading || cashflowsLoading || accountsLoading || budgetLoading;
 
   useEffect(() => {
@@ -91,6 +105,7 @@ export function useBudgetingData(initialMonthKey?: string) {
         setCashflowsLoading(false);
         setAccountsLoading(false);
         setBudgetLoading(false);
+        setRangeBudgets({});
       }
 
       setUser(nextUser);
@@ -470,6 +485,50 @@ export function useBudgetingData(initialMonthKey?: string) {
     setBudgetValues((cur) => ({ ...cur, [lineId]: nextValue }));
   }
 
+  // One-shot fetch of every budget doc whose monthKey falls within
+  // [startMonthKey, endMonthKey], inclusive. Relies on "YYYY-MM" sorting
+  // lexicographically the same as chronologically, so a documentId() range
+  // query works without needing one read per month.
+  // Months with no saved budget simply won't have an entry in the result;
+  // callers should treat missing months as zero/empty, not as an error.
+  async function loadBudgetRange(startMonthKey: string, endMonthKey: string) {
+    if (!user) throw new Error("Not signed in");
+
+    setRangeLoading(true);
+    setRangeError(null);
+
+    try {
+      const budgetsRef = collection(db, "users", user.uid, "budgets");
+      const rangeQuery = query(
+        budgetsRef,
+        where(documentId(), ">=", startMonthKey),
+        where(documentId(), "<=", endMonthKey)
+      );
+
+      const snapshot = await getDocs(rangeQuery);
+
+      const next: Record<string, BudgetLines> = {};
+      for (const docSnapshot of snapshot.docs) {
+        const data = docSnapshot.data();
+        next[docSnapshot.id] = (data.lines ?? {}) as BudgetLines;
+      }
+
+      setRangeBudgets(next);
+      return next;
+    } catch (err) {
+      console.error(err);
+      setRangeError("Could not load budgets for the selected range.");
+      throw err;
+    } finally {
+      setRangeLoading(false);
+    }
+  }
+
+  function clearBudgetRange() {
+    setRangeBudgets({});
+    setRangeError(null);
+  }
+
   return {
     user,
     cashflows,
@@ -494,6 +553,12 @@ export function useBudgetingData(initialMonthKey?: string) {
     updateSettings,
     ensureUserProfile,
     copyPreviousMonth,
+    // Multi-month range support (one-shot fetch, not a live subscription)
+    rangeBudgets,
+    rangeLoading,
+    rangeError,
+    loadBudgetRange,
+    clearBudgetRange,
   };
 }
 
