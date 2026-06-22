@@ -52,11 +52,6 @@ export default function AuthenticatedLayout({
     return () => unsubscribe();
   }, [router]);
 
-  async function handleSignOut() {
-    await signOut(auth);
-    router.push("/login");
-  }
-
   if (isCheckingAuth) {
     return (
       <Box
@@ -164,22 +159,6 @@ export default function AuthenticatedLayout({
             >
               {user.email}
             </Typography>
-
-            <Button
-              color="inherit"
-              onClick={handleSignOut}
-              fullWidth
-              sx={{
-                mt: 0.75,
-                justifyContent: "flex-start",
-                borderRadius: 2,
-                px: 1.75,
-                textTransform: "none",
-                color: "text.secondary",
-              }}
-            >
-              Sign out
-            </Button>
           </Box>
         </Box>
       </Drawer>

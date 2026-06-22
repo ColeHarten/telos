@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  Alert,
+  Snackbar,
   Box,
   Button,
   Card,
@@ -23,33 +25,34 @@ import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
+import { User, onAuthStateChanged } from "firebase/auth";
+import {
+  collection,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore";
+import { auth, db } from "@/lib/firebaseClient";
 
-const initialCashflows = [
-  { name: "Salary / Paycheck", kind: "income", status: "Active" },
-  { name: "Bonus", kind: "income", status: "Active" },
-  { name: "Interest Income", kind: "income", status: "Active" },
-  { name: "Reimbursement", kind: "income", status: "Active" },
-  { name: "Other Income", kind: "income", status: "Active" },
+type CashflowKind = "income" | "expense";
 
-  { name: "Rent", kind: "expense", status: "Active" },
-  { name: "Utilities", kind: "expense", status: "Active" },
-  { name: "Internet", kind: "expense", status: "Active" },
-  { name: "Phone", kind: "expense", status: "Active" },
-  { name: "Groceries", kind: "expense", status: "Active" },
-  { name: "Restaurants", kind: "expense", status: "Active" },
-  { name: "Bars", kind: "expense", status: "Active" },
-  { name: "Coffee", kind: "expense", status: "Active" },
-  { name: "Subscriptions", kind: "expense", status: "Active" },
-  { name: "Shopping", kind: "expense", status: "Active" },
-  { name: "Travel", kind: "expense", status: "Active" },
-  { name: "Entertainment", kind: "expense", status: "Active" },
-  { name: "Fitness", kind: "expense", status: "Active" },
-  { name: "Medical", kind: "expense", status: "Active" },
-  { name: "Insurance", kind: "expense", status: "Active" },
-];
+type Cashflow = {
+  id: string;
+  name: string;
+  kind: CashflowKind;
+  sortOrder: number;
+  isDefault: boolean;
+  isArchived: boolean;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};
 
 const cashflowStyles: Record<
-  string,
+  CashflowKind,
   {
     label: string;
     color: string;
@@ -72,16 +75,204 @@ const cashflowStyles: Record<
 };
 
 export default function CashflowsPage() {
-  const [newCashflowName, setNewCashflowName] = useState("");
-  const [newCashflowKind, setNewCashflowKind] = useState("expense");
+  const [user, setUser] = useState<User | null>(null);
+  const [cashflows, setCashflows] = useState<Cashflow[]>([]);
+  const [isLoadingCashflows, setIsLoadingCashflows] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const incomeCount = initialCashflows.filter(
+  const [editingCashflowId, setEditingCashflowId] = useState<string | null>(
+    null
+  );
+  const isEditingCashflow = editingCashflowId !== null;
+
+  const [newCashflowName, setNewCashflowName] = useState("");
+  const [newCashflowKind, setNewCashflowKind] =
+    useState<CashflowKind>("expense");
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
+      setUser(nextUser);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setCashflows([]);
+      setIsLoadingCashflows(false);
+      return;
+    }
+
+    setIsLoadingCashflows(true);
+
+    const cashflowsQuery = query(
+      collection(db, "users", user.uid, "cashflows"),
+      orderBy("sortOrder", "asc")
+    );
+
+    const unsubscribe = onSnapshot(
+      cashflowsQuery,
+      (snapshot) => {
+        const nextCashflows = snapshot.docs.map((cashflowDoc) => {
+          const data = cashflowDoc.data();
+
+          return {
+            id: cashflowDoc.id,
+            name: data.name ?? "",
+            kind: data.kind ?? "expense",
+            sortOrder: Number(data.sortOrder ?? 0),
+            isDefault: Boolean(data.isDefault ?? false),
+            isArchived: Boolean(data.isArchived ?? false),
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt,
+          } as Cashflow;
+        });
+
+        setCashflows(nextCashflows);
+        setIsLoadingCashflows(false);
+      },
+      (snapshotError) => {
+        console.error(snapshotError);
+        setError("Could not load cashflows.");
+        setIsLoadingCashflows(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user]);
+
+  const activeCashflows = useMemo(
+    () => cashflows.filter((cashflow) => !cashflow.isArchived),
+    [cashflows]
+  );
+
+  const incomeCount = activeCashflows.filter(
     (cashflow) => cashflow.kind === "income"
   ).length;
 
-  const expenseCount = initialCashflows.filter(
+  const expenseCount = activeCashflows.filter(
     (cashflow) => cashflow.kind === "expense"
   ).length;
+
+  async function handleAddCashflow() {
+    if (!user) {
+      setError("You must be signed in to add a cashflow.");
+      return;
+    }
+
+    const trimmedName = newCashflowName.trim();
+
+    if (!trimmedName) {
+      setError("Cashflow name is required.");
+      return;
+    }
+
+    try {
+      setError(null);
+      setIsSaving(true);
+
+      const cashflowRef = doc(collection(db, "users", user.uid, "cashflows"));
+
+      await setDoc(cashflowRef, {
+        name: trimmedName,
+        kind: newCashflowKind,
+        sortOrder: activeCashflows.length,
+        isDefault: false,
+        isArchived: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      setNewCashflowName("");
+      setNewCashflowKind("expense");
+    } catch (saveError) {
+      console.error(saveError);
+      setError("Could not add cashflow.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function handleStartEditCashflow(cashflow: Cashflow) {
+    setError(null);
+    setEditingCashflowId(cashflow.id);
+    setNewCashflowName(cashflow.name);
+    setNewCashflowKind(cashflow.kind);
+  }
+
+  function handleCancelEditCashflow() {
+    setError(null);
+    setEditingCashflowId(null);
+    setNewCashflowName("");
+    setNewCashflowKind("expense");
+  }
+
+  async function handleSaveEditedCashflow() {
+    if (!user || !editingCashflowId) {
+      return;
+    }
+
+    const trimmedName = newCashflowName.trim();
+
+    if (!trimmedName) {
+      setError("Cashflow name is required.");
+      return;
+    }
+
+    try {
+      setError(null);
+      setIsSaving(true);
+
+      await updateDoc(doc(db, "users", user.uid, "cashflows", editingCashflowId), {
+        name: trimmedName,
+        kind: newCashflowKind,
+        updatedAt: serverTimestamp(),
+      });
+
+      setEditingCashflowId(null);
+      setNewCashflowName("");
+      setNewCashflowKind("expense");
+    } catch (saveError) {
+      console.error(saveError);
+      setError("Could not update cashflow.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleSubmitCashflow() {
+    if (isEditingCashflow) {
+      await handleSaveEditedCashflow();
+      return;
+    }
+
+    await handleAddCashflow();
+  }
+
+  async function handleArchiveCashflow(cashflowId: string) {
+    if (!user) {
+      setError("You must be signed in to archive a cashflow.");
+      return;
+    }
+
+    try {
+      setError(null);
+
+      await updateDoc(doc(db, "users", user.uid, "cashflows", cashflowId), {
+        isArchived: true,
+        updatedAt: serverTimestamp(),
+      });
+
+      if (editingCashflowId === cashflowId) {
+        handleCancelEditCashflow();
+      }
+    } catch (archiveError) {
+      console.error(archiveError);
+      setError("Could not archive cashflow.");
+    }
+  }
 
   return (
     <Stack spacing={2.25}>
@@ -94,6 +285,28 @@ export default function CashflowsPage() {
       >
         Cashflows
       </Typography>
+
+      {error && (
+        <Snackbar
+          open={error !== null}
+          autoHideDuration={5000}
+          onClose={() => setError(null)}
+          anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+        >
+          <Alert
+            severity="error"
+            variant="filled"
+            onClose={() => setError(null)}
+            sx={{
+              borderRadius: 2,
+              boxShadow: "0 12px 32px rgba(15, 23, 42, 0.18)",
+              fontWeight: 600,
+            }}
+          >
+            {error}
+          </Alert>
+        </Snackbar>
+      )}
 
       <Grid container spacing={1.5}>
         <Grid size={{ xs: 12, sm: 6 }}>
@@ -234,7 +447,7 @@ export default function CashflowsPage() {
               mb: 1.75,
             }}
           >
-            Add Cashflow
+            {isEditingCashflow ? "Edit Cashflow" : "Add Cashflow"}
           </Typography>
 
           <Grid container spacing={1.5}>
@@ -270,7 +483,9 @@ export default function CashflowsPage() {
                 <Select
                   label="Type"
                   value={newCashflowKind}
-                  onChange={(event) => setNewCashflowKind(event.target.value)}
+                  onChange={(event) =>
+                    setNewCashflowKind(event.target.value as CashflowKind)
+                  }
                 >
                   <MenuItem value="income">Income</MenuItem>
                   <MenuItem value="expense">Expense</MenuItem>
@@ -279,18 +494,46 @@ export default function CashflowsPage() {
             </Grid>
 
             <Grid size={{ xs: 12, md: 3 }}>
-              <Button
-                fullWidth
-                variant="contained"
+              <Box
                 sx={{
-                  height: 40,
-                  borderRadius: 2,
-                  textTransform: "none",
-                  fontWeight: 700,
+                  display: "flex",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: '10px',
                 }}
               >
-                Add
-              </Button>
+                <Button
+                  fullWidth
+                  variant="contained"
+                  onClick={handleSubmitCashflow}
+                  disabled={isSaving}
+                  sx={{
+                    height: 40,
+                    borderRadius: 2,
+                    textTransform: "none",
+                    fontWeight: 700,
+                  }}
+                >
+                  {isEditingCashflow ? "Save" : isSaving ? "Adding..." : "Add"}
+                </Button>
+
+                {isEditingCashflow && (
+                  <Button
+                    variant="outlined"
+                    onClick={handleCancelEditCashflow}
+                    disabled={isSaving}
+                    sx={{
+                      height: 40,
+                      minWidth: 84,
+                      borderRadius: 2,
+                      textTransform: "none",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </Box>
             </Grid>
           </Grid>
         </CardContent>
@@ -369,130 +612,147 @@ export default function CashflowsPage() {
             </Typography>
           </Box>
 
-          {initialCashflows.map((cashflow, index) => {
-            const style = cashflowStyles[cashflow.kind];
-            const Icon = style.icon;
+          {isLoadingCashflows ? (
+            <Box sx={{ p: 2.25 }}>
+              <Typography variant="body2" color="text.secondary">
+                Loading cashflows...
+              </Typography>
+            </Box>
+          ) : activeCashflows.length === 0 ? (
+            <Box sx={{ p: 2.25 }}>
+              <Typography variant="body2" color="text.secondary">
+                No cashflows yet. Add your first income or expense category
+                above.
+              </Typography>
+            </Box>
+          ) : (
+            activeCashflows.map((cashflow, index) => {
+              const style = cashflowStyles[cashflow.kind];
+              const Icon = style.icon;
 
-            return (
-              <Box key={cashflow.name}>
-                <Box
-                  sx={{
-                    display: "grid",
-                    gridTemplateColumns: {
-                      xs: "1fr",
-                      md: "1fr 140px 120px 96px",
-                    },
-                    gap: { xs: 1, md: 0 },
-                    alignItems: "center",
-                    px: 2.25,
-                    py: { xs: 1.5, md: 1 },
-                    minHeight: { md: 46 },
-                  }}
-                >
+              return (
+                <Box key={cashflow.id}>
                   <Box
                     sx={{
-                      display: "flex",
-                      flexDirection: "row",
+                      display: "grid",
+                      gridTemplateColumns: {
+                        xs: "1fr",
+                        md: "1fr 140px 120px 96px",
+                      },
+                      gap: { xs: 1, md: 0 },
                       alignItems: "center",
-                      gap: '10px',
+                      px: 2.25,
+                      py: { xs: 1.5, md: 1 },
+                      minHeight: { md: 46 },
                     }}
                   >
                     <Box
                       sx={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: 2,
-                        bgcolor: style.background,
-                        color: style.color,
                         display: "flex",
+                        flexDirection: "row",
                         alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
+                        gap: "10px",
                       }}
                     >
-                      <Icon sx={{ fontSize: 17 }} />
+                      <Box
+                        sx={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: 2,
+                          bgcolor: style.background,
+                          color: style.color,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Icon sx={{ fontSize: 17 }} />
+                      </Box>
+
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 500,
+                        }}
+                      >
+                        {cashflow.name}
+                      </Typography>
                     </Box>
 
-                    <Typography
-                      variant="body2"
+                    <Box>
+                      <Chip
+                        label={style.label}
+                        size="small"
+                        sx={{
+                          height: 22,
+                          color: style.color,
+                          bgcolor: style.background,
+                          fontWeight: 700,
+                          borderRadius: 1.25,
+                          "& .MuiChip-label": {
+                            px: 1,
+                            fontSize: 12,
+                          },
+                        }}
+                      />
+                    </Box>
+
+                    <Box>
+                      <Chip
+                        label="Active"
+                        size="small"
+                        sx={{
+                          height: 22,
+                          color: "#059669",
+                          bgcolor: "#ecfdf5",
+                          fontWeight: 700,
+                          borderRadius: 1.25,
+                          "& .MuiChip-label": {
+                            px: 1,
+                            fontSize: 12,
+                          },
+                        }}
+                      />
+                    </Box>
+
+                    <Box
                       sx={{
-                        fontWeight: 500,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: { xs: "flex-start", md: "flex-end" },
+                        gap: '10px',
                       }}
                     >
-                      {cashflow.name}
-                    </Typography>
+                      <IconButton
+                        size="small"
+                        aria-label={`Edit ${cashflow.name}`}
+                        onClick={() => handleStartEditCashflow(cashflow)}
+                        sx={{
+                          color: "text.secondary",
+                        }}
+                      >
+                        <EditRoundedIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+
+                      <IconButton
+                        size="small"
+                        aria-label={`Archive ${cashflow.name}`}
+                        onClick={() => handleArchiveCashflow(cashflow.id)}
+                        sx={{
+                          color: "#dc2626",
+                        }}
+                      >
+                        <ArchiveRoundedIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Box>
                   </Box>
 
-                  <Box>
-                    <Chip
-                      label={style.label}
-                      size="small"
-                      sx={{
-                        height: 22,
-                        color: style.color,
-                        bgcolor: style.background,
-                        fontWeight: 700,
-                        borderRadius: 1.25,
-                        "& .MuiChip-label": {
-                          px: 1,
-                          fontSize: 12,
-                        },
-                      }}
-                    />
-                  </Box>
-
-                  <Box>
-                    <Chip
-                      label={cashflow.status}
-                      size="small"
-                      sx={{
-                        height: 22,
-                        color: "#059669",
-                        bgcolor: "#ecfdf5",
-                        fontWeight: 700,
-                        borderRadius: 1.25,
-                        "& .MuiChip-label": {
-                          px: 1,
-                          fontSize: 12,
-                        },
-                      }}
-                    />
-                  </Box>
-
-                  <Stack
-                    spacing={0.5}
-                    sx={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: { xs: "flex-start", md: "flex-end" },
-                    }}
-                  >
-                    <IconButton
-                      size="small"
-                      aria-label={`Edit ${cashflow.name}`}
-                      sx={{
-                        color: "text.secondary",
-                      }}
-                    >
-                      <EditRoundedIcon sx={{ fontSize: 18 }} />
-                    </IconButton>
-
-                    <IconButton
-                      size="small"
-                      aria-label={`Archive ${cashflow.name}`}
-                      sx={{
-                        color: "#dc2626",
-                      }}
-                    >
-                      <ArchiveRoundedIcon sx={{ fontSize: 18 }} />
-                    </IconButton>
-                  </Stack>
+                  {index < activeCashflows.length - 1 && <Divider />}
                 </Box>
-
-                {index < initialCashflows.length - 1 && <Divider />}
-              </Box>
-            );
-          })}
+              );
+            })
+          )}
         </CardContent>
       </Card>
     </Stack>
