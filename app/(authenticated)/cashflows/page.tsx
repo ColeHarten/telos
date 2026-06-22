@@ -17,6 +17,7 @@ import {
   FormControl,
   Grid,
   IconButton,
+  InputAdornment,
   InputLabel,
   MenuItem,
   Select,
@@ -50,6 +51,14 @@ const cashflowStyles: Record<
   },
 };
 
+function formatEstimatedMonthly(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 export default function CashflowsPage() {
   const { user, cashflows, addCashflow, updateCashflow, archiveCashflow, isLoading } = useBudgetingData();
   const [isSaving, setIsSaving] = useState(false);
@@ -63,6 +72,7 @@ export default function CashflowsPage() {
   const [newCashflowName, setNewCashflowName] = useState("");
   const [newCashflowKind, setNewCashflowKind] =
     useState<CashflowKind>("expense");
+  const [newCashflowEstimatedMonthly, setNewCashflowEstimatedMonthly] = useState("0");
 
   useEffect(() => {
     setError(null);
@@ -83,6 +93,7 @@ export default function CashflowsPage() {
 
   async function handleAddCashflow() {
     const trimmedName = newCashflowName.trim();
+    const estimatedMonthly = Number(newCashflowEstimatedMonthly || 0);
 
     if (!trimmedName) {
       setError("Cashflow name is required.");
@@ -93,10 +104,15 @@ export default function CashflowsPage() {
       setError(null);
       setIsSaving(true);
 
-      await addCashflow({ name: trimmedName, kind: newCashflowKind });
+      await addCashflow({
+        name: trimmedName,
+        kind: newCashflowKind,
+        estimatedMonthly: Number.isNaN(estimatedMonthly) ? 0 : estimatedMonthly,
+      });
 
       setNewCashflowName("");
       setNewCashflowKind("expense");
+      setNewCashflowEstimatedMonthly("0");
     } catch (saveError) {
       console.error(saveError);
       setError("Could not add cashflow.");
@@ -110,6 +126,7 @@ export default function CashflowsPage() {
     setEditingCashflowId(cashflow.id);
     setNewCashflowName(cashflow.name);
     setNewCashflowKind(cashflow.kind);
+    setNewCashflowEstimatedMonthly(String(cashflow.estimatedMonthly ?? 0));
   }
 
   function handleCancelEditCashflow() {
@@ -117,6 +134,7 @@ export default function CashflowsPage() {
     setEditingCashflowId(null);
     setNewCashflowName("");
     setNewCashflowKind("expense");
+    setNewCashflowEstimatedMonthly("0");
   }
 
   async function handleSaveEditedCashflow() {
@@ -125,6 +143,7 @@ export default function CashflowsPage() {
     }
 
     const trimmedName = newCashflowName.trim();
+    const estimatedMonthly = Number(newCashflowEstimatedMonthly || 0);
 
     if (!trimmedName) {
       setError("Cashflow name is required.");
@@ -135,11 +154,16 @@ export default function CashflowsPage() {
       setError(null);
       setIsSaving(true);
 
-      await updateCashflow(editingCashflowId, { name: trimmedName, kind: newCashflowKind });
+      await updateCashflow(editingCashflowId, {
+        name: trimmedName,
+        kind: newCashflowKind,
+        estimatedMonthly: Number.isNaN(estimatedMonthly) ? 0 : estimatedMonthly,
+      });
 
       setEditingCashflowId(null);
       setNewCashflowName("");
       setNewCashflowKind("expense");
+      setNewCashflowEstimatedMonthly("0");
     } catch (saveError) {
       console.error(saveError);
       setError("Could not update cashflow.");
@@ -348,7 +372,7 @@ export default function CashflowsPage() {
           </Typography>
 
           <Grid container spacing={1.5}>
-            <Grid size={{ xs: 12, md: 6 }}>
+            <Grid size={{ xs: 12, md: 5 }}>
               <TextField
                 fullWidth
                 size="small"
@@ -365,7 +389,7 @@ export default function CashflowsPage() {
               />
             </Grid>
 
-            <Grid size={{ xs: 12, md: 3 }}>
+            <Grid size={{ xs: 12, md: 2 }}>
               <FormControl
                 fullWidth
                 size="small"
@@ -388,6 +412,36 @@ export default function CashflowsPage() {
                   <MenuItem value="expense">Expense</MenuItem>
                 </Select>
               </FormControl>
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 2 }}>
+              <TextField
+                fullWidth
+                size="small"
+                label="Estimated monthly"
+                type="number"
+                value={newCashflowEstimatedMonthly}
+                onChange={(event) =>
+                  setNewCashflowEstimatedMonthly(event.target.value)
+                }
+                slotProps={{
+                  htmlInput: {
+                    min: 0,
+                    step: 0.01,
+                  },
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">$</InputAdornment>
+                    ),
+                  },
+                }}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    height: 40,
+                    borderRadius: 2,
+                  },
+                }}
+              />
             </Grid>
 
             <Grid size={{ xs: 12, md: 3 }}>
@@ -468,7 +522,7 @@ export default function CashflowsPage() {
           <Box
             sx={{
               display: { xs: "none", md: "grid" },
-              gridTemplateColumns: "1fr 140px 120px 96px",
+              gridTemplateColumns: "1fr 140px 120px 140px 96px",
               px: 2.25,
               py: 1,
               bgcolor: "#f8fafc",
@@ -505,6 +559,14 @@ export default function CashflowsPage() {
               color="text.secondary"
               sx={{ fontWeight: 700, textAlign: "right" }}
             >
+              Estimated monthly
+            </Typography>
+
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontWeight: 700, textAlign: "right" }}
+            >
               Actions
             </Typography>
           </Box>
@@ -534,7 +596,7 @@ export default function CashflowsPage() {
                       display: "grid",
                       gridTemplateColumns: {
                         xs: "1fr",
-                        md: "1fr 140px 120px 96px",
+                        md: "1fr 140px 120px 140px 96px",
                       },
                       gap: { xs: 1, md: 0 },
                       alignItems: "center",
@@ -611,6 +673,20 @@ export default function CashflowsPage() {
                           },
                         }}
                       />
+                    </Box>
+
+                    <Box>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 700,
+                          textAlign: { xs: "left", md: "right" },
+                        }}
+                      >
+                        {formatEstimatedMonthly(
+                          cashflow.estimatedMonthly ?? 0
+                        )}
+                      </Typography>
                     </Box>
 
                     <Box

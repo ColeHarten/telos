@@ -42,6 +42,7 @@ type CashflowUpdate = Partial<
     Cashflow,
     | "name"
     | "kind"
+    | "estimatedMonthly"
     | "sortOrder"
     | "isDefault"
     | "isArchived"
@@ -134,6 +135,7 @@ export function useBudgetingData(initialMonthKey?: string) {
             id: d.id,
             name: data.name ?? "",
             kind: data.kind ?? ("expense" as CashflowKind),
+            estimatedMonthly: Number(data.estimatedMonthly ?? 0),
             sortOrder: Number(data.sortOrder ?? 0),
             isDefault: Boolean(data.isDefault ?? false),
             isArchived: Boolean(data.isArchived ?? false),
@@ -186,6 +188,36 @@ export function useBudgetingData(initialMonthKey?: string) {
       unsubscribeAccounts();
     };
   }, [authLoading, user]);
+
+  useEffect(() => {
+    if (authLoading || !user) {
+      return;
+    }
+
+    setBudgetValues((currentValues) => {
+      let nextValues = currentValues;
+
+      for (const cashflow of cashflows) {
+        if (cashflow.isArchived) {
+          continue;
+        }
+
+        const lineId = `cashflow_${cashflow.id}`;
+
+        if (nextValues[lineId] !== undefined) {
+          continue;
+        }
+
+        if (nextValues === currentValues) {
+          nextValues = { ...currentValues };
+        }
+
+        nextValues[lineId] = String(cashflow.estimatedMonthly ?? 0);
+      }
+
+      return nextValues;
+    });
+  }, [authLoading, user, cashflows]);
 
   useEffect(() => {
     if (authLoading) {
@@ -286,7 +318,11 @@ export function useBudgetingData(initialMonthKey?: string) {
     return () => unsubscribe();
   }, [authLoading, user]);
 
-  async function addCashflow(payload: { name: string; kind: CashflowKind }) {
+  async function addCashflow(payload: {
+    name: string;
+    kind: CashflowKind;
+    estimatedMonthly: number;
+  }) {
     if (!user) throw new Error("Not signed in");
 
     const ref = doc(collection(db, "users", user.uid, "cashflows"));
@@ -294,6 +330,7 @@ export function useBudgetingData(initialMonthKey?: string) {
     await setDoc(ref, {
       name: payload.name,
       kind: payload.kind,
+      estimatedMonthly: payload.estimatedMonthly,
       sortOrder: Date.now(),
       isDefault: false,
       isArchived: false,

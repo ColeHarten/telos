@@ -30,6 +30,7 @@ export type Cashflow = {
   id: string;
   name: string;
   kind: CashflowKind;
+  estimatedMonthly: number;
   sortOrder: number;
   isDefault?: boolean;
   isArchived: boolean;

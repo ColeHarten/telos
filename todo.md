@@ -317,4 +317,5 @@ The data hook should come before better month support because month support will
 - Add linked expenses (such as tax)
 - Add better support for tax accounting such as by pulling tax bracket data
     - Lot of potential here
+- Create an expansive "Rules" section, which will ultimately allow me to back fill cash charges to original expenses minus taxes etc.
 - Add better support for debt (interest, compounding, etc.)
