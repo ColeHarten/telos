@@ -26,33 +26,13 @@ import {
   query,
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebaseClient";
-
-type CashflowKind = "income" | "expense";
-
-type Cashflow = {
-  id: string;
-  name: string;
-  kind: CashflowKind;
-  sortOrder: number;
-  isArchived: boolean;
-};
-
-type Account = {
-  id: string;
-  name: string;
-  normalBalance: "asset" | "liability";
-  isArchived: boolean;
-};
-
-type BudgetLine = {
-  id: string;
-  lineType: "cashflow" | "account_transfer";
-  cashflowId?: string;
-  toAccountId?: string;
-  planned: number;
-};
-
-type BudgetLines = Record<string, BudgetLine>;
+import type {
+  CashflowKind,
+  Cashflow,
+  Account,
+  BudgetLine,
+  BudgetLines,
+} from "@/lib/types";
 
 function getCurrentMonthKey() {
   const today = new Date();

@@ -38,18 +38,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebaseClient";
 
-type CashflowKind = "income" | "expense";
-
-type Cashflow = {
-  id: string;
-  name: string;
-  kind: CashflowKind;
-  sortOrder: number;
-  isDefault: boolean;
-  isArchived: boolean;
-  createdAt?: unknown;
-  updatedAt?: unknown;
-};
+import type { CashflowKind, Cashflow } from "@/lib/types";
 
 const cashflowStyles: Record<
   CashflowKind,

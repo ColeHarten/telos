@@ -29,50 +29,18 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
+import type {
+  CashflowKind,
+  Cashflow,
+  AccountType,
+  NormalBalance,
+  Account,
+  BudgetLineType,
+  BudgetLine,
+  BudgetLines,
+} from "@/lib/types";
 
-type CashflowKind = "income" | "expense";
 
-type Cashflow = {
-  id: string;
-  name: string;
-  kind: CashflowKind;
-  sortOrder: number;
-  isArchived: boolean;
-};
-
-type AccountType =
-  | "cash"
-  | "credit_card"
-  | "investment"
-  | "retirement"
-  | "loan"
-  | "property"
-  | "crypto"
-  | "other_asset"
-  | "other_liability";
-
-type NormalBalance = "asset" | "liability";
-
-type Account = {
-  id: string;
-  name: string;
-  accountType: AccountType;
-  normalBalance: NormalBalance;
-  isArchived: boolean;
-};
-
-type BudgetLineType = "cashflow" | "account_transfer";
-
-type BudgetLine = {
-  id: string;
-  lineType: BudgetLineType;
-  cashflowId?: string;
-  toAccountId?: string;
-  planned: number;
-  notes?: string;
-};
-
-type BudgetLines = Record<string, BudgetLine>;
 
 type BudgetGroup = {
   title: string;

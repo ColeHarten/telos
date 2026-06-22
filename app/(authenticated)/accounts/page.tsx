@@ -44,32 +44,7 @@ import {
     updateDoc,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
-
-type AccountType =
-  | "cash"
-  | "credit_card"
-  | "investment"
-  | "retirement"
-  | "loan"
-  | "property"
-  | "crypto"
-  | "other_asset"
-  | "other_liability";
-
-type NormalBalance = "asset" | "liability";
-
-type Account = {
-  id: string;
-  name: string;
-  accountType: AccountType;
-  normalBalance: NormalBalance;
-  startingBalance: number;
-  currentBalance?: number;
-  isManual: boolean;
-  isArchived: boolean;
-  createdAt?: unknown;
-  updatedAt?: unknown;
-};
+import type { AccountType, NormalBalance, Account } from "@/lib/types";
 
 const accountTypeStyles: Record<
   AccountType,
@@ -238,7 +213,7 @@ export default function AccountsPage() {
     let liabilityTotal = 0;
 
     for (const account of activeAccounts) {
-      const balance = account.currentBalance ?? account.startingBalance;
+      const balance = account.currentBalance ?? account.startingBalance ?? 0;
 
       if (account.normalBalance === "asset") {
         assetTotal += balance;
@@ -770,7 +745,7 @@ export default function AccountsPage() {
             activeAccounts.map((account, index) => {
               const style = accountTypeStyles[account.accountType];
               const Icon = style.icon;
-              const balance = account.currentBalance ?? account.startingBalance;
+              const balance = account.currentBalance ?? account.startingBalance ?? 0;
 
               return (
                 <Box key={account.id}>
