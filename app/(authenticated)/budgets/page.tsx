@@ -244,11 +244,11 @@ export default function BudgetsPage() {
                           min: 0,
                           step: 0.01,
                         },
-                      }}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">$</InputAdornment>
-                        ),
+                        input: {
+                          startAdornment: (
+                            <InputAdornment position="start">$</InputAdornment>
+                          ),
+                        },
                       }}
                       sx={{
                         "& input": {
@@ -301,16 +301,6 @@ export default function BudgetsPage() {
               </Grid>
             ))}
           </Grid>
-
-          <Divider sx={{ my: 2 }} />
-
-          <Typography variant="body2" color="text.secondary">
-            You are projected to have{" "}
-            <Box component="span" sx={{ color: "#059669", fontWeight: 700 }}>
-              $700
-            </Box>{" "}
-            remaining after planned expenses, savings, and debt payments.
-          </Typography>
         </CardContent>
       </Card>
     </Stack>

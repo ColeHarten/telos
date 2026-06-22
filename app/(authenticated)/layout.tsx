@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  AppBar,
   Box,
   Button,
   CircularProgress,
@@ -13,7 +12,6 @@ import {
   Drawer,
   List,
   ListItemButton,
-  ListItemText,
   Toolbar,
   Typography,
 } from "@mui/material";
@@ -25,7 +23,8 @@ const drawerWidth = 240;
 const navItems = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Budgets", href: "/budgets" },
-  { label: "Categories", href: "/categories" },
+  { label: "Cashflows", href: "/cashflows" },
+  { label: "Accounts", href: "/accounts" },
   { label: "Settings", href: "/settings" },
 ];
 
@@ -78,59 +77,164 @@ export default function AuthenticatedLayout({
   }
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh" }}>
-      <AppBar
-        position="fixed"
-        elevation={0}
-        sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: "background.paper", color: "text.primary" }}
-      >
-        <Toolbar>
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            Budgeting
-          </Typography>
-
-          <Typography variant="body2" sx={{ mr: 2 }}>
-            {user.email}
-          </Typography>
-
-          <Button color="inherit" onClick={handleSignOut}>
-            Sign out
-          </Button>
-        </Toolbar>
-      </AppBar>
-
+    <Box sx={{ minHeight: "100vh", bgcolor: "grey.50" }}>
       <Drawer
         variant="permanent"
         sx={{
           width: drawerWidth,
           flexShrink: 0,
+          zIndex: (theme) => theme.zIndex.drawer + 2,
           [`& .MuiDrawer-paper`]: {
             width: drawerWidth,
             boxSizing: "border-box",
+            borderRight: "1px solid",
+            borderColor: "divider",
+            bgcolor: "background.paper",
+            zIndex: (theme) => theme.zIndex.drawer + 2,
           },
         }}
       >
-        <Toolbar />
-        <Divider />
-        <List>
-          {navItems.map((item) => (
-            <ListItemButton
-              key={item.href}
-              component={Link}
-              href={item.href}
-              selected={pathname === item.href}
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+            height: "100%",
+            p: 1.25,
+          }}
+        >
+          <Box>
+            <Typography
+              variant="h6"
+              sx={{
+                px: 1.75,
+                py: 1.25,
+                fontWeight: 700,
+                letterSpacing: "-0.02em",
+              }}
             >
-              <ListItemText primary={item.label} />
-            </ListItemButton>
-          ))}
-        </List>
+              Budgeting
+            </Typography>
+
+            <Divider sx={{ mb: 1 }} />
+
+            <List sx={{ py: 0 }}>
+              {navItems.map((item) => (
+                <ListItemButton
+                  key={item.href}
+                  component={Link}
+                  href={item.href}
+                  selected={pathname === item.href}
+                  sx={{
+                    borderRadius: 2,
+                    mb: 0.5,
+                    minHeight: 40,
+                    "&.Mui-selected": {
+                      bgcolor: "#eff6ff",
+                      color: "#2563eb",
+                    },
+                    "&.Mui-selected:hover": {
+                      bgcolor: "#dbeafe",
+                    },
+                  }}
+                >
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      fontWeight: pathname === item.href ? 700 : 500,
+                    }}
+                  >
+                    {item.label}
+                  </Typography>
+                </ListItemButton>
+              ))}
+            </List>
+          </Box>
+
+          <Box>
+            <Divider sx={{ mb: 1.25 }} />
+
+            <Typography
+              variant="body2"
+              sx={{
+                px: 1.75,
+                color: "text.secondary",
+                wordBreak: "break-word",
+              }}
+            >
+              {user.email}
+            </Typography>
+
+            <Button
+              color="inherit"
+              onClick={handleSignOut}
+              fullWidth
+              sx={{
+                mt: 0.75,
+                justifyContent: "flex-start",
+                borderRadius: 2,
+                px: 1.75,
+                textTransform: "none",
+                color: "text.secondary",
+              }}
+            >
+              Sign out
+            </Button>
+          </Box>
+        </Box>
       </Drawer>
 
-      <Box component="main" sx={{ flexGrow: 1, bgcolor: "grey.50" }}>
+      <Box
+        component="main"
+        sx={{
+          ml: `${drawerWidth}px`,
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          bgcolor: "grey.50",
+        }}
+      >
         <Toolbar />
-        <Container maxWidth="lg" sx={{ py: 4 }}>
+
+        <Container
+          maxWidth="lg"
+          sx={{
+            flexGrow: 1,
+            pb: 4,
+          }}
+        >
           {children}
         </Container>
+
+        <Box
+          component="footer"
+          sx={{
+            borderTop: "1px solid",
+            borderColor: "divider",
+            bgcolor: "background.paper",
+            py: 2,
+          }}
+        >
+          <Container maxWidth="lg">
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: { xs: "column", sm: "row" },
+                alignItems: { xs: "flex-start", sm: "center" },
+                justifyContent: "space-between",
+                gap: 1,
+              }}
+            >
+              <Typography variant="body2" color="text.secondary">
+                © 2026 Budgeting
+              </Typography>
+
+              <Typography variant="body2" color="text.secondary">
+                Phase 1: Manual budgeting
+              </Typography>
+            </Box>
+          </Container>
+        </Box>
       </Box>
     </Box>
   );

@@ -125,10 +125,6 @@ export default function DashboardPage() {
           >
             Overview
           </Typography>
-
-          <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-            Your projected budget for the selected month.
-          </Typography>
         </Box>
 
         <Chip
@@ -388,26 +384,6 @@ export default function DashboardPage() {
           </Card>
         </Grid>
       </Grid>
-
-      <Card
-        elevation={0}
-        sx={{
-          border: "1px solid",
-          borderColor: "divider",
-          borderRadius: 3,
-          bgcolor: "#f8fbff",
-        }}
-      >
-        <CardContent sx={{ py: 2 }}>
-          <Typography variant="body2" color="text.secondary">
-            You’re projected to end the month with{" "}
-            <Box component="span" sx={{ color: "#059669", fontWeight: 700 }}>
-              $700
-            </Box>{" "}
-            remaining cash flow.
-          </Typography>
-        </CardContent>
-      </Card>
     </Stack>
   );
 }
