@@ -1,11 +1,9 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { auth } from "@/lib/firebaseClient";
 import {
+  Avatar,
   Box,
-  Button,
   CircularProgress,
   Container,
   Divider,
@@ -13,10 +11,12 @@ import {
   List,
   ListItemButton,
   Toolbar,
-  Typography,
+  Typography
 } from "@mui/material";
-import { onAuthStateChanged, signOut, User } from "firebase/auth";
-import { auth } from "@/lib/firebaseClient";
+import { onAuthStateChanged, User } from "firebase/auth";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 const drawerWidth = 240;
 
@@ -149,16 +149,26 @@ export default function AuthenticatedLayout({
           <Box>
             <Divider sx={{ mb: 1.25 }} />
 
-            <Typography
-              variant="body2"
-              sx={{
-                px: 1.75,
-                color: "text.secondary",
-                wordBreak: "break-word",
-              }}
-            >
-              {user.email}
-            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+              <Avatar
+                src={user.photoURL ?? undefined}
+                alt={user.displayName ?? user.email ?? "User"}
+                sx={{ width: 32, height: 32 }}
+              />
+
+              <Box>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    px: 1.75,
+                    color: "text.secondary",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {user.displayName ?? user.email}
+                </Typography>
+              </Box>
+            </Box>
           </Box>
         </Box>
       </Drawer>

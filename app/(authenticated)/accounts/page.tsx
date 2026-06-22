@@ -1,50 +1,49 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  Alert,
-  Snackbar,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  Divider,
-  FormControl,
-  Grid,
-  IconButton,
-  InputAdornment,
-  InputLabel,
-  MenuItem,
-  Select,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
-import AddRoundedIcon from "@mui/icons-material/AddRounded";
-import EditRoundedIcon from "@mui/icons-material/EditRounded";
-import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
+import { auth, db } from "@/lib/firebaseClient";
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
-import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
-import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
-import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded";
-import SchoolRoundedIcon from "@mui/icons-material/SchoolRounded";
-import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
-import CurrencyBitcoinRoundedIcon from "@mui/icons-material/CurrencyBitcoinRounded";
-import AddBusinessRoundedIcon from "@mui/icons-material/AddBusinessRounded";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
+import AddBusinessRoundedIcon from "@mui/icons-material/AddBusinessRounded";
+import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
+import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
+import CurrencyBitcoinRoundedIcon from "@mui/icons-material/CurrencyBitcoinRounded";
+import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
+import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
+import SchoolRoundedIcon from "@mui/icons-material/SchoolRounded";
+import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded";
+import {
+    Alert,
+    Box,
+    Button,
+    Card,
+    CardContent,
+    Chip,
+    Divider,
+    FormControl,
+    Grid,
+    IconButton,
+    InputAdornment,
+    InputLabel,
+    MenuItem,
+    Select,
+    Snackbar,
+    Stack,
+    TextField,
+    Typography,
+} from "@mui/material";
 import { User, onAuthStateChanged } from "firebase/auth";
 import {
-  collection,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
+    collection,
+    doc,
+    onSnapshot,
+    orderBy,
+    query,
+    serverTimestamp,
+    setDoc,
+    updateDoc,
 } from "firebase/firestore";
-import { auth, db } from "@/lib/firebaseClient";
+import { useEffect, useMemo, useState } from "react";
 
 type AccountType =
   | "cash"

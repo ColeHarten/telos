@@ -1,23 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { auth, db } from "@/lib/firebaseClient";
+import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
+import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
+import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import {
   Alert,
-  Snackbar,
   Box,
   Button,
   Card,
   CardContent,
-  Divider,
   Grid,
   InputAdornment,
+  Snackbar,
   Stack,
   TextField,
-  Typography,
+  Typography
 } from "@mui/material";
-import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
-import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
-import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import { User, onAuthStateChanged } from "firebase/auth";
 import {
   collection,
@@ -29,7 +28,7 @@ import {
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
-import { auth, db } from "@/lib/firebaseClient";
+import { useEffect, useMemo, useState } from "react";
 
 type CashflowKind = "income" | "expense";
 
