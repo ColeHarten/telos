@@ -4,21 +4,17 @@ import type {
   BudgetLines
 } from "@/lib/types";
 import useBudgetingData from "@/lib/useBudgetingData";
-import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
-import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
+import MonthPickerControl, { getCurrentMonthKey } from "@/components/MonthPickerControl";
 import {
   Alert,
   Box,
   Button,
   Card,
   CardContent,
-  Divider,
   Grid,
-  IconButton,
   InputAdornment,
-  Popover,
   Snackbar,
   Stack,
   TextField,
@@ -26,53 +22,7 @@ import {
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 
-const MONTH_SHORT_LABELS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
-function getCurrentMonthKey() {
-  const today = new Date();
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
-    2,
-    "0"
-  )}`;
-}
-
-function formatMonthLabel(monthKey: string) {
-  if (!monthKey) {
-    return "Loading month";
-  }
-
-  const [year, month] = monthKey.split("-").map(Number);
-  const date = new Date(year, month - 1, 1);
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    year: "numeric",
-  }).format(date);
-}
-
-// Shifts a "YYYY-MM" key by a number of months (negative goes back).
-function shiftMonthKey(monthKey: string, delta: number) {
-  const [year, month] = monthKey.split("-").map(Number);
-  const date = new Date(year, month - 1 + delta, 1);
-
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-    2,
-    "0"
-  )}`;
-}
+// Month picker utilities and control are provided by components/MonthPickerControl
 
 type BudgetGroup = {
   title: string;
@@ -122,16 +72,6 @@ export default function BudgetsPage() {
 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null);
-  const isPickerOpen = Boolean(pickerAnchor);
-
-  // Year currently shown inside the picker popover. Separate from monthKey's
-  // year so the user can browse years without changing the selected month
-  // until they actually click one.
-  const [pickerYear, setPickerYear] = useState<number>(() =>
-    Number(monthKey.split("-")[0])
-  );
-
   const isCurrentMonth = monthKey === getCurrentMonthKey();
 
   useEffect(() => {
@@ -140,26 +80,24 @@ export default function BudgetsPage() {
   }, [monthKey]);
 
   function openPicker(event: React.MouseEvent<HTMLElement>) {
-    setPickerYear(Number(monthKey.split("-")[0]));
-    setPickerAnchor(event.currentTarget);
+    // noop: handled by MonthPickerControl
   }
 
   function closePicker() {
-    setPickerAnchor(null);
+    // noop: handled by MonthPickerControl
   }
 
   function selectMonthFromPicker(monthIndex: number) {
     // monthIndex is 0-based (0 = January)
-    setMonthKey(`${pickerYear}-${String(monthIndex + 1).padStart(2, "0")}`);
-    closePicker();
+    // noop: handled by MonthPickerControl
   }
 
   function goToPreviousMonth() {
-    setMonthKey(shiftMonthKey(monthKey, -1));
+    // noop: handled by MonthPickerControl
   }
 
   function goToNextMonth() {
-    setMonthKey(shiftMonthKey(monthKey, 1));
+    // noop: handled by MonthPickerControl
   }
 
   function goToCurrentMonth() {
@@ -393,153 +331,13 @@ export default function BudgetsPage() {
               gap: "8px",
             }}
           >
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: "row",
-                alignItems: "center",
-                border: "1px solid",
-                borderColor: "divider",
-                borderRadius: "8px",
-                bgcolor: "background.paper",
-                height: "40px",
-                overflow: "hidden",
-              }}
-            >
-              <IconButton
-                onClick={goToPreviousMonth}
-                aria-label="Previous month"
-                sx={{
-                  borderRadius: 0,
-                  height: "100%",
-                  px: "8px",
-                }}
-              >
-                <ChevronLeftRoundedIcon sx={{ fontSize: 20 }} />
-              </IconButton>
+            <MonthPickerControl
+              monthKey={monthKey}
+              onChange={setMonthKey}
+              ariaLabelPrefix="Budgets "
+            />
 
-              <Divider orientation="vertical" flexItem />
-
-              <Box
-                onClick={openPicker}
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  px: "12px",
-                  height: "100%",
-                  cursor: "pointer",
-                  "&:hover": {
-                    bgcolor: "action.hover",
-                  },
-                }}
-              >
-                <Typography
-                  variant="body2"
-                  sx={{
-                    fontWeight: 600,
-                    whiteSpace: "nowrap",
-                    minWidth: "120px",
-                    textAlign: "center",
-                  }}
-                >
-                  {formatMonthLabel(monthKey)}
-                </Typography>
-              </Box>
-
-              <Divider orientation="vertical" flexItem />
-
-              <IconButton
-                onClick={goToNextMonth}
-                aria-label="Next month"
-                sx={{
-                  borderRadius: 0,
-                  height: "100%",
-                  px: "8px",
-                }}
-              >
-                <ChevronRightRoundedIcon sx={{ fontSize: 20 }} />
-              </IconButton>
-            </Box>
-
-            <Popover
-              open={isPickerOpen}
-              anchorEl={pickerAnchor}
-              onClose={closePicker}
-              anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
-              transformOrigin={{ vertical: "top", horizontal: "left" }}
-              slotProps={{
-                paper: {
-                  sx: {
-                    borderRadius: "12px",
-                    border: "1px solid",
-                    borderColor: "divider",
-                    boxShadow: "0 12px 32px rgba(15, 23, 42, 0.12)",
-                    mt: "4px",
-                  },
-                },
-              }}
-            >
-              <Box sx={{ p: "16px", width: "280px" }}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    mb: "12px",
-                  }}
-                >
-                  <IconButton
-                    onClick={() => setPickerYear((year) => year - 1)}
-                    aria-label="Previous year"
-                    size="small"
-                  >
-                    <ChevronLeftRoundedIcon sx={{ fontSize: 20 }} />
-                  </IconButton>
-
-                  <Typography variant="body1" sx={{ fontWeight: 700 }}>
-                    {pickerYear}
-                  </Typography>
-
-                  <IconButton
-                    onClick={() => setPickerYear((year) => year + 1)}
-                    aria-label="Next year"
-                    size="small"
-                  >
-                    <ChevronRightRoundedIcon sx={{ fontSize: 20 }} />
-                  </IconButton>
-                </Box>
-
-                <Grid container spacing="8px">
-                  {MONTH_SHORT_LABELS.map((label, index) => {
-                    const candidateKey = `${pickerYear}-${String(
-                      index + 1
-                    ).padStart(2, "0")}`;
-                    const isSelected = candidateKey === monthKey;
-
-                    return (
-                      <Grid key={label} size={4}>
-                        <Button
-                          onClick={() => selectMonthFromPicker(index)}
-                          variant={isSelected ? "contained" : "text"}
-                          fullWidth
-                          sx={{
-                            borderRadius: "8px",
-                            textTransform: "none",
-                            fontWeight: 600,
-                            minWidth: 0,
-                            height: "36px",
-                          }}
-                        >
-                          {label}
-                        </Button>
-                      </Grid>
-                    );
-                  })}
-                </Grid>
-              </Box>
-            </Popover>
-                        {!isCurrentMonth && (
+            {!isCurrentMonth && (
               <Button
                 onClick={goToCurrentMonth}
                 variant="text"
