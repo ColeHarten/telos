@@ -1,21 +1,13 @@
 "use client";
 
-
 import useAccounts from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
 import type { Account, AccountType, NormalBalance } from "@/lib/types/types";
 import { formatCurrency } from "@/lib/utils";
-import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
-import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
-import AddBusinessRoundedIcon from "@mui/icons-material/AddBusinessRounded";
 import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
-import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
-import CurrencyBitcoinRoundedIcon from "@mui/icons-material/CurrencyBitcoinRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
-import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
-import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
-import SchoolRoundedIcon from "@mui/icons-material/SchoolRounded";
-import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded";
+import RestorePageRoundedIcon from "@mui/icons-material/RestorePageRounded";
+import UnarchiveRoundedIcon from "@mui/icons-material/UnarchiveRounded";
 import {
   Alert,
   Box,
@@ -37,71 +29,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
-
-const accountTypeStyles: Record<
-  AccountType,
-  {
-    label: string;
-    color: string;
-    background: string;
-    icon: typeof AccountBalanceRoundedIcon;
-  }
-> = {
-  cash: {
-    label: "Cash",
-    color: "#059669",
-    background: "#ecfdf5",
-    icon: AccountBalanceRoundedIcon,
-  },
-  credit_card: {
-    label: "Credit Card",
-    color: "#dc2626",
-    background: "#fef2f2",
-    icon: CreditCardRoundedIcon,
-  },
-  investment: {
-    label: "Investment",
-    color: "#2563eb",
-    background: "#eff6ff",
-    icon: ShowChartRoundedIcon,
-  },
-  retirement: {
-    label: "Retirement",
-    color: "#7c3aed",
-    background: "#f5f3ff",
-    icon: SavingsRoundedIcon,
-  },
-  loan: {
-    label: "Loan",
-    color: "#ea580c",
-    background: "#fff7ed",
-    icon: SchoolRoundedIcon,
-  },
-  property: {
-    label: "Property",
-    color: "#0891b2",
-    background: "#ecfeff",
-    icon: HomeRoundedIcon,
-  },
-  crypto: {
-    label: "Crypto",
-    color: "#ca8a04",
-    background: "#fefce8",
-    icon: CurrencyBitcoinRoundedIcon,
-  },
-  other_asset: {
-    label: "Other Asset",
-    color: "#475569",
-    background: "#f8fafc",
-    icon: AddBusinessRoundedIcon,
-  },
-  other_liability: {
-    label: "Other Liability",
-    color: "#be123c",
-    background: "#fff1f2",
-    icon: AccountBalanceWalletRoundedIcon,
-  },
-};
+import { accountTypeStyles } from "./accountTypes";
 
 function getNormalBalance(accountType: AccountType): NormalBalance {
   if (
@@ -129,12 +57,17 @@ export default function AccountsPage() {
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const isEditingAccount = editingAccountId !== null;
 
+  // Filter state for viewing active vs archived records
+  const [showArchived, setShowArchived] = useState(false);
+
   useEffect(() => {
-    // clear page-level errors when user/account list changes
     setError(null);
   }, [user, accounts]);
 
   const activeAccounts = useMemo(() => accounts.filter((account) => !account.isArchived), [accounts]);
+  const archivedAccounts = useMemo(() => accounts.filter((account) => account.isArchived), [accounts]);
+
+  const displayedAccounts = showArchived ? archivedAccounts : activeAccounts;
 
   const accountSummary = useMemo(() => {
     let assetTotal = 0;
@@ -168,6 +101,15 @@ export default function AccountsPage() {
 
     if (!trimmedName) {
       setError("Account name is required.");
+      return;
+    }
+
+    // Case-insensitive duplicate prevention check
+    const isDuplicate = accounts.some(
+      (a) => a.name.toLowerCase() === trimmedName.toLowerCase() && !a.isArchived
+    );
+    if (isDuplicate) {
+      setError(`An active account named "${trimmedName}" already exists.`);
       return;
     }
 
@@ -208,17 +150,17 @@ export default function AccountsPage() {
     setNewAccountName(account.name);
     setNewAccountType(account.accountType);
     setNewStartingBalance(String(account.currentBalance ?? account.startingBalance));
-    }
+  }
 
-    function handleCancelEditAccount() {
+  function handleCancelEditAccount() {
     setError(null);
     setEditingAccountId(null);
     setNewAccountName("");
     setNewAccountType("cash");
     setNewStartingBalance("");
-    }
+  }
 
-    async function handleSaveEditedAccount() {
+  async function handleSaveEditedAccount() {
     if (!user || !editingAccountId) {
       return;
     }
@@ -230,6 +172,15 @@ export default function AccountsPage() {
         return;
     }
 
+    // Case-insensitive duplicate prevention check (ignoring current editing account)
+    const isDuplicate = accounts.some(
+      (a) => a.id !== editingAccountId && a.name.toLowerCase() === trimmedName.toLowerCase() && !a.isArchived
+    );
+    if (isDuplicate) {
+      setError(`Another active account named "${trimmedName}" already exists.`);
+      return;
+    }
+
     const parsedBalance = Number(newStartingBalance || 0);
 
     if (Number.isNaN(parsedBalance)) {
@@ -238,41 +189,58 @@ export default function AccountsPage() {
     }
 
     try {
-        setError(null);
+      setError(null);
       setIsSaving(true);
 
       const normalBalance = getNormalBalance(newAccountType);
 
-      try {
-        await updateAccount(editingAccountId, {
-          name: trimmedName,
-          accountType: newAccountType,
-          normalBalance,
-          startingBalance: parsedBalance,
-          currentBalance: parsedBalance,
-        });
+      await updateAccount(editingAccountId, {
+        name: trimmedName,
+        accountType: newAccountType,
+        normalBalance,
+        startingBalance: parsedBalance,
+        currentBalance: parsedBalance,
+      });
 
-        setEditingAccountId(null);
-        setNewAccountName("");
-        setNewAccountType("cash");
-        setNewStartingBalance("");
-      } catch (saveError) {
-        console.error(saveError);
-        setError("Could not update account.");
-      } finally {
-        setIsSaving(false);
-      }
+      setEditingAccountId(null);
+      setNewAccountName("");
+      setNewAccountType("cash");
+      setNewStartingBalance("");
     } catch (saveError) {
-    } 
+      console.error(saveError);
+      setError("Could not update account.");
+    } finally {
+      setIsSaving(false);
     }
+  }
 
   async function handleArchiveAccount(accountId: string) {
     try {
       setError(null);
       await archiveAccount(accountId);
+      if (editingAccountId === accountId) {
+        handleCancelEditAccount();
+      }
     } catch (archiveError) {
       console.error(archiveError);
       setError("Could not archive account.");
+    }
+  }
+
+  async function handleRestoreAccount(account: Account) {
+    try {
+      setError(null);
+      await updateAccount(account.id, {
+        name: account.name,
+        accountType: account.accountType,
+        normalBalance: account.normalBalance,
+        startingBalance: account.startingBalance,
+        currentBalance: account.currentBalance ?? account.startingBalance,
+        isArchived: false,
+      });
+    } catch (restoreError) {
+      console.error(restoreError);
+      setError("Could not restore account.");
     }
   }
 
@@ -283,7 +251,7 @@ export default function AccountsPage() {
     }
 
     await handleAddAccount();
- }
+  }
 
   return (
     <Stack spacing={2.25}>
@@ -603,11 +571,25 @@ export default function AccountsPage() {
             py: 1.5,
             borderBottom: "1px solid",
             borderColor: "divider",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center"
           }}
         >
           <Typography variant="body1" sx={{ fontWeight: 700 }}>
             Your Accounts
           </Typography>
+
+          {/* Toggle Button for viewing Archived Accounts */}
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => setShowArchived((prev) => !prev)}
+            startIcon={showArchived ? <RestorePageRoundedIcon /> : <ArchiveRoundedIcon />}
+            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, px: 1.5 }}
+          >
+            {showArchived ? "View Active" : `View Archived (${archivedAccounts.length})`}
+          </Button>
         </Box>
 
         <CardContent sx={{ p: 0 }}>
@@ -645,14 +627,14 @@ export default function AccountsPage() {
                 Loading accounts...
               </Typography>
             </Box>
-          ) : activeAccounts.length === 0 ? (
+          ) : displayedAccounts.length === 0 ? (
             <Box sx={{ p: 2.25 }}>
               <Typography variant="body2" color="text.secondary">
-                No accounts yet. Add your first account above.
+                {showArchived ? "No archived accounts found." : "No accounts yet. Add your first account above."}
               </Typography>
             </Box>
           ) : (
-            activeAccounts.map((account, index) => {
+            displayedAccounts.map((account, index) => {
               const style = accountTypeStyles[account.accountType];
               const Icon = style.icon;
               const balance = account.currentBalance ?? account.startingBalance ?? 0;
@@ -726,12 +708,12 @@ export default function AccountsPage() {
 
                     <Box>
                       <Chip
-                        label="Active"
+                        label={account.isArchived ? "Archived" : "Active"}
                         size="small"
                         sx={{
                           height: 22,
-                          color: "#059669",
-                          bgcolor: "#ecfdf5",
+                          color: account.isArchived ? "#475569" : "#059669",
+                          bgcolor: account.isArchived ? "#f1f5f9" : "#ecfdf5",
                           fontWeight: 700,
                           borderRadius: 1.25,
                           "& .MuiChip-label": {
@@ -748,39 +730,56 @@ export default function AccountsPage() {
                         flexDirection: "row",
                         alignItems: "center",
                         justifyContent: { xs: "flex-start", md: "flex-end" },
+                        gap: "4px"
                       }}
                     >
-                      <IconButton
-                        size="small"
-                        aria-label={`Edit ${account.name}`}
-                        onClick={() =>{ 
-                            if(isEditingAccount) {
-                                handleCancelEditAccount();
-                            } else {
-                                handleStartEditAccount(account)
-                            }
-                        }}
-                        sx={{
-                            color: "text.secondary",
-                        }}
-                        >
-                        <EditRoundedIcon sx={{ fontSize: 18 }} />
-                      </IconButton>
+                      {!account.isArchived ? (
+                        <>
+                          <IconButton
+                            size="small"
+                            aria-label={`Edit ${account.name}`}
+                            onClick={() =>{ 
+                                if(isEditingAccount) {
+                                    handleCancelEditAccount();
+                                } else {
+                                    handleStartEditAccount(account)
+                                }
+                            }}
+                            sx={{
+                                color: "text.secondary",
+                            }}
+                            >
+                            <EditRoundedIcon sx={{ fontSize: 18 }} />
+                          </IconButton>
 
-                      <IconButton
-                        size="small"
-                        aria-label={`Archive ${account.name}`}
-                        onClick={() => handleArchiveAccount(account.id)}
-                        sx={{
-                          color: "#dc2626",
-                        }}
-                      >
-                        <ArchiveRoundedIcon sx={{ fontSize: 18 }} />
-                      </IconButton>
+                          <IconButton
+                            size="small"
+                            aria-label={`Archive ${account.name}`}
+                            onClick={() => handleArchiveAccount(account.id)}
+                            sx={{
+                              color: "#dc2626",
+                            }}
+                          >
+                            <ArchiveRoundedIcon sx={{ fontSize: 18 }} />
+                          </IconButton>
+                        </>
+                      ) : (
+                        <IconButton
+                          size="small"
+                          aria-label={`Restore ${account.name}`}
+                          onClick={() => handleRestoreAccount(account)}
+                          sx={{
+                            color: "#059669",
+                          }}
+                          title="Restore Account"
+                        >
+                          <UnarchiveRoundedIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                      )}
                     </Stack>
                   </Box>
 
-                  {index < activeAccounts.length - 1 && <Divider />}
+                  {index < displayedAccounts.length - 1 && <Divider />}
                 </Box>
               );
             })

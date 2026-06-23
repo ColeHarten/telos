@@ -196,7 +196,10 @@ export function useBudget(user: any, authLoading: boolean, initialMonthKey?: str
     );
 
     if (!previousBudgetSnapshot.exists()) {
-      throw new Error("No previous budget");
+      // No previous budget to copy from, so just clear the current budget values and lines
+      setBudgetValues({});
+      setBudgetLines({});
+      return;
     }
 
     const previousBudget = previousBudgetSnapshot.data();

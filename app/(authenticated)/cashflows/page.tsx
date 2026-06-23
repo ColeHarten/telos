@@ -7,8 +7,10 @@ import { formatCurrency } from "@/lib/utils";
 import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import PercentRoundedIcon from "@mui/icons-material/PercentRounded";
+import RestorePageRoundedIcon from "@mui/icons-material/RestorePageRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
+import UnarchiveRoundedIcon from "@mui/icons-material/UnarchiveRounded";
 import {
   Alert,
   Box,
@@ -77,6 +79,9 @@ export default function CashflowsPage() {
   const [newCashflowKind, setNewCashflowKind] = useState<CashflowKind>("expense");
   const [newCashflowEstimatedMonthly, setNewCashflowEstimatedMonthly] = useState("0");
 
+  // Filter state for viewing active vs archived records
+  const [showArchived, setShowArchived] = useState(false);
+
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
 
@@ -85,6 +90,10 @@ export default function CashflowsPage() {
   }, [user, cashflows]);
 
   const activeCashflows = useMemo(() => cashflows.filter((cashflow) => !cashflow.isArchived), [cashflows]);
+  const archivedCashflows = useMemo(() => cashflows.filter((cashflow) => cashflow.isArchived), [cashflows]);
+  
+  const displayedCashflows = showArchived ? archivedCashflows : activeCashflows;
+
   const incomeCount = activeCashflows.filter((c) => c.kind === "income").length;
   const expenseCount = activeCashflows.filter((c) => c.kind === "expense").length;
   const incomeCashflows = useMemo(() => activeCashflows.filter((c) => c.kind === "income"), [activeCashflows]);
@@ -92,10 +101,21 @@ export default function CashflowsPage() {
   async function handleAddCashflow() {
     const trimmedName = newCashflowName.trim();
     const estimatedMonthly = Number(newCashflowEstimatedMonthly || 0);
+    
     if (!trimmedName) {
       setError("Cashflow name is required.");
       return;
     }
+
+    // ✅ Case-insensitive duplicate prevention check
+    const isDuplicate = cashflows.some(
+      (c) => c.name.toLowerCase() === trimmedName.toLowerCase() && !c.isArchived
+    );
+    if (isDuplicate) {
+      setError(`An active cashflow named "${trimmedName}" already exists.`);
+      return;
+    }
+
     try {
       setError(null);
       setIsSaving(true);
@@ -135,10 +155,21 @@ export default function CashflowsPage() {
     if (!user || !editingCashflowId) return;
     const trimmedName = newCashflowName.trim();
     const estimatedMonthly = Number(newCashflowEstimatedMonthly || 0);
+    
     if (!trimmedName) {
       setError("Cashflow name is required.");
       return;
     }
+
+    // ✅ Case-insensitive duplicate prevention check (ignoring current row being edited)
+    const isDuplicate = cashflows.some(
+      (c) => c.id !== editingCashflowId && c.name.toLowerCase() === trimmedName.toLowerCase() && !c.isArchived
+    );
+    if (isDuplicate) {
+      setError(`Another active cashflow named "${trimmedName}" already exists.`);
+      return;
+    }
+
     try {
       setError(null);
       setIsSaving(true);
@@ -177,6 +208,22 @@ export default function CashflowsPage() {
     } catch (archiveError) {
       console.error(archiveError);
       setError("Could not archive cashflow.");
+    }
+  }
+
+  // ✅ Restore callback unarchives a category and matches existing update infrastructure
+  async function handleRestoreCashflow(cashflow: Cashflow) {
+    try {
+      setError(null);
+      await updateCashflow(cashflow.id, {
+        name: cashflow.name,
+        kind: cashflow.kind,
+        estimatedMonthly: cashflow.estimatedMonthly,
+        isArchived: false,
+      });
+    } catch (restoreError) {
+      console.error(restoreError);
+      setError("Could not restore cashflow.");
     }
   }
 
@@ -357,8 +404,19 @@ export default function CashflowsPage() {
 
       {/* Your Cashflows Datagrid View */}
       <Card sx={{ bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 3, overflow: "hidden" }} elevation={0}>
-        <Box sx={{ p: 2.25, px: 2.25, borderBottom: "1px solid", borderColor: "divider" }}>
+        <Box sx={{ p: 2.25, px: 2.25, borderBottom: "1px solid", borderColor: "divider", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <Typography variant="body1" sx={{ fontWeight: 700 }}>Your Cashflows</Typography>
+          
+          {/* ✅ Archive View Toggle */}
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => setShowArchived((prev) => !prev)}
+            startIcon={showArchived ? <RestorePageRoundedIcon /> : <ArchiveRoundedIcon />}
+            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, px: 1.5 }}
+          >
+            {showArchived ? "View Active" : `View Archived (${archivedCashflows.length})`}
+          </Button>
         </Box>
         <CardContent sx={{ p: 0 }}>
           <Box
@@ -381,10 +439,14 @@ export default function CashflowsPage() {
 
           {isLoading ? (
             <Box sx={{ p: 2.25 }}><Typography color="text.secondary" variant="body2">Loading cashflows...</Typography></Box>
-          ) : activeCashflows.length === 0 ? (
-            <Box sx={{ p: 2.25 }}><Typography color="text.secondary" variant="body2">No cashflows yet.</Typography></Box>
+          ) : displayedCashflows.length === 0 ? (
+            <Box sx={{ p: 2.25 }}>
+              <Typography color="text.secondary" variant="body2">
+                {showArchived ? "No archived categories found." : "No cashflows yet."}
+              </Typography>
+            </Box>
           ) : (
-            activeCashflows.map((cashflow, index) => {
+            displayedCashflows.map((cashflow, index) => {
               const style = cashflowStyles[cashflow.kind];
               const Icon = style.icon;
               return (
@@ -427,9 +489,17 @@ export default function CashflowsPage() {
                     </Box>
                     <Box>
                       <Chip
-                        label="Active"
+                        label={cashflow.isArchived ? "Archived" : "Active"}
                         size="small"
-                        sx={{ bgcolor: "#ecfdf5", color: "#059669", fontWeight: 700, fontSize: 12, height: 22, px: 1, "& .MuiChip-label": { px: 1.25 } }}
+                        sx={{ 
+                          bgcolor: cashflow.isArchived ? "#f1f5f9" : "#ecfdf5", 
+                          color: cashflow.isArchived ? "#475569" : "#059669", 
+                          fontWeight: 700, 
+                          fontSize: 12, 
+                          height: 22, 
+                          px: 1, 
+                          "& .MuiChip-label": { px: 1.25 } 
+                        }}
                       />
                     </Box>
                     <Box>
@@ -438,15 +508,30 @@ export default function CashflowsPage() {
                       </Typography>
                     </Box>
                     <Box sx={{ display: "flex", direction: "row", alignItems: "center", justifyContent: { xs: "flex-start", md: "flex-end" }, gap: "10px" }}>
-                      <IconButton aria-label={`Edit ${cashflow.name}`} onClick={() => handleStartEditCashflow(cashflow)} size="small" sx={{ color: "text.secondary" }}>
-                        <EditRoundedIcon sx={{ fontSize: 18 }} />
-                      </IconButton>
-                      <IconButton aria-label={`Archive ${cashflow.name}`} onClick={() => handleArchiveCashflow(cashflow.id)} size="small" sx={{ color: "#dc2626" }}>
-                        <ArchiveRoundedIcon sx={{ fontSize: 18 }} />
-                      </IconButton>
+                      {!cashflow.isArchived ? (
+                        <>
+                          <IconButton aria-label={`Edit ${cashflow.name}`} onClick={() => handleStartEditCashflow(cashflow)} size="small" sx={{ color: "text.secondary" }}>
+                            <EditRoundedIcon sx={{ fontSize: 18 }} />
+                          </IconButton>
+                          <IconButton aria-label={`Archive ${cashflow.name}`} onClick={() => handleArchiveCashflow(cashflow.id)} size="small" sx={{ color: "#dc2626" }}>
+                            <ArchiveRoundedIcon sx={{ fontSize: 18 }} />
+                          </IconButton>
+                        </>
+                      ) : (
+                        // ✅ Restore Action when viewing archived records
+                        <IconButton 
+                          aria-label={`Restore ${cashflow.name}`} 
+                          onClick={() => handleRestoreCashflow(cashflow)} 
+                          size="small" 
+                          sx={{ color: "#059669" }}
+                          title="Restore Category"
+                        >
+                          <UnarchiveRoundedIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                      )}
                     </Box>
                   </Box>
-                  {index < activeCashflows.length - 1 && <Divider />}
+                  {index < displayedCashflows.length - 1 && <Divider />}
                 </Box>
               );
             })
