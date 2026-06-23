@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebaseClient";
-import { collection, onSnapshot, orderBy, doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { collection, onSnapshot, doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import type { Cashflow, CashflowKind, WithholdingProfile } from "../types/types";
 
 export function useCashflows(user: any, authLoading: boolean) {

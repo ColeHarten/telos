@@ -1,6 +1,10 @@
 "use client";
 
 
+import useAccounts from "@/lib/hooks/useAccounts";
+import useAuth from "@/lib/hooks/useAuth";
+import type { Account, AccountType, NormalBalance } from "@/lib/types/types";
+import { formatCurrency } from "@/lib/utils";
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import AddBusinessRoundedIcon from "@mui/icons-material/AddBusinessRounded";
@@ -13,31 +17,26 @@ import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
 import SchoolRoundedIcon from "@mui/icons-material/SchoolRounded";
 import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded";
 import {
-    Alert,
-    Box,
-    Button,
-    Card,
-    CardContent,
-    Chip,
-    Divider,
-    FormControl,
-    Grid,
-    IconButton,
-    InputAdornment,
-    InputLabel,
-    MenuItem,
-    Select,
-    Snackbar,
-    Stack,
-    TextField,
-    Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Divider,
+  FormControl,
+  Grid,
+  IconButton,
+  InputAdornment,
+  InputLabel,
+  MenuItem,
+  Select,
+  Snackbar,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
-import useBudgetingData from "@/lib/useBudgetingData";
-import useAuth from "@/lib/hooks/useAuth";
-import useAccounts from "@/lib/hooks/useAccounts";
-import type { AccountType, NormalBalance, Account } from "@/lib/types/types";
-import { formatCurrency } from "@/lib/utils";
 
 const accountTypeStyles: Record<
   AccountType,

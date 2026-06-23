@@ -3,7 +3,6 @@
 import type {
   BudgetLines
 } from "@/lib/types/types";
-import useBudgetingData from "@/lib/useBudgetingData";
 import useAuth from "@/lib/hooks/useAuth";
 import useCashflows from "@/lib/hooks/useCashflows";
 import useAccounts from "@/lib/hooks/useAccounts";
@@ -25,6 +24,7 @@ import {
   Typography
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
+import { formatCurrency } from "@/lib/utils";
 
 type BudgetGroup = {
   title: string;
@@ -37,14 +37,6 @@ type BudgetGroup = {
     value: string;
   }[];
 };
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 function parseBudgetInput(value: string) {
   const parsed = Number(value || 0);

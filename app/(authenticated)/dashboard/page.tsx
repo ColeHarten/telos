@@ -1,27 +1,24 @@
 "use client";
 
 import { MonthPickerControl, formatMonthLabel, getCurrentMonthKey, shiftMonthKey } from "@/components/MonthPickerControl";
-import useBudgetingData from "@/lib/useBudgetingData";
-import useAuth from "@/lib/hooks/useAuth";
-import useCashflows from "@/lib/hooks/useCashflows";
 import useAccounts from "@/lib/hooks/useAccounts";
+import useAuth from "@/lib/hooks/useAuth";
 import useBudget from "@/lib/hooks/useBudget";
-import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
+import useCashflows from "@/lib/hooks/useCashflows";
+import { formatCurrency } from "@/lib/utils";
 import DateRangeRoundedIcon from "@mui/icons-material/DateRangeRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import {
   Alert,
   Box,
-  Button,
   Card,
   CardContent,
   Divider,
   Grid,
   IconButton,
   Snackbar,
-  Typography,
+  Typography
 } from "@mui/material";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -33,7 +30,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { formatCurrency } from "@/lib/utils";
 
 type BudgetLineLike = {
   id: string;

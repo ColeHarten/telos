@@ -1,31 +1,23 @@
 "use client";
 
-import type { Cashflow, CashflowKind, WithholdingProfile } from "@/lib/types/types";
-import useBudgetingData from "@/lib/useBudgetingData";
 import useAuth from "@/lib/hooks/useAuth";
 import useCashflows from "@/lib/hooks/useCashflows";
+import type { Cashflow, CashflowKind } from "@/lib/types/types";
+import { formatCurrency } from "@/lib/utils";
 import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
-import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
-import DeleteRoundedIcon from "@mui/icons-material/DeleteRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import PercentRoundedIcon from "@mui/icons-material/PercentRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import {
   Alert,
-  Autocomplete,
   Box,
   Button,
   Card,
   CardContent,
   Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Divider,
   FormControl,
-  FormControlLabel,
   Grid,
   IconButton,
   InputAdornment,
@@ -34,14 +26,11 @@ import {
   Select,
   Snackbar,
   Stack,
-  Switch,
   TextField,
-  Tooltip,
-  Typography,
+  Typography
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 import ProfileEditorDialog, { calculateWithholdings } from "./ProfileEditorDialog";
-import { formatCurrency } from "@/lib/utils";
 
 const cashflowStyles: Record<
   CashflowKind,
@@ -75,7 +64,7 @@ export default function CashflowsPage() {
     addCashflow,
     updateCashflow,
     archiveCashflow,
-    isLoading: cashflowsLoading,
+    cashflowsLoading,
   } = useCashflows(user, authLoading);
   const isLoading = cashflowsLoading;
 
