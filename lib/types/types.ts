@@ -38,6 +38,26 @@ export type Cashflow = {
   updatedAt?: unknown;
 };
 
+export type PayFrequency = "weekly" | "biweekly" | "semimonthly" | "monthly";
+export type DeductionKind = "percentOfGross" | "flatAmount";
+export type DeductionWhen = "preTax" | "postTax";
+
+export interface Deduction {
+  label: string;
+  value: number;
+  kind: DeductionKind;
+  when: DeductionWhen;
+}
+
+export interface WithholdingProfile {
+  id: string; // Used to fetch, update, and match profiles in useBudgetingData
+  name: string;
+  payFrequency: PayFrequency;
+  grossSalary: number;
+  linkedIncomeCashflowId: string; // Explicitly maps to Cashflow.id
+  deductions: Deduction[];
+}
+
 export type BudgetLineType = "cashflow" | "account_transfer";
 
 export type BudgetLine = {

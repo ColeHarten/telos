@@ -34,7 +34,10 @@ import {
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 import useBudgetingData from "@/lib/useBudgetingData";
-import type { AccountType, NormalBalance, Account } from "@/lib/types";
+import useAuth from "@/lib/hooks/useAuth";
+import useAccounts from "@/lib/hooks/useAccounts";
+import type { AccountType, NormalBalance, Account } from "@/lib/types/types";
+import { formatCurrency } from "@/lib/utils";
 
 const accountTypeStyles: Record<
   AccountType,
@@ -113,16 +116,10 @@ function getNormalBalance(accountType: AccountType): NormalBalance {
   return "asset";
 }
 
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
 export default function AccountsPage() {
-  const { user, accounts, isLoading, addAccount, updateAccount, archiveAccount } = useBudgetingData();
+  const { user, authLoading } = useAuth();
+  const { accounts, accountsLoading, addAccount, updateAccount, archiveAccount } = useAccounts(user, authLoading);
+  const isLoading = accountsLoading;
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

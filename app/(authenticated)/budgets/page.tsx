@@ -2,8 +2,12 @@
 
 import type {
   BudgetLines
-} from "@/lib/types";
+} from "@/lib/types/types";
 import useBudgetingData from "@/lib/useBudgetingData";
+import useAuth from "@/lib/hooks/useAuth";
+import useCashflows from "@/lib/hooks/useCashflows";
+import useAccounts from "@/lib/hooks/useAccounts";
+import useBudget from "@/lib/hooks/useBudget";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import MonthPickerControl, { getCurrentMonthKey } from "@/components/MonthPickerControl";
@@ -53,20 +57,20 @@ function parseBudgetInput(value: string) {
 }
 
 export default function BudgetsPage() {
+  const { user, authLoading } = useAuth();
+  const { cashflows } = useCashflows(user, authLoading);
+  const { accounts } = useAccounts(user, authLoading);
   const {
-    user,
-    cashflows,
-    accounts,
-    budgetValues,
-    setBudgetValue,
     selectedMonthKey: monthKey,
     setSelectedMonthKey: setMonthKey,
+    budgetValues,
+    setBudgetValue,
     saveBudget,
     copyPreviousMonth,
-    isLoading,
     isSaving,
     error,
-  } = useBudgetingData();
+  } = useBudget(user, authLoading);
+  const isLoading = authLoading;
 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 

@@ -2,6 +2,10 @@
 
 import { MonthPickerControl, formatMonthLabel, getCurrentMonthKey, shiftMonthKey } from "@/components/MonthPickerControl";
 import useBudgetingData from "@/lib/useBudgetingData";
+import useAuth from "@/lib/hooks/useAuth";
+import useCashflows from "@/lib/hooks/useCashflows";
+import useAccounts from "@/lib/hooks/useAccounts";
+import useBudget from "@/lib/hooks/useBudget";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import DateRangeRoundedIcon from "@mui/icons-material/DateRangeRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
@@ -29,6 +33,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { formatCurrency } from "@/lib/utils";
 
 type BudgetLineLike = {
   id: string;
@@ -37,14 +42,6 @@ type BudgetLineLike = {
   cashflowId?: string;
   toAccountId?: string;
 };
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 function formatShortMonthLabel(monthKey: string) {
   const [year, month] = monthKey.split("-").map(Number);
@@ -140,17 +137,10 @@ function summarizeBudgetLines(
 }
 
 export default function DashboardPage() {
-  const {
-    user,
-    authLoading,
-    cashflows,
-    accounts,
-    error,
-    rangeBudgets,
-    rangeLoading,
-    rangeError,
-    loadBudgetRange,
-  } = useBudgetingData();
+  const { user, authLoading } = useAuth();
+  const { cashflows } = useCashflows(user, authLoading);
+  const { accounts } = useAccounts(user, authLoading);
+  const { rangeBudgets, rangeLoading, rangeError, loadBudgetRange, error } = useBudget(user, authLoading);
 
   // The dashboard now has a single concept: a month range. A "single month"
   // view is just the case where rangeStart === rangeEnd, so there's one

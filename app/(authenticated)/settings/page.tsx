@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { auth } from "@/lib/firebaseClient";
+import useAuth from "@/lib/hooks/useAuth";
+import useBudget from "@/lib/hooks/useBudget";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
+import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
+import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import {
   Alert,
-  Snackbar,
   Box,
   Button,
   Card,
@@ -13,17 +18,13 @@ import {
   InputLabel,
   MenuItem,
   Select,
+  Snackbar,
   Stack,
   Typography,
 } from "@mui/material";
 import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebaseClient";
 import { useRouter } from "next/navigation";
-import useBudgetingData from "@/lib/useBudgetingData";
-import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
-import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
-import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
-import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import { useEffect, useState } from "react";
 
 type Currency = "USD";
 type DefaultBudgetMonth = "current" | "next";
@@ -38,7 +39,8 @@ type AppSettings = {
 export default function SettingsPage() {
   const router = useRouter();
 
-  const { user, settings, updateSettings, ensureUserProfile } = useBudgetingData();
+  const { user } = useAuth();
+  const { settings, updateSettings, ensureUserProfile } = useBudget(user, false);
   const [currency, setCurrency] = useState<Currency>("USD");
   const [defaultMonth, setDefaultMonth] =
     useState<DefaultBudgetMonth>("current");
