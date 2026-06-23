@@ -83,18 +83,79 @@ Phase 1 is entirely forward-looking and manually entered. There's no connection 
 
 **The central question Phase 1 answers:** *based on what I plan to earn and spend, how much money is left over each month after I fund savings and pay down debt?*
 
-## Phase 2 — Plaid integration (planned)
+# Phase 2 Implementation Plan: Plaid Integration & Transaction Engine
 
-Phase 2 connects to real financial institutions via Plaid to ground the plan in actual transaction and balance data, rather than relying purely on manual projections.
+## Sub-Phase 2.1: Preparation (Database & UI Foundation)
+Before touching the Plaid API, the application needs the structural capacity to store, display, and manipulate raw transaction data, alongside the rules engine to automate it.
 
-At a high level, this phase should:
+### 1. Database Schema Migrations
+You need new tables to support the data Plaid will send and the logic required to process it.
 
-- Link real bank, credit card, and investment accounts to the existing `Account` model (so a Plaid-linked checking account *is* an asset Account, not a separate concept).
-- Pull real transactions and map them to existing Cashflow categories — either automatically (via Plaid categories or custom rules) or manually.
-- Compare actual income/expenses/transfers against the planned Budget for the month, surfacing variance (planned vs. actual).
-- Use real account balances to track actual net worth alongside the projected one.
+* **`PlaidItem` Table:** Stores the connection.
+    * `id`, `userId`, `plaidItemId`, `accessToken` (encrypted), `institutionName`, `cursor` (vital for Plaid's `/transactions/sync` endpoint).
+* **`Account` Table Updates:**
+    * Add `plaidAccountId` (nullable) to link your existing manual accounts to their live Plaid counterparts.
+    * Add `mask` (e.g., "1234") and `subtype` (checking, credit card).
+* **`Transaction` Table:**
+    * `id` (primary key), `plaidTransactionId` (unique).
+    * `accountId` (foreign key).
+    * `amount`, `date`, `authorizedDate`.
+    * `merchantName`, `name` (raw string from bank).
+    * `pending` (boolean).
+    * `cashflowId` (nullable foreign key - this is how a transaction maps to your Phase 1 budget categories).
+* **`TransactionRule` Table:**
+    * `id`, `userId`.
+    * `matchType` (enum: 'merchant_contains', 'exact_amount', 'plaid_category').
+    * `matchValue` (string/number).
+    * `actionType` (enum: 'assign_cashflow', 'apply_withholding', 'ignore').
+    * `targetId` (foreign key to `Cashflow` or `WithholdingProfile`).
 
-This phase is intentionally deferred until the Phase 1 data model and UI are solid, since Accounts and Cashflows need to be stable abstractions before real transaction data gets mapped onto them.
+### 2. UI/UX Foundation (React / MUI)
+Build the "empty" interfaces so data has a place to land.
+
+* **Transactions Page (`/transactions`):**
+    * A robust data grid. Needs columns for Date, Merchant, Amount, Account, and a dropdown for Category (`Cashflow`).
+    * Needs quick-filters: "Uncategorized", "Pending", "High Value", and a date range picker.
+    * Support for inline editing of the Category dropdown (updates the DB `cashflowId` without a page reload).
+* **Rules Engine Page (`/rules`):**
+    * An interface to build "If/Then" logic.
+    * *Example UI flow:* "IF [Merchant Name] contains [‘Uber’] THEN assign to [Expense: Transportation]."
+    * *Example UI flow:* "IF [Deposit] from [‘Gusto’] THEN apply [Withholding Profile: Tech Job]."
+
+---
+
+## Sub-Phase 2.2: Embedding Plaid (The Integration)
+This is where you implement the Plaid Node SDK and connect the frontend to the backend.
+
+### 1. The React Frontend (`react-plaid-link`)
+* Create a "Connect Bank" component on the Accounts page.
+* Fetch a `link_token` from your backend to initialize the Plaid UI modal.
+* Implement the `onSuccess` callback. This fires when the user successfully logs into their bank and returns a `public_token`.
+
+### 2. The Next.js API Routes (Backend)
+* **`POST /api/plaid/exchange`:** Takes the `public_token` from the frontend, calls Plaid to exchange it for an `access_token` and `item_id`, and saves them to the `PlaidItem` table.
+* **`POST /api/plaid/sync`:** The core engine. Uses Plaid's `/transactions/sync` endpoint alongside the `cursor` saved in your database to pull only new, modified, or deleted transactions.
+* **`POST /api/plaid/webhook`:** Crucial for Vercel deployments. Plaid will send a webhook (e.g., `SYNC_UPDATES_AVAILABLE`) to this endpoint when new data is ready. This route should immediately trigger the sync function above to keep your app near real-time.
+
+---
+
+## Sub-Phase 2.3: Clean Up, Automation, & Reconciliation
+Once raw data is flowing, you must tame it so it fits into the Phase 1 budgeting mental model.
+
+### 1. The Rules Pipeline
+Every time the `/api/plaid/sync` job pulls new transactions, it must pipe them through a service function:
+1.  Check if `transaction.plaidTransactionId` already exists (update if pending status changed, else insert).
+2.  Run the new transaction through all `TransactionRules` for that user.
+3.  If a rule matches, auto-assign the `cashflowId`.
+4.  *Special Case:* Run the deduplication logic we discussed (match a negative amount in checking with a positive amount in savings within 48 hours and tag them both as internal transfers).
+
+### 2. Upgrading Phase 1 Components
+* **Cashflows Page:** Add an "Actuals" column next to the "Estimated Monthly" column. The Actuals column is a sum of all synced transactions tagged with that `cashflowId` for the current month.
+* **Visual Feedback:** If "Actuals" > "Estimated", highlight the row in red or show a progress bar that spills over 100%.
+* **Accounts Page:** Replace the manual balance input with the live `balances.current` pulled directly from the Plaid API.
+
+### 3. Error Handling & Edge Cases
+* **Institution Disconnects:** Plaid connections expire or break (e.g., user changes their bank password). You must build a UI state prompting the user to re-authenticate (Update Mode) when the API throws an `ITEM_LOGIN_REQUIRED` error.
 
 ## Long-term ideas (post-Phase 2)
 
