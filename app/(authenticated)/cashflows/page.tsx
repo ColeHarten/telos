@@ -475,28 +475,33 @@ export default function CashflowsPage() {
           ) : (
             <Stack divider={<Divider />}>
               {withholdingProfiles.map((profile) => {
-                const calculated = calculateWithholdings(profile.grossSalary, profile.deductions);
+                const calculated = calculateWithholdings(profile.grossSalary, profile.deductions, profile.payFrequency);
                 const relatedCashflow = cashflows.find((c) => c.id === profile.linkedIncomeCashflowId);
 
                 return (
                   <Box key={profile.id} sx={{ p: 2.25 }}>
-                    <Box sx={{ display: "grid", gridTemplateColumns: "1fr 140px 1fr auto", alignItems: "center", gap: 2 }}>
+                    <Box sx={{ display: "grid", gridTemplateColumns: "1fr 140px 140px 120px auto", alignItems: "center", gap: 2 }}>
                       <Box>
                         <Typography variant="body2" sx={{ fontWeight: 600 }}>{profile.name}</Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ textTransform: "capitalize" }}>
-                          {profile.payFrequency} • {profile.deductions.length} deductions
+                          {profile.payFrequency} • {profile.deductions?.length || 0} deductions
                         </Typography>
                       </Box>
                       <Stack spacing={0.5}>
-                        <Typography variant="caption" color="text.secondary">Income Stream</Typography>
-                        <Typography variant="body2" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontWeight: 500, color: "#166534" }}>
-                          <Chip label="Income" size="small" sx={{ bgcolor: "#ecfdf5", color: "#059669", fontWeight: 700, fontSize: 10, height: 18 }} />
-                          {relatedCashflow?.name ?? "Unknown"}
+                        <Typography variant="caption" color="text.secondary">Linked Category</Typography>
+                        <Typography variant="body2" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontWeight: 500 }}>
+                          {relatedCashflow?.name ?? "None Linked"}
                         </Typography>
                       </Stack>
                       <Box sx={{ textAlign: "right" }}>
-                        <Typography variant="caption" color="text.secondary">Est. Net Pay</Typography>
-                        <Typography variant="body1" sx={{ fontWeight: 700 }}>{formatCurrency(calculated.netPay)}</Typography>
+                        <Typography variant="caption" color="text.secondary">Gross per Paycheck</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatCurrency(profile.grossSalary)}</Typography>
+                      </Box>
+                      <Box sx={{ textAlign: "right" }}>
+                        <Typography variant="caption" color="text.secondary">Est. Monthly Net</Typography>
+                        <Typography variant="body1" sx={{ fontWeight: 700, color: "#166534" }}>
+                          {formatCurrency(calculated.estimatedMonthlyNet)}
+                        </Typography>
                       </Box>
                       <IconButton onClick={() => handleOpenEditProfile(profile.id)}>
                         <EditRoundedIcon sx={{ color: "text.secondary", fontSize: 18 }} />
