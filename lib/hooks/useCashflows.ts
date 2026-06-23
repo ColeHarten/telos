@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { db } from "@/lib/firebaseClient";
 import { collection, onSnapshot, doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import type { Cashflow, CashflowKind, WithholdingProfile } from "../types/types";
@@ -90,7 +90,7 @@ export function useCashflows(user: any, authLoading: boolean) {
     };
   }, [authLoading, user]);
 
-  async function addCashflow(payload: { name: string; kind: CashflowKind; estimatedMonthly: number }) {
+  const addCashflow = useCallback(async (payload: { name: string; kind: CashflowKind; estimatedMonthly: number }) => {
     if (!user) throw new Error("Not signed in");
     const ref = doc(collection(db, "users", user.uid, "cashflows"));
     await setDoc(ref, {
@@ -103,25 +103,25 @@ export function useCashflows(user: any, authLoading: boolean) {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-  }
+  }, [user]);
 
-  async function updateCashflow(id: string, changes: Partial<Cashflow>) {
+  const updateCashflow = useCallback(async (id: string, changes: Partial<Cashflow>) => {
     if (!user) throw new Error("Not signed in");
     await updateDoc(doc(db, "users", user.uid, "cashflows", id), {
       ...changes,
       updatedAt: serverTimestamp(),
     });
-  }
+  }, [user]);
 
-  async function archiveCashflow(id: string) {
+  const archiveCashflow = useCallback(async (id: string) => {
     if (!user) throw new Error("Not signed in");
     await updateDoc(doc(db, "users", user.uid, "cashflows", id), {
       isArchived: true,
       updatedAt: serverTimestamp(),
     });
-  }
+  }, [user]);
 
-  async function addWithholdingProfile(payload: Omit<WithholdingProfile, "id">) {
+  const addWithholdingProfile = useCallback(async (payload: Omit<WithholdingProfile, "id">) => {
     if (!user) throw new Error("Not signed in");
     const ref = doc(collection(db, "users", user.uid, "withholdingProfiles"));
     await setDoc(ref, {
@@ -129,17 +129,19 @@ export function useCashflows(user: any, authLoading: boolean) {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-  }
+  }, [user]);
 
-  async function updateWithholdingProfile(id: string, changes: Partial<WithholdingProfile>) {
+  const updateWithholdingProfile = useCallback(async (id: string, changes: Partial<WithholdingProfile>) => {
     if (!user) throw new Error("Not signed in");
     await updateDoc(doc(db, "users", user.uid, "withholdingProfiles", id), {
       ...changes,
       updatedAt: serverTimestamp(),
     });
-  }
+  }, [user]);
 
-  const getProfileById = (id: string) => withholdingProfiles.find((p) => p.id === id) || null;
+  const getProfileById = useCallback((id: string) => {
+    return withholdingProfiles.find((p) => p.id === id) || null;
+  }, [withholdingProfiles]);
 
   return {
     cashflows,

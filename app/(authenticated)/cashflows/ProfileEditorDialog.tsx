@@ -1,7 +1,6 @@
 "use client";
 
 import type { Cashflow, WithholdingProfile } from "@/lib/types/types";
-import useBudgetingData from "@/lib/useBudgetingData";
 import useAuth from "@/lib/hooks/useAuth";
 import useCashflows from "@/lib/hooks/useCashflows";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
@@ -15,13 +14,12 @@ import {
     Button,
     Card,
     CardContent,
-    Chip,
     Dialog,
     DialogActions,
     DialogContent,
     DialogTitle,
+    Divider,
     FormControl,
-    FormControlLabel,
     Grid,
     IconButton,
     InputAdornment,
@@ -29,7 +27,6 @@ import {
     MenuItem,
     Select,
     Stack,
-    Switch,
     TextField,
     Tooltip,
     Typography
@@ -38,37 +35,35 @@ import { useEffect, useMemo, useState } from "react";
 import { formatCurrency } from "@/lib/utils";
 
 const payFrequencyOptions = [
-  { label: "Weekly", value: "weekly" },
-  { label: "Bi-weekly", value: "biweekly" },
-  { label: "Semi-monthly", value: "semimonthly" },
-  { label: "Monthly", value: "monthly" },
+  { label: "Weekly (52/yr)", value: "weekly", multiplier: 52 / 12 },
+  { label: "Bi-weekly (26/yr)", value: "biweekly", multiplier: 26 / 12 },
+  { label: "Semi-monthly (24/yr)", value: "semimonthly", multiplier: 24 / 12 },
+  { label: "Monthly (12/yr)", value: "monthly", multiplier: 12 / 12 },
 ];
 
-export function calculateWithholdings(gross: number, deductions: WithholdingProfile["deductions"]) {
-  let netPay = gross;
-  let preTaxWithholding = 0;
-  const taxWithholding = gross * 0.22; // Placeholder 22% overall tax for simple visual
-  let postTaxWithholding = 0;
+export function calculateWithholdings(gross: number, deductions: WithholdingProfile["deductions"], frequency: string) {
+  let totalWithheld = 0;
 
   for (const deduction of deductions) {
-    let amount = deduction.value;
     if (deduction.kind === "percentOfGross") {
-      amount = (deduction.value / 100) * gross;
-    }
-
-    if (deduction.when === "preTax") {
-      preTaxWithholding += amount;
-      netPay -= amount;
-    } else if (deduction.when === "postTax") {
-      postTaxWithholding += amount;
-      netPay -= amount;
+      totalWithheld += (deduction.value / 100) * gross;
+    } else {
+      totalWithheld += deduction.value;
     }
   }
 
-  netPay -= taxWithholding;
-  const totalWithholding = preTaxWithholding + taxWithholding + postTaxWithholding;
+  const netPay = Math.max(0, gross - totalWithheld);
+  
+  // Find monthly conversion multiplier
+  const option = payFrequencyOptions.find((o) => o.value === frequency);
+  const multiplier = option ? option.multiplier : 2; 
 
-  return { netPay, totalWithholding, taxWithholding };
+  return {
+    netPay,
+    totalWithheld,
+    estimatedMonthlyNet: netPay * multiplier,
+    estimatedMonthlyGross: gross * multiplier
+  };
 }
 
 export default function ProfileEditorDialog({
@@ -97,19 +92,20 @@ export default function ProfileEditorDialog({
   const [newDeductionLabel, setNewDeductionLabel] = useState("");
   const [newDeductionValue, setNewDeductionValue] = useState("0");
   const [newDeductionKind, setNewDeductionKind] = useState<"percentOfGross" | "flatAmount">("percentOfGross");
-  const [newDeductionWhen, setNewDeductionWhen] = useState<"preTax" | "postTax">("preTax");
 
   useEffect(() => {
-    if (open && isEditing && editingProfileId) {
+    if (!open) return;
+
+    if (isEditing && editingProfileId) {
       const profile = getProfileById(editingProfileId);
       if (profile) {
         setProfileName(profile.name);
         setPayFrequency(profile.payFrequency);
         setGrossSalary(String(profile.grossSalary));
         setRelatedCashflowId(profile.linkedIncomeCashflowId);
-        setDeductions(profile.deductions);
+        setDeductions(profile.deductions || []);
       }
-    } else if (open) {
+    } else {
       setProfileName("");
       setPayFrequency("biweekly");
       setGrossSalary("0");
@@ -132,7 +128,12 @@ export default function ProfileEditorDialog({
         payFrequency: payFrequency as WithholdingProfile["payFrequency"],
         grossSalary: Number(grossSalary),
         linkedIncomeCashflowId: relatedCashflowId,
-        deductions: deductions,
+        deductions: deductions.map(d => ({
+          label: d.label,
+          value: d.value,
+          kind: d.kind,
+          when: d.when || "preTax" // Defaulting fallback back-compatibility cleanly
+        })),
       };
 
       if (isEditing) {
@@ -166,7 +167,7 @@ export default function ProfileEditorDialog({
       label: newDeductionLabel.trim(),
       value,
       kind: newDeductionKind,
-      when: newDeductionWhen,
+      when: "preTax" as const,
     };
 
     setDeductions((prev) => [...prev, newDeduction]);
@@ -175,13 +176,13 @@ export default function ProfileEditorDialog({
   }
 
   const calculatedValues = useMemo(() => {
-    return calculateWithholdings(Number(grossSalary), deductions);
-  }, [grossSalary, deductions]);
+    return calculateWithholdings(Number(grossSalary), deductions, payFrequency);
+  }, [grossSalary, deductions, payFrequency]);
 
   return (
     <Dialog fullWidth maxWidth="md" onClose={onClose} open={open}>
       <DialogTitle>
-        {isEditing ? `Edit Profile: ${profileName}` : "Create Withholding Profile"}
+        {isEditing ? `Edit Pay Stub Profile` : "Create Pay Stub Profile"}
         <IconButton
           aria-label="close"
           onClick={onClose}
@@ -194,14 +195,14 @@ export default function ProfileEditorDialog({
         <Stack spacing={3}>
           {error && <Alert severity="error">{error}</Alert>}
 
-          {/* Primary Profile Details */}
+          {/* Core Income Details */}
           <Card sx={{ bgcolor: "#f8fafc", border: "1px solid", borderColor: "divider", borderRadius: 2 }} elevation={0}>
             <CardContent sx={{ p: 2 }}>
               <Grid container spacing={1.5}>
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <TextField
                     fullWidth
-                    label="Profile Name"
+                    label="Profile Name (e.g. Primary Job)"
                     onChange={(e) => setProfileName(e.target.value)}
                     size="small"
                     value={profileName}
@@ -209,8 +210,8 @@ export default function ProfileEditorDialog({
                 </Grid>
                 <Grid size={{ xs: 12, sm: 3 }}>
                   <FormControl fullWidth size="small">
-                    <InputLabel>Frequency</InputLabel>
-                    <Select onChange={(e) => setPayFrequency(e.target.value)} value={payFrequency} label="Frequency">
+                    <InputLabel>Pay Frequency</InputLabel>
+                    <Select onChange={(e) => setPayFrequency(e.target.value)} value={payFrequency} label="Pay Frequency">
                       {payFrequencyOptions.map((opt) => (
                         <MenuItem key={opt.value} value={opt.value}>
                           {opt.label}
@@ -222,7 +223,7 @@ export default function ProfileEditorDialog({
                 <Grid size={{ xs: 12, sm: 3 }}>
                   <TextField
                     fullWidth
-                    label="Gross Salary"
+                    label="Gross Pay"
                     onChange={(e) => setGrossSalary(e.target.value)}
                     size="small"
                     type="number"
@@ -232,174 +233,158 @@ export default function ProfileEditorDialog({
                 </Grid>
                 <Grid size={{ xs: 12 }}>
                   <Autocomplete
-                    getOptionLabel={(option) => `${option.name} (${formatCurrency(option.estimatedMonthly)})`}
+                    getOptionLabel={(option) => `${option.name} (${formatCurrency(option.estimatedMonthly)}/mo expected)`}
                     options={incomeCashflows}
                     size="small"
                     value={incomeCashflows.find((c) => c.id === relatedCashflowId) || null}
                     onChange={(_, newValue) => setRelatedCashflowId(newValue ? newValue.id : "")}
-                    renderInput={(params) => <TextField {...params} label="Link to Income Cashflow" />}
+                    renderInput={(params) => <TextField {...params} label="Link directly to Income Budget Category" />}
                   />
                 </Grid>
               </Grid>
             </CardContent>
           </Card>
 
-          {/* Result Summary */}
+          {/* Simple Calculations Output Card */}
           <Card
             sx={{
-              bgcolor: "#ecfdf5",
-              border: "1px dashed",
-              borderColor: "divider",
+              bgcolor: "#f0fdf4",
+              border: "1px solid",
+              borderColor: "#bbf7d0",
               borderRadius: 2,
               color: "#166534",
             }}
             elevation={0}
           >
             <CardContent sx={{ p: 2 }}>
-              <Typography variant="subtitle2" sx={{ display: "flex", alignItems: "center", gap: 1, fontWeight: 600, mb: 1 }}>
-                <TrendingUpRoundedIcon sx={{ fontSize: 18 }} /> Result Summary
+              <Typography variant="subtitle2" sx={{ display: "flex", alignItems: "center", gap: 1, fontWeight: 700, mb: 1.5}}>
+                Paycheck Math Breakdown
               </Typography>
-              <Stack sx={{ bgcolor: "#ffffff", border: "1px solid", borderColor: "divider", borderRadius: 1.5, p: 1 }} spacing={1}>
-                <Box sx={{ display: "flex", justifyContent: "space-between", color: "text.secondary" }}>
-                  <Typography variant="body2">Calculated Total Withholding</Typography>
-                  <Typography variant="body2" sx={{ color: "#dc2626", fontWeight: 600 }}>
-                    ({formatCurrency(calculatedValues.totalWithholding)})
-                  </Typography>
-                </Box>
-                <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>Estimated Net Pay</Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 800 }}>{formatCurrency(calculatedValues.netPay)}</Typography>
-                </Box>
-              </Stack>
+              <Divider sx={{ mb: 1.5 }} />
+              <Grid container spacing={3}>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <Typography variant="caption" sx={{ textTransform: 'uppercase', tracking: 0.5, fontWeight: 700, color: 'text.secondary' }}>Per Paycheck</Typography>
+                  <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+                    <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                      <Typography variant="body2">Gross Pay Amount:</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatCurrency(Number(grossSalary))}</Typography>
+                    </Box>
+                    <Box sx={{ display: "flex", justifyContent: "space-between", color: "#dc2626" }}>
+                      <Typography variant="body2">Total Withheld/Deducted:</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>-{formatCurrency(calculatedValues.totalWithheld)}</Typography>
+                    </Box>
+                    <Box sx={{ display: "flex", justifyContent: "space-between", pt: 0.5, borderTop: "1px solid", borderColor: "divider" }}>
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>Take-Home Deposit:</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>{formatCurrency(calculatedValues.netPay)}</Typography>
+                    </Box>
+                  </Stack>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <Typography variant="caption" sx={{ textTransform: 'uppercase', tracking: 0.5, fontWeight: 700, color: 'text.secondary' }}>Estimated Monthly Impact</Typography>
+                  <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+                    <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                      <Typography variant="body2">Projected Monthly Gross:</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatCurrency(calculatedValues.estimatedMonthlyGross)}</Typography>
+                    </Box>
+                    <Box sx={{ display: "flex", justifyContent: "space-between", pt: 1, borderTop: "1px dashed", borderColor: "#bbf7d0" }}>
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>Projected Monthly Net:</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 800, fontSize: "1rem" }}>{formatCurrency(calculatedValues.estimatedMonthlyNet)}</Typography>
+                    </Box>
+                  </Stack>
+                </Grid>
+              </Grid>
             </CardContent>
           </Card>
 
-          {/* Deductions Section */}
+          {/* Deductions Builder Form */}
           <Box>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>Add Withholdings & Deductions</Typography>
-            <Card sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2 }} elevation={0}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>Pay Stub Line Items (Taxes, 401k, Insurance)</Typography>
+            <Card sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, bgcolor: "#fafafa" }} elevation={0}>
               <CardContent sx={{ p: 2 }}>
-                <Stack spacing={2}>
-                  <Grid container spacing={1.5}>
-                    <Grid size={{ xs: 12, sm: 4 }}>
-                      <TextField
-                        fullWidth
-                        label="Label (e.g., 401(k))"
-                        onChange={(e) => setNewDeductionLabel(e.target.value)}
-                        size="small"
-                        value={newDeductionLabel}
-                      />
-                    </Grid>
-                    <Grid size={{ xs: 12, sm: 2.5 }}>
-                      <TextField
-                        fullWidth
-                        label="Value"
-                        onChange={(e) => setNewDeductionValue(e.target.value)}
-                        size="small"
-                        type="number"
-                        value={newDeductionValue}
-                        slotProps={{
-                          input: {
-                            startAdornment: newDeductionKind === "flatAmount" ? <InputAdornment position="start">$</InputAdornment> : null,
-                          }
-                        }}
-                      />
-                    </Grid>
-                    <Grid size={{ xs: 12, sm: 2.5 }}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Kind</InputLabel>
-                        <Select onChange={(e) => setNewDeductionKind(e.target.value as any)} value={newDeductionKind} label="Kind">
-                          <MenuItem value="percentOfGross">Gross %</MenuItem>
-                          <MenuItem value="flatAmount">Flat $</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                    <Grid size={{ xs: 12, sm: 3 }}>
-                      <Box sx={{ display: "flex", alignItems: "center", height: "40px" }}>
-                        <Typography variant="caption" sx={{ color: newDeductionWhen === "preTax" ? "#166534" : "text.secondary", fontWeight: 600 }}>
-                          Pre-tax
-                        </Typography>
-                        <Switch
-                          checked={newDeductionWhen === "postTax"}
-                          color="primary"
-                          size="small"
-                          onChange={(e) => setNewDeductionWhen(e.target.checked ? "postTax" : "preTax")}
-                        />
-                        <Typography variant="caption" sx={{ color: newDeductionWhen === "postTax" ? "#166534" : "text.secondary", fontWeight: 600 }}>
-                          Post-tax
-                        </Typography>
-                      </Box>
-                    </Grid>
+                <Grid container spacing={1.5}>
+                  <Grid size={{ xs: 12, sm: 5 }}>
+                    <TextField
+                      fullWidth
+                      label="Item Label (e.g. Federal Tax, Health Ins.)"
+                      onChange={(e) => setNewDeductionLabel(e.target.value)}
+                      size="small"
+                      value={newDeductionLabel}
+                      slotProps={{ htmlInput: { style: { backgroundColor: '#fff' } } }}
+                    />
                   </Grid>
-
-                  <Box sx={{ bgcolor: "#f8fafc", border: "1px solid", borderColor: "divider", borderRadius: 1.5, p: 2 }}>
-                    <Grid container spacing={1.5}>
-                      <Grid size={{ xs: 12, sm: 9 }}>
-                        <FormControlLabel
-                          control={<Switch size="small" />}
-                          label={<Typography variant="body2" color="text.secondary">Link to account transfer</Typography>}
-                        />
-                      </Grid>
-                      <Grid size={{ xs: 12, sm: 3 }}>
-                        <Button
-                          fullWidth
-                          onClick={handleAddDeduction}
-                          size="small"
-                          startIcon={<TrendingDownRoundedIcon />}
-                          variant="outlined"
-                          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 1.5 }}
-                        >
-                          Add Deduction
-                        </Button>
-                      </Grid>
-                    </Grid>
-                  </Box>
-                </Stack>
+                  <Grid size={{ xs: 12, sm: 2.5 }}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Type</InputLabel>
+                      <Select onChange={(e) => setNewDeductionKind(e.target.value as any)} value={newDeductionKind} label="Type" sx={{ bgcolor: '#fff' }}>
+                        <MenuItem value="percentOfGross">% Percentage</MenuItem>
+                        <MenuItem value="flatAmount">$ Flat Amount</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 2.5 }}>
+                    <TextField
+                      fullWidth
+                      label="Amount"
+                      onChange={(e) => setNewDeductionValue(e.target.value)}
+                      size="small"
+                      type="number"
+                      value={newDeductionValue}
+                      slotProps={{
+                        htmlInput: { style: { backgroundColor: '#fff' } },
+                        input: {
+                          startAdornment: newDeductionKind === "flatAmount" ? <InputAdornment position="start">$</InputAdornment> : null,
+                          endAdornment: newDeductionKind === "percentOfGross" ? <InputAdornment position="end">%</InputAdornment> : null,
+                        }
+                      }}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 2 }}>
+                    <Button
+                      fullWidth
+                      onClick={handleAddDeduction}
+                      size="medium"
+                      startIcon={<TrendingDownRoundedIcon />}
+                      variant="contained"
+                      color="secondary"
+                      sx={{ textTransform: "none", fontWeight: 600, borderRadius: 1.5, height: "40px" }}
+                    >
+                      Add
+                    </Button>
+                  </Grid>
+                </Grid>
               </CardContent>
             </Card>
 
-            {/* List of current deductions */}
+            {/* List of active line items copyable from user stub */}
             {deductions.length > 0 && (
               <Stack spacing={1} sx={{ mt: 2 }}>
                 {deductions.map((deduction, index) => (
                   <Card
                     key={index}
                     sx={{
-                      bgcolor: deduction.when === "preTax" ? "#ecfdf5" : "#f8fafc",
+                      bgcolor: "#ffffff",
                       border: "1px solid",
                       borderColor: "divider",
                       borderRadius: 1.5,
                     }}
                     elevation={0}
                   >
-                    <CardContent sx={{ p: "10px 16px" }}>
+                    <CardContent sx={{ p: "8px 16px" }}>
                       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <Stack spacing={0.25}>
                           <Typography variant="body2" sx={{ fontWeight: 600 }}>{deduction.label}</Typography>
                           <Typography variant="caption" color="text.secondary">
-                            {deduction.kind === "percentOfGross" ? `${deduction.value}% of gross` : `$${deduction.value} flat amount`}
+                            {deduction.kind === "percentOfGross" 
+                              ? `${deduction.value}% of gross (${formatCurrency((deduction.value / 100) * Number(grossSalary))})` 
+                              : `${formatCurrency(deduction.value)} flat amount`
+                            }
                           </Typography>
                         </Stack>
-                        <Box sx={{ display: "flex", alignItems: "center", spacing: 1.5 }}>
-                          <Chip
-                            label={deduction.when === "preTax" ? "Pre-Tax" : "Post-Tax"}
-                            size="small"
-                            sx={{
-                              bgcolor: deduction.when === "preTax" ? "#166534" : "#64748b",
-                              color: "white",
-                              fontSize: 10,
-                              fontWeight: 700,
-                              textTransform: "uppercase",
-                              borderRadius: 1,
-                              height: 18,
-                            }}
-                          />
-                          <Tooltip title="Remove Deduction">
-                            <IconButton onClick={() => setDeductions((prev) => prev.filter((_, i) => i !== index))} size="small">
-                              <DeleteRoundedIcon sx={{ color: "#dc2626", fontSize: 16 }} />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
+                        <Tooltip title="Delete Item">
+                          <IconButton onClick={() => setDeductions((prev) => prev.filter((_, i) => i !== index))} size="small">
+                            <DeleteRoundedIcon sx={{ color: "#dc2626", fontSize: 18 }} />
+                          </IconButton>
+                        </Tooltip>
                       </Box>
                     </CardContent>
                   </Card>
@@ -414,7 +399,7 @@ export default function ProfileEditorDialog({
           Cancel
         </Button>
         <Button disabled={isSaving} onClick={handleSave} variant="contained" sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2 }}>
-          {isSaving ? "Saving..." : isEditing ? "Save Profile Changes" : "Create Profile"}
+          {isSaving ? "Saving..." : isEditing ? "Save Changes" : "Create Profile"}
         </Button>
       </DialogActions>
     </Dialog>
