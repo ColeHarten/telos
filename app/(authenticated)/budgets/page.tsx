@@ -22,8 +22,6 @@ import {
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 
-// Month picker utilities and control are provided by components/MonthPickerControl
-
 type BudgetGroup = {
   title: string;
   description: string;
