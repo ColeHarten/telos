@@ -25,6 +25,7 @@ const navItems = [
   { label: "Accounts", href: "/accounts" },
   { label: "Cashflows", href: "/cashflows" },
   { label: "Budgets", href: "/budgets" },
+  { label: "Transactions", href: "/transactions" },
   { label: "Settings", href: "/settings" },
 ];
 
