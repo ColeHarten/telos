@@ -13,13 +13,24 @@ export type NormalBalance = "asset" | "liability";
 
 export type Account = {
   id: string;
+
+  // Common
   name: string;
   accountType: AccountType;
   normalBalance: NormalBalance;
+
   startingBalance?: number;
   currentBalance?: number;
-  isManual?: boolean;
+
+  isManual: boolean;
   isArchived: boolean;
+
+  // Plaid fields (null for manual accounts)
+  plaidAccountId?: string | null;
+  plaidItemId?: string | null;
+  plaidMask?: string | null;
+
+  // Metadata
   createdAt?: unknown;
   updatedAt?: unknown;
 };

@@ -1,4 +1,5 @@
 import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
+import type { AccountType, NormalBalance } from "@/lib/types/types";
 
 const config = new Configuration({
   basePath: PlaidEnvironments.sandbox,
@@ -47,4 +48,85 @@ export async function syncTransactions(accessToken: string, cursor?: string) {
   });
 
   return res.data;
+}
+
+export async function getInstitutionForItem(accessToken: string) {
+  const itemResponse = await plaidClient.itemGet({
+    access_token: accessToken,
+  });
+
+  const institutionId =
+    itemResponse.data.item.institution_id;
+
+  if (!institutionId) {
+    return null;
+  }
+
+  const institutionResponse =
+    await plaidClient.institutionsGetById({
+      institution_id: institutionId,
+      country_codes: ["US"],
+    });
+
+  return {
+    institutionId,
+    institutionName:
+      institutionResponse.data.institution.name,
+  };
+}
+
+export function mapPlaidAccountType(
+  account: {
+    type?: string | null;
+    subtype?: string | null;
+  }
+): AccountType {
+  const type = account.type?.toLowerCase();
+  const subtype = account.subtype?.toLowerCase();
+
+  // Depository accounts
+  if (type === "depository") {
+    return "cash";
+  }
+
+  // Credit cards
+  if (type === "credit") {
+    return "credit_card";
+  }
+
+  // Loans
+  if (type === "loan") {
+    return "loan";
+  }
+
+  // Retirement accounts
+  if (
+    subtype?.includes("401k") ||
+    subtype?.includes("ira") ||
+    subtype?.includes("roth")
+  ) {
+    return "retirement";
+  }
+
+  // Investment accounts
+  if (type === "investment") {
+    return "investment";
+  }
+
+  return "other_asset";
+}
+
+export function getNormalBalanceFromPlaid(
+  account: {
+    type?: string | null;
+  }
+): NormalBalance {
+  switch (account.type) {
+    case "credit":
+    case "loan":
+      return "liability";
+
+    default:
+      return "asset";
+  }
 }

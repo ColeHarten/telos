@@ -28,27 +28,50 @@ export function useAccounts(user: any, authLoading: boolean) {
       (snapshot) => {
         const next = snapshot.docs.map((d) => {
           const data = d.data();
+
           return {
             id: d.id,
+
             name: data.name ?? "",
-            accountType: (data.accountType ?? ("cash" as AccountType)) as AccountType,
-            normalBalance: (data.normalBalance ?? "asset") as any,
-            startingBalance: data.startingBalance === undefined ? undefined : Number(data.startingBalance),
-            currentBalance: data.currentBalance === undefined ? undefined : Number(data.currentBalance),
+
+            accountType: (data.accountType ??
+              "cash") as AccountType,
+
+            normalBalance: (data.normalBalance ??
+              "asset") as Account["normalBalance"],
+
+            startingBalance:
+              data.startingBalance === undefined
+                ? undefined
+                : Number(data.startingBalance),
+
+            currentBalance:
+              data.currentBalance === undefined
+                ? undefined
+                : Number(data.currentBalance),
+
             isManual: Boolean(data.isManual ?? true),
             isArchived: Boolean(data.isArchived ?? false),
+
+            plaidAccountId: data.plaidAccountId ?? null,
+            plaidItemId: data.plaidItemId ?? null,
+            plaidInstitutionId:
+              data.plaidInstitutionId ?? null,
+            plaidInstitutionName:
+              data.plaidInstitutionName ?? null,
+            plaidMask: data.plaidMask ?? null,
+
             createdAt: data.createdAt,
             updatedAt: data.updatedAt,
-          } as Account;
+          } satisfies Account;
         });
 
         setAccounts(
           next.sort((a, b) => {
-            // 1. Primary Sort: Account Type (Alphabetical)
+            // 1. Primary Sort: Account Type (should group assets and liabilities together)
             const typeCompare = a.accountType.localeCompare(b.accountType);
             
             // 2. Secondary Sort: Current Balance (Highest to Lowest)
-            // Subtracting 'a' from 'b' reverses the order to descending
             return typeCompare || (b.currentBalance ?? 0) - (a.currentBalance ?? 0);
           })
         );
@@ -66,17 +89,35 @@ export function useAccounts(user: any, authLoading: boolean) {
     };
   }, [authLoading, user]);
 
-  async function addAccount(payload: { name: string; accountType: AccountType; normalBalance: string; startingBalance?: number; }) {
+  async function addManualAccount(payload: {
+    name: string;
+    accountType: AccountType;
+    normalBalance: string;
+    startingBalance?: number;
+  }) {
     if (!user) throw new Error("Not signed in");
-    const ref = doc(collection(db, "users", user.uid, "accounts"));
+
+    const ref = doc(
+      collection(db, "users", user.uid, "accounts")
+    );
+
     await setDoc(ref, {
       name: payload.name,
       accountType: payload.accountType,
       normalBalance: payload.normalBalance,
+
       startingBalance: payload.startingBalance ?? 0,
       currentBalance: payload.startingBalance ?? 0,
+
       isManual: true,
       isArchived: false,
+
+      plaidAccountId: null,
+      plaidItemId: null,
+      plaidInstitutionId: null,
+      plaidInstitutionName: null,
+      plaidMask: null,
+
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -98,22 +139,8 @@ export function useAccounts(user: any, authLoading: boolean) {
     });
   }
 
-  // Add this helper to the addAccount/update logic in useAccounts
-async function addSyncedAccount(name: string, plaidItemId: string) {
-  if (!user) throw new Error("Not signed in");
-  const ref = doc(collection(db, "users", user.uid, "accounts"));
-  await setDoc(ref, {
-    name,
-    accountType: "cash", // Or dynamically map from Plaid
-    normalBalance: "asset",
-    currentBalance: 0,
-    isManual: false, // Key change: this is a synced account
-    plaidItemId,
-    isArchived: false,
-    createdAt: serverTimestamp(),
-  });
-}
-  return { accounts, accountsLoading, error, addAccount, updateAccount, archiveAccount, addSyncedAccount };
+
+  return { accounts, accountsLoading, error, addManualAccount, updateAccount, archiveAccount };
 }
 
 export default useAccounts;

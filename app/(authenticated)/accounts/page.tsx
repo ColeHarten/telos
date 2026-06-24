@@ -4,9 +4,21 @@ import useAccounts from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
 import type { Account, AccountType, NormalBalance } from "@/lib/types/types";
 import { formatCurrency } from "@/lib/utils";
+import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
+import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
+import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
-import RestorePageRoundedIcon from "@mui/icons-material/RestorePageRounded";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
+import PieChartRoundedIcon from "@mui/icons-material/PieChartRounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import SecurityRoundedIcon from "@mui/icons-material/SecurityRounded";
+import SyncRoundedIcon from "@mui/icons-material/SyncRounded";
+import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
+import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import UnarchiveRoundedIcon from "@mui/icons-material/UnarchiveRounded";
 import {
   Alert,
@@ -15,51 +27,55 @@ import {
   Card,
   CardContent,
   Chip,
-  Divider,
-  FormControl,
-  Grid,
   IconButton,
   InputAdornment,
-  InputLabel,
+  Menu,
   MenuItem,
-  Select,
+  Paper,
   Snackbar,
   Stack,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
+import AccountFormDialog from "./AccountFormDialog";
 import { accountTypeStyles } from "./accountTypes";
-import { PlaidLinkButton } from "@/components/plaid/plaidLinkButton";
+import { PlaidLinkButton, type PlaidLinkRenderProps } from "./plaidLinkButton";
 
-function getNormalBalance(accountType: AccountType): NormalBalance {
-  if (
-    accountType === "credit_card" ||
-    accountType === "loan" ||
-    accountType === "other_liability"
-  ) {
-    return "liability";
-  }
-
-  return "asset";
-}
+type ViewFilter = "active" | "archived";
 
 export default function AccountsPage() {
   const { user, authLoading } = useAuth();
-  const { accounts, accountsLoading, addAccount, updateAccount, archiveAccount } = useAccounts(user, authLoading);
-  const isLoading = accountsLoading;
+  const { accounts, accountsLoading, addManualAccount, updateAccount, archiveAccount } = useAccounts(user, authLoading);
+  
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [newAccountName, setNewAccountName] = useState("");
-  const [newAccountType, setNewAccountType] = useState<AccountType>("cash");
-  const [newStartingBalance, setNewStartingBalance] = useState("");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedEditingAccount, setSelectedEditingAccount] = useState<Account | null>(null);
 
-  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
-  const isEditingAccount = editingAccountId !== null;
+  const [viewFilter, setViewFilter] = useState<ViewFilter>("active");
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Filter state for viewing active vs archived records
-  const [showArchived, setShowArchived] = useState(false);
+  const [addMenuAnchor, setAddMenuAnchor] = useState<HTMLElement | null>(null);
+  const addMenuOpen = Boolean(addMenuAnchor);
+
+  const [plaidTrigger, setPlaidTrigger] = useState<PlaidLinkRenderProps>({
+    onClick: () => {},
+    disabled: true,
+    label: "Loading...",
+  });
+
+  const [rowMenuAnchor, setRowMenuAnchor] = useState<HTMLElement | null>(null);
+  const [rowMenuAccountId, setRowMenuAccountId] = useState<string | null>(null);
 
   useEffect(() => {
     setError(null);
@@ -68,7 +84,18 @@ export default function AccountsPage() {
   const activeAccounts = useMemo(() => accounts.filter((account) => !account.isArchived), [accounts]);
   const archivedAccounts = useMemo(() => accounts.filter((account) => account.isArchived), [accounts]);
 
-  const displayedAccounts = showArchived ? archivedAccounts : activeAccounts;
+  const baseFilteredAccounts = useMemo(() => {
+    if (viewFilter === "active") return activeAccounts;
+    if (viewFilter === "archived") return archivedAccounts;
+    return accounts;
+  }, [viewFilter, accounts, activeAccounts, archivedAccounts]);
+
+  const displayedAccounts = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return baseFilteredAccounts.filter((account) => {
+      return query.length === 0 || account.name.toLowerCase().includes(query);
+    });
+  }, [baseFilteredAccounts, searchQuery]);
 
   const accountSummary = useMemo(() => {
     let assetTotal = 0;
@@ -76,7 +103,6 @@ export default function AccountsPage() {
 
     for (const account of activeAccounts) {
       const balance = account.currentBalance ?? account.startingBalance ?? 0;
-
       if (account.normalBalance === "asset") {
         assetTotal += balance;
       } else {
@@ -85,39 +111,47 @@ export default function AccountsPage() {
     }
 
     return {
-      assetCount: activeAccounts.filter(
-        (account) => account.normalBalance === "asset"
-      ).length,
-      liabilityCount: activeAccounts.filter(
-        (account) => account.normalBalance === "liability"
-      ).length,
+      assetCount: activeAccounts.filter((account) => account.normalBalance === "asset").length,
+      liabilityCount: activeAccounts.filter((account) => account.normalBalance === "liability").length,
       assetTotal,
       liabilityTotal,
       netWorth: assetTotal - liabilityTotal,
+      totalCount: accounts.length,
+      activeCount: activeAccounts.length,
+      archivedCount: archivedAccounts.length,
     };
-  }, [activeAccounts]);
+  }, [activeAccounts, accounts, archivedAccounts.length]);
 
-  async function handleAddAccount() {
-    const trimmedName = newAccountName.trim();
+  const handleOpenAddForm = () => {
+    setSelectedEditingAccount(null);
+    setDialogOpen(true);
+  };
 
-    if (!trimmedName) {
-      setError("Account name is required.");
+  const handleOpenEditForm = (account: Account) => {
+    setSelectedEditingAccount(account);
+    setDialogOpen(true);
+  };
+
+  const handleSaveAccountForm = async (formData: {
+    name: string;
+    accountType: AccountType;
+    normalBalance: NormalBalance;
+    balance: number;
+  }) => {
+    if (Number.isNaN(formData.balance)) {
+      setError("Balance must be a valid number.");
       return;
     }
 
-    // Case-insensitive duplicate prevention check
+    // Duplicate check
     const isDuplicate = accounts.some(
-      (a) => a.name.toLowerCase() === trimmedName.toLowerCase() && !a.isArchived
+      (a) =>
+        a.id !== selectedEditingAccount?.id &&
+        a.name.toLowerCase() === formData.name.toLowerCase() &&
+        !a.isArchived
     );
     if (isDuplicate) {
-      setError(`An active account named "${trimmedName}" already exists.`);
-      return;
-    }
-
-    const parsedStartingBalance = Number(newStartingBalance || 0);
-
-    if (Number.isNaN(parsedStartingBalance)) {
-      setError("Starting balance must be a valid number.");
+      setError(`An active account named "${formData.name}" already exists.`);
       return;
     }
 
@@ -125,103 +159,44 @@ export default function AccountsPage() {
       setError(null);
       setIsSaving(true);
 
-      const normalBalance = getNormalBalance(newAccountType);
+      if (selectedEditingAccount) {
+        // Safe Update Logic Configuration
+        const payload: Partial<Account> = {
+          name: formData.name,
+          accountType: formData.accountType,
+          normalBalance: formData.normalBalance,
+        };
 
-      await addAccount({
-        name: trimmedName,
-        accountType: newAccountType,
-        normalBalance,
-        startingBalance: parsedStartingBalance,
-      });
+        // Disallow updating balances manually if the account is a Synced Plaid account
+        if (!selectedEditingAccount.plaidItemId) {
+          payload.startingBalance = formData.balance;
+          payload.currentBalance = formData.balance;
+        }
 
-      setNewAccountName("");
-      setNewAccountType("cash");
-      setNewStartingBalance("");
+        await updateAccount(selectedEditingAccount.id, payload);
+      } else {
+        await addManualAccount({
+          name: formData.name,
+          accountType: formData.accountType,
+          normalBalance: formData.normalBalance,
+          startingBalance: formData.balance,
+        });
+      }
+
+      setDialogOpen(false);
+      setSelectedEditingAccount(null);
     } catch (saveError) {
       console.error(saveError);
-      setError("Could not add account.");
+      setError("Could not complete requested update operation.");
     } finally {
       setIsSaving(false);
     }
-  }
-
-  function handleStartEditAccount(account: Account) {
-    setError(null);
-    setEditingAccountId(account.id);
-    setNewAccountName(account.name);
-    setNewAccountType(account.accountType);
-    setNewStartingBalance(String(account.currentBalance ?? account.startingBalance));
-  }
-
-  function handleCancelEditAccount() {
-    setError(null);
-    setEditingAccountId(null);
-    setNewAccountName("");
-    setNewAccountType("cash");
-    setNewStartingBalance("");
-  }
-
-  async function handleSaveEditedAccount() {
-    if (!user || !editingAccountId) {
-      return;
-    }
-
-    const trimmedName = newAccountName.trim();
-
-    if (!trimmedName) {
-        setError("Account name is required.");
-        return;
-    }
-
-    // Case-insensitive duplicate prevention check (ignoring current editing account)
-    const isDuplicate = accounts.some(
-      (a) => a.id !== editingAccountId && a.name.toLowerCase() === trimmedName.toLowerCase() && !a.isArchived
-    );
-    if (isDuplicate) {
-      setError(`Another active account named "${trimmedName}" already exists.`);
-      return;
-    }
-
-    const parsedBalance = Number(newStartingBalance || 0);
-
-    if (Number.isNaN(parsedBalance)) {
-        setError("Balance must be a valid number.");
-        return;
-    }
-
-    try {
-      setError(null);
-      setIsSaving(true);
-
-      const normalBalance = getNormalBalance(newAccountType);
-
-      await updateAccount(editingAccountId, {
-        name: trimmedName,
-        accountType: newAccountType,
-        normalBalance,
-        startingBalance: parsedBalance,
-        currentBalance: parsedBalance,
-      });
-
-      setEditingAccountId(null);
-      setNewAccountName("");
-      setNewAccountType("cash");
-      setNewStartingBalance("");
-    } catch (saveError) {
-      console.error(saveError);
-      setError("Could not update account.");
-    } finally {
-      setIsSaving(false);
-    }
-  }
+  };
 
   async function handleArchiveAccount(accountId: string) {
     try {
       setError(null);
       await archiveAccount(accountId);
-      if (editingAccountId === accountId) {
-        handleCancelEditAccount();
-      }
     } catch (archiveError) {
       console.error(archiveError);
       setError("Could not archive account.");
@@ -245,17 +220,21 @@ export default function AccountsPage() {
     }
   }
 
-  async function handleSubmitAccount() {
-    if (isEditingAccount) {
-        await handleSaveEditedAccount();
-        return;
-    }
-
-    await handleAddAccount();
+  function handleOpenRowMenu(event: React.MouseEvent<HTMLElement>, accountId: string) {
+    setRowMenuAnchor(event.currentTarget);
+    setRowMenuAccountId(accountId);
   }
+
+  function handleCloseRowMenu() {
+    setRowMenuAnchor(null);
+    setRowMenuAccountId(null);
+  }
+
+  const rowMenuAccount = accounts.find((a) => a.id === rowMenuAccountId) ?? null;
 
   return (
     <Stack spacing={2.25}>
+      {/* Header */}
       <Stack
         spacing={2}
         sx={{
@@ -265,537 +244,318 @@ export default function AccountsPage() {
         }}
       >
         <Box>
-          <Typography
-            variant="h4"
-            sx={{
-              fontWeight: 700,
-              letterSpacing: "-0.03em",
-            }}
-          >
+          <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: "-0.03em" }}>
             Accounts
           </Typography>
         </Box>
-      </Stack>
 
-      {error && <Snackbar
-        open={error !== null}
-        autoHideDuration={5000}
-        onClose={() => setError(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
-        >
-        <Alert
-            severity="error"
-            variant="filled"
-            onClose={() => setError(null)}
+        <Stack direction="row" spacing={1.25} sx={{ flexShrink: 0 }}>
+          <Button
+            variant="outlined"
+            startIcon={<SyncRoundedIcon />}
+            onClick={() => window.location.reload()}
             sx={{
-            borderRadius: 2,
-            boxShadow: "0 12px 32px rgba(15, 23, 42, 0.18)",
-            fontWeight: 600,
-            }}
-        >
-            {error}
-        </Alert>
-    </Snackbar>}
-
-    <Stack direction="row" spacing={1}>
-        <PlaidLinkButton onSyncSuccess={() => window.location.reload()} />
-      </Stack>
-
-      <Grid container spacing={1.5}>
-        <Grid size={{ xs: 12, sm: 4 }}>
-          <Card
-            elevation={0}
-            sx={{
-              border: "1px solid",
-              borderColor: "divider",
-              borderRadius: 3,
-              bgcolor: "background.paper",
-            }}
-          >
-            <CardContent sx={{ p: 2.25 }}>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ fontWeight: 600 }}
-              >
-                Assets
-              </Typography>
-
-              <Typography
-                variant="h5"
-                sx={{
-                  mt: 0.25,
-                  color: "#059669",
-                  fontWeight: 800,
-                  letterSpacing: "-0.03em",
-                }}
-              >
-                {formatCurrency(accountSummary.assetTotal)}
-              </Typography>
-
-              <Typography variant="caption" color="text.secondary">
-                {accountSummary.assetCount} active accounts
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 4 }}>
-          <Card
-            elevation={0}
-            sx={{
-              border: "1px solid",
-              borderColor: "divider",
-              borderRadius: 3,
-              bgcolor: "background.paper",
-            }}
-          >
-            <CardContent sx={{ p: 2.25 }}>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ fontWeight: 600 }}
-              >
-                Liabilities
-              </Typography>
-
-              <Typography
-                variant="h5"
-                sx={{
-                  mt: 0.25,
-                  color: "#dc2626",
-                  fontWeight: 800,
-                  letterSpacing: "-0.03em",
-                }}
-              >
-                {formatCurrency(accountSummary.liabilityTotal)}
-              </Typography>
-
-              <Typography variant="caption" color="text.secondary">
-                {accountSummary.liabilityCount} active accounts
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 4 }}>
-          <Card
-            elevation={0}
-            sx={{
-              border: "1px solid",
-              borderColor: "divider",
-              borderRadius: 3,
-              bgcolor: "background.paper",
-            }}
-          >
-            <CardContent sx={{ p: 2.25 }}>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ fontWeight: 600 }}
-              >
-                Net Position
-              </Typography>
-
-              <Typography
-                variant="h5"
-                sx={{
-                  mt: 0.25,
-                  color: accountSummary.netWorth >= 0 ? "#059669" : "#dc2626",
-                  fontWeight: 800,
-                  letterSpacing: "-0.03em",
-                }}
-              >
-                {formatCurrency(accountSummary.netWorth)}
-              </Typography>
-
-              <Typography variant="caption" color="text.secondary">
-                Assets minus liabilities
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      <Card
-        elevation={0}
-        sx={{
-          border: "1px solid",
-          borderColor: "divider",
-          borderRadius: 3,
-          bgcolor: "background.paper",
-        }}
-      >
-        <CardContent sx={{ p: 2.25 }}>
-          <Typography
-            variant="body1"
-            sx={{
+              height: 40,
+              borderRadius: 2,
+              textTransform: "none",
               fontWeight: 700,
-              mb: 1.75,
+              whiteSpace: "nowrap",
             }}
           >
-            {isEditingAccount ? "Edit Account" : "Add New Account"}
-          </Typography>
+            Refresh Balances
+          </Button>
 
-          <Grid container spacing={1.5}>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label="Account name"
-                placeholder="e.g., Chase Checking"
-                value={newAccountName}
-                onChange={(event) => setNewAccountName(event.target.value)}
-                sx={{
-                  "& .MuiOutlinedInput-root": {
-                    height: 40,
-                    borderRadius: 2,
-                  },
-                }}
-              />
-            </Grid>
+          <Button
+            variant="contained"
+            startIcon={<AddRoundedIcon />}
+            endIcon={<ExpandMoreRoundedIcon />}
+            onClick={(event) => setAddMenuAnchor(event.currentTarget)}
+            sx={{
+              height: 40,
+              borderRadius: 2,
+              textTransform: "none",
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Add Account
+          </Button>
 
-            <Grid size={{ xs: 12, md: 3 }}>
-              <FormControl
-                fullWidth
-                size="small"
-                sx={{
-                  "& .MuiOutlinedInput-root": {
-                    height: 40,
-                    borderRadius: 2,
-                  },
+          <Menu
+            anchorEl={addMenuAnchor}
+            open={addMenuOpen}
+            onClose={() => setAddMenuAnchor(null)}
+            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+            transformOrigin={{ vertical: "top", horizontal: "right" }}
+            slotProps={{
+              paper: {
+                sx: {
+                  mt: 1,
+                  borderRadius: 3,
+                  width: 320,
+                  border: "1px solid",
+                  borderColor: "divider",
+                },
+              },
+            }}
+          >
+            <Box sx={{ px: 1.5, py: 1 }}>
+              <MenuItem
+                onClick={() => {
+                  setAddMenuAnchor(null);
+                  plaidTrigger.onClick();
                 }}
+                disabled={plaidTrigger.disabled}
+                sx={{ borderRadius: 2, py: 1.25, alignItems: "flex-start", gap: 1.5 }}
               >
-                <InputLabel>Account type</InputLabel>
-                <Select
-                  label="Account type"
-                  value={newAccountType}
-                  onChange={(event) =>
-                    setNewAccountType(event.target.value as AccountType)
-                  }
-                >
-                  <MenuItem value="cash">Cash</MenuItem>
-                  <MenuItem value="credit_card">Credit Card</MenuItem>
-                  <MenuItem value="investment">Investment</MenuItem>
-                  <MenuItem value="retirement">Retirement</MenuItem>
-                  <MenuItem value="loan">Loan</MenuItem>
-                  <MenuItem value="property">Property</MenuItem>
-                  <MenuItem value="crypto">Crypto</MenuItem>
-                  <MenuItem value="other_asset">Other Asset</MenuItem>
-                  <MenuItem value="other_liability">Other Liability</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 3 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label={isEditingAccount ? "Current balance" : "Starting balance"}
-                type="number"
-                value={newStartingBalance}
-                onChange={(event) => setNewStartingBalance(event.target.value)}
-                slotProps={{
-                    input: {
-                        startAdornment: (
-                            <InputAdornment position="start">$</InputAdornment>
-                        ),
-                    }
-                }}
-                sx={{
-                  "& .MuiOutlinedInput-root": {
-                    height: 40,
-                    borderRadius: 2,
-                  },
-                  "& input": {
-                    textAlign: "right",
-                  },
-                }}
-              />
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 2 }}>
                 <Box
-                    sx={{
-                        display: 'flex',
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: '10px',
-                    }}
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 2,
+                    bgcolor: "#eef2ff",
+                    color: "#4f46e5",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
                 >
-                    <Button
-                    fullWidth
-                    variant="contained"
-                    onClick={handleSubmitAccount}
-                    disabled={isSaving}
-                    sx={{
-                        height: 40,
-                        borderRadius: 2,
-                        textTransform: "none",
-                        fontWeight: 700,
-                    }}
-                    >
-                    {isEditingAccount ? "Save" : "Add"}
-                    </Button>
-
-                    {isEditingAccount && (
-                    <Button
-                        variant="outlined"
-                        onClick={handleCancelEditAccount}
-                        disabled={isSaving}
-                        sx={{
-                        height: 40,
-                        minWidth: 84,
-                        borderRadius: 2,
-                        textTransform: "none",
-                        fontWeight: 700,
-                        }}
-                    >
-                        Cancel
-                    </Button>
-                    )}
+                  <AccountBalanceRoundedIcon sx={{ fontSize: 20 }} />
                 </Box>
-            </Grid>
-          </Grid>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {plaidTrigger.disabled ? plaidTrigger.label : "Connect a Bank"}
+                  </Typography>
+                </Box>
+                <ChevronRightRoundedIcon sx={{ ml: "auto", color: "text.disabled", flexShrink: 0 }} />
+              </MenuItem>
+
+              <MenuItem
+                onClick={() => {
+                  setAddMenuAnchor(null);
+                  handleOpenAddForm();
+                }}
+                sx={{ borderRadius: 2, py: 1.25, alignItems: "flex-start", gap: 1.5 }}
+              >
+                <Box
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 2,
+                    bgcolor: "#ecfdf5",
+                    color: "#059669",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <EditNoteRoundedIcon sx={{ fontSize: 20 }} />
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    Add Manually
+                  </Typography>
+                </Box>
+                <ChevronRightRoundedIcon sx={{ ml: "auto", color: "text.disabled", flexShrink: 0 }} />
+              </MenuItem>
+            </Box>
+          </Menu>
+
+          <PlaidLinkButton
+            onSyncSuccess={() => window.location.reload()}
+            render={() => null}
+            onStateChange={setPlaidTrigger}
+          />
+        </Stack>
+      </Stack>
+
+      {error && (
+        <Snackbar open autoHideDuration={5000} onClose={() => setError(null)}>
+          <Alert severity="error" variant="filled" onClose={() => setError(null)} sx={{ borderRadius: 2, fontWeight: 600 }}>
+            {error}
+          </Alert>
+        </Snackbar>
+      )}
+
+      {/* Overview Cards */}
+      <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
+        <CardContent sx={{ p: 2.25 }}>
+          <Typography variant="body1" sx={{ fontWeight: 700, mb: 1.75 }}>
+            Overview
+          </Typography>
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", sm: "1fr 1fr 1fr 1fr" }, gap: 3 }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+              <Box sx={{ width: 40, height: 40, borderRadius: "50%", bgcolor: "#ecfdf5", color: "#059669", display: "flex", alignItems: "center", justifyValue: "center", justifyContent: "center" }}>
+                <TrendingUpRoundedIcon sx={{ fontSize: 20 }} />
+              </Box>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Assets</Typography>
+                <Typography sx={{ fontWeight: 800, color: "#059669" }}>{formatCurrency(accountSummary.assetTotal)}</Typography>
+                <Typography variant="caption" color="text.secondary">{accountSummary.assetCount} accounts</Typography>
+              </Box>
+            </Box>
+
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+              <Box sx={{ width: 40, height: 40, borderRadius: "50%", bgcolor: "#fef2f2", color: "#dc2626", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <TrendingDownRoundedIcon sx={{ fontSize: 20 }} />
+              </Box>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Liabilities</Typography>
+                <Typography sx={{ fontWeight: 800, color: "#dc2626" }}>-{formatCurrency(accountSummary.liabilityTotal)}</Typography>
+                <Typography variant="caption" color="text.secondary">{accountSummary.liabilityCount} accounts</Typography>
+              </Box>
+            </Box>
+
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+              <Box sx={{ width: 40, height: 40, borderRadius: "50%", bgcolor: "#eef2ff", color: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <PieChartRoundedIcon sx={{ fontSize: 20 }} />
+              </Box>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Net Worth</Typography>
+                <Typography sx={{ fontWeight: 800 }}>{formatCurrency(accountSummary.netWorth)}</Typography>
+              </Box>
+            </Box>
+
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+              <Box sx={{ width: 40, height: 40, borderRadius: "50%", bgcolor: "#eff6ff", color: "#2563eb", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <CreditCardRoundedIcon sx={{ fontSize: 20 }} />
+              </Box>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Total Accounts</Typography>
+                <Typography sx={{ fontWeight: 800 }}>{accountSummary.totalCount}</Typography>
+              </Box>
+            </Box>
+          </Box>
         </CardContent>
       </Card>
 
-      <Card
-        elevation={0}
-        sx={{
-          border: "1px solid",
-          borderColor: "divider",
-          borderRadius: 3,
-          overflow: "hidden",
-          bgcolor: "background.paper",
-        }}
-      >
-        <Box
-          sx={{
-            px: 2.25,
-            py: 1.5,
-            borderBottom: "1px solid",
-            borderColor: "divider",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center"
-          }}
-        >
-          <Typography variant="body1" sx={{ fontWeight: 700 }}>
-            Your Accounts
-          </Typography>
+      {/* Accounts Table Section */}
+      <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, overflow: "hidden" }}>
+        <Box sx={{ px: 2.25, pt: 1.5, borderBottom: "1px solid", borderColor: "divider" }}>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 1.5, mb: 1 }}>
+            <Tabs value={viewFilter} onChange={(_e, v: ViewFilter) => setViewFilter(v)} sx={{ minHeight: 0 }}>
+              <Tab
+                value="active"
+                sx={{ textTransform: "none", fontWeight: 700 }}
+                label={
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Box>Active</Box>
+                    <Chip size="small" label={accountSummary.activeCount} />
+                  </Box>
+                }
+              />
+              <Tab
+                value="archived"
+                sx={{ textTransform: "none", fontWeight: 700 }}
+                label={
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Box>Archived</Box>
+                    <Chip size="small" label={accountSummary.archivedCount} />
+                  </Box>
+                }
+              />
+            </Tabs>
 
-          {/* Toggle Button for viewing Archived Accounts */}
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={() => setShowArchived((prev) => !prev)}
-            startIcon={showArchived ? <RestorePageRoundedIcon /> : <ArchiveRoundedIcon />}
-            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, px: 1.5 }}
-          >
-            {showArchived ? "View Active" : `View Archived (${archivedAccounts.length})`}
-          </Button>
+            <TextField
+              size="small"
+              placeholder="Search accounts..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchRoundedIcon sx={{ fontSize: 18, color: "text.disabled" }} />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+              sx={{ width: 240, "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2 } }}
+            />
+          </Box>
         </Box>
 
         <CardContent sx={{ p: 0 }}>
-          <Box
-            sx={{
-              display: { xs: "none", md: "grid" },
-              gridTemplateColumns: "1fr 160px 140px 120px 96px",
-              px: 2.25,
-              py: 1,
-              bgcolor: "#f8fafc",
-              borderBottom: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            {["Account", "Type", "Balance", "Status", "Actions"].map(
-              (heading) => (
-                <Typography
-                  key={heading}
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{
-                    fontWeight: 700,
-                    textAlign: heading === "Actions" ? "right" : "left",
-                  }}
-                >
-                  {heading}
-                </Typography>
-              )
-            )}
-          </Box>
-
-          {isLoading ? (
-            <Box sx={{ p: 2.25 }}>
-              <Typography variant="body2" color="text.secondary">
-                Loading accounts...
-              </Typography>
-            </Box>
+          {accountsLoading ? (
+            <Box sx={{ p: 2.25 }}><Typography variant="body2" color="text.secondary">Loading...</Typography></Box>
           ) : displayedAccounts.length === 0 ? (
-            <Box sx={{ p: 2.25 }}>
-              <Typography variant="body2" color="text.secondary">
-                {showArchived ? "No archived accounts found." : "No accounts yet. Add your first account above."}
-              </Typography>
-            </Box>
+            <Box sx={{ p: 2.25 }}><Typography variant="body2" color="text.secondary">No accounts found.</Typography></Box>
           ) : (
-            displayedAccounts.map((account, index) => {
-              const style = accountTypeStyles[account.accountType];
-              const Icon = style.icon;
-              const balance = account.currentBalance ?? account.startingBalance ?? 0;
+            <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 0 }}>
+              <Table sx={{ minWidth: 650 }}>
+                <TableHead>
+                  <TableRow sx={{ bgcolor: "#f8fafc" }}>
+                    <TableCell sx={{ fontWeight: 700 }}>Account</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Type</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Balance</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {displayedAccounts.map((account) => {
+                    const styleConfig = accountTypeStyles[account.accountType] || { label: account.accountType, color: "#64748b" };
+                    const balance = account.currentBalance ?? account.startingBalance ?? 0;
 
-              return (
-                <Box key={account.id}>
-                  <Box
-                    sx={{
-                      display: "grid",
-                      gridTemplateColumns: {
-                        xs: "1fr",
-                        md: "1fr 160px 140px 120px 96px",
-                      },
-                      gap: { xs: 1, md: 0 },
-                      alignItems: "center",
-                      px: 2.25,
-                      py: { xs: 1.5, md: 1 },
-                      minHeight: { md: 48 },
-                    }}
-                  >
-                    <Box 
-                      sx={{
-                        display: "flex",
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: '10px'
-                      }}
-                    >
-                      <Box
-                        sx={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 2,
-                          bgcolor: style.background,
-                          color: style.color,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                        }}
-                      >
-                        <Icon sx={{ fontSize: 18 }} />
-                      </Box>
-
-                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        {account.name}
-                      </Typography>
-                      {!account.isManual && (
-                        <Chip label="Synced" size="small" sx={{ fontSize: 10, height: 18 }} />
-                      )}
-                    </Box>
-                    </Box>
-
-                    <Box>
-                      <Chip
-                        label={style.label}
-                        size="small"
-                        sx={{
-                          height: 22,
-                          color: style.color,
-                          bgcolor: style.background,
-                          fontWeight: 700,
-                          borderRadius: 1.25,
-                          "& .MuiChip-label": {
-                            px: 1,
-                            fontSize: 12,
-                          },
-                        }}
-                      />
-                    </Box>
-
-                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                      {formatCurrency(balance)}
-                    </Typography>
-
-                    <Box>
-                      <Chip
-                        label={account.isArchived ? "Archived" : "Active"}
-                        size="small"
-                        sx={{
-                          height: 22,
-                          color: account.isArchived ? "#475569" : "#059669",
-                          bgcolor: account.isArchived ? "#f1f5f9" : "#ecfdf5",
-                          fontWeight: 700,
-                          borderRadius: 1.25,
-                          "& .MuiChip-label": {
-                            px: 1,
-                            fontSize: 12,
-                          },
-                        }}
-                      />
-                    </Box>
-
-                    <Stack
-                      spacing={0.5}
-                      sx={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: { xs: "flex-start", md: "flex-end" },
-                        gap: "4px"
-                      }}
-                    >
-                      {!account.isArchived ? (
-                        <>
-                          <IconButton
-                            size="small"
-                            aria-label={`Edit ${account.name}`}
-                            onClick={() =>{ 
-                                if(isEditingAccount) {
-                                    handleCancelEditAccount();
-                                } else {
-                                    handleStartEditAccount(account)
-                                }
-                            }}
-                            sx={{
-                                color: "text.secondary",
-                            }}
-                            >
-                            <EditRoundedIcon sx={{ fontSize: 18 }} />
+                    return (
+                      <TableRow key={account.id} hover>
+                        <TableCell sx={{ fontWeight: 600}}>
+                          {account.name} <SyncRoundedIcon style={{ fontSize: 14, justifySelf: "center" }} />
+                        </TableCell>
+                        <TableCell>
+                          <Chip label={styleConfig.label} size="small" sx={{ 
+                            color: styleConfig.color, 
+                            bgcolor: `${styleConfig.color}10`,
+                            fontWeight: 600 
+                          }} />
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: 700, color: account.normalBalance === "liability" ? "#dc2626" : "text.primary" }}>
+                          {formatCurrency(balance)}
+                        </TableCell>
+                        <TableCell align="right">
+                          <IconButton size="small" onClick={(e) => handleOpenRowMenu(e, account.id)}>
+                            <MoreHorizRoundedIcon fontSize="small" />
                           </IconButton>
-
-                          <IconButton
-                            size="small"
-                            aria-label={`Archive ${account.name}`}
-                            onClick={() => handleArchiveAccount(account.id)}
-                            sx={{
-                              color: "#dc2626",
-                            }}
-                          >
-                            <ArchiveRoundedIcon sx={{ fontSize: 18 }} />
-                          </IconButton>
-                        </>
-                      ) : (
-                        <IconButton
-                          size="small"
-                          aria-label={`Restore ${account.name}`}
-                          onClick={() => handleRestoreAccount(account)}
-                          sx={{
-                            color: "#059669",
-                          }}
-                          title="Restore Account"
-                        >
-                          <UnarchiveRoundedIcon sx={{ fontSize: 18 }} />
-                        </IconButton>
-                      )}
-                    </Stack>
-                  </Box>
-
-                  {index < displayedAccounts.length - 1 && <Divider />}
-                </Box>
-              );
-            })
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
         </CardContent>
       </Card>
+
+      {/* Account Forms Dialog Popup Wrapper */}
+      <AccountFormDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        onSave={handleSaveAccountForm}
+        isSaving={isSaving}
+        editingAccount={selectedEditingAccount}
+      />
+
+      {/* Row context Action options menu popup */}
+      <Menu anchorEl={rowMenuAnchor} open={Boolean(rowMenuAnchor)} onClose={handleCloseRowMenu}>
+        {rowMenuAccount && !rowMenuAccount.isArchived && (
+          <MenuItem onClick={() => { handleOpenEditForm(rowMenuAccount); handleCloseRowMenu(); }} sx={{ gap: 1 }}>
+            <EditRoundedIcon sx={{ fontSize: 16 }} /> Edit
+          </MenuItem>
+        )}
+        {rowMenuAccount && !rowMenuAccount.isArchived ? (
+          <MenuItem onClick={() => { handleArchiveAccount(rowMenuAccount.id); handleCloseRowMenu(); }} sx={{ gap: 1, color: "error.main" }}>
+            <ArchiveRoundedIcon sx={{ fontSize: 16 }} /> Archive
+          </MenuItem>
+        ) : (
+          rowMenuAccount && (
+            <MenuItem onClick={() => { handleRestoreAccount(rowMenuAccount); handleCloseRowMenu(); }} sx={{ gap: 1, color: "success.main" }}>
+              <UnarchiveRoundedIcon sx={{ fontSize: 16 }} /> Restore
+            </MenuItem>
+          )
+        )}
+      </Menu>
     </Stack>
   );
 }

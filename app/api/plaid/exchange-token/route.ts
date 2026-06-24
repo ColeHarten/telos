@@ -3,6 +3,9 @@ import { requireUser } from "@/lib/services/auth";
 import {
   exchangePublicToken,
   fetchAccounts,
+  getInstitutionForItem,
+  mapPlaidAccountType,
+  getNormalBalanceFromPlaid,
 } from "@/lib/services/plaidService";
 import { adminDb } from "@/lib/firebaseAdmin";
 import { syncPlaidItem } from "@/lib/services/syncService";
@@ -15,7 +18,7 @@ export async function POST(req: Request) {
     const exchange = await exchangePublicToken(public_token);
 
     const accessToken = exchange.access_token;
-    const itemId = exchange.item_id;
+    const plaidItemId = exchange.item_id;
 
     const accounts = await fetchAccounts(accessToken);
 
@@ -23,14 +26,19 @@ export async function POST(req: Request) {
       .collection("users")
       .doc(user.uid)
       .collection("plaidItems")
-      .doc(itemId);
+      .doc(plaidItemId);
 
-    // SECURITY NOTE: encrypt in production
+    // store info about the institution with the item
+    const institution = await getInstitutionForItem(accessToken);
+
+    // SECURITY NOTE: encrypt these using a key derived from the user's id and a master key stored in the server environment
     await itemRef.set({
       accessToken,
-      itemId,
+      itemId: plaidItemId,
       cursor: "",
       createdAt: Date.now(),
+      institutionId: institution?.institutionId ?? null,
+      institutionName: institution?.institutionName ?? null,
     });
 
     const accountsRef = adminDb
@@ -40,19 +48,30 @@ export async function POST(req: Request) {
 
     for (const acc of accounts) {
       await accountsRef.doc(acc.account_id).set({
-        plaidAccountId: acc.account_id,
-        itemId,
+        // Common
         name: acc.name,
-        mask: acc.mask,
-        subtype: acc.subtype,
-        type: acc.type,
-        currentBalance: acc.balances.current,
-        availableBalance: acc.balances.available,
+
+        accountType: mapPlaidAccountType(acc),
+        normalBalance: getNormalBalanceFromPlaid(acc),
+
+        startingBalance: acc.balances.current ?? 0,
+        currentBalance: acc.balances.current ?? 0,
+
+        isManual: false,
+        isArchived: false,
+
+        // Plaid fields
+        plaidAccountId: acc.account_id,
+        plaidItemId: plaidItemId,
+        plaidMask: acc.mask ?? null,
+
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
       });
     }
 
     // initial sync
-    await syncPlaidItem(user.uid, itemId);
+    await syncPlaidItem(user.uid, plaidItemId);
 
     return NextResponse.json({ success: true });
   } catch (err) {
