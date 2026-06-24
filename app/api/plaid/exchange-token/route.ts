@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     const accountsRef = adminDb
       .collection("users")
       .doc(user.uid)
-      .collection("plaidAccounts");
+      .collection("accounts");
 
     for (const acc of accounts) {
       await accountsRef.doc(acc.account_id).set({

@@ -25,7 +25,7 @@ function PlaidLinkContent({ token, onSyncSuccess }: { token: string; onSyncSucce
     variant="contained"
     onClick={() => open()}
     disabled={!ready}
-    startIcon={<AccountBalanceIcon size="small" />}
+    startIcon={<AccountBalanceIcon />}
     sx={{
         textTransform: "none",
         fontWeight: 600,

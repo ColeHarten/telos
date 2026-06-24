@@ -42,7 +42,16 @@ export function useAccounts(user: any, authLoading: boolean) {
           } as Account;
         });
 
-        setAccounts(next);
+        setAccounts(
+          next.sort((a, b) => {
+            // 1. Primary Sort: Account Type (Alphabetical)
+            const typeCompare = a.accountType.localeCompare(b.accountType);
+            
+            // 2. Secondary Sort: Current Balance (Highest to Lowest)
+            // Subtracting 'a' from 'b' reverses the order to descending
+            return typeCompare || (b.currentBalance ?? 0) - (a.currentBalance ?? 0);
+          })
+        );
         setAccountsLoading(false);
       },
       (err) => {
