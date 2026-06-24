@@ -30,6 +30,7 @@ import {
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 import { accountTypeStyles } from "./accountTypes";
+import { PlaidLinkButton } from "@/components/plaid/plaidLinkButton";
 
 function getNormalBalance(accountType: AccountType): NormalBalance {
   if (
@@ -295,6 +296,10 @@ export default function AccountsPage() {
             {error}
         </Alert>
     </Snackbar>}
+
+    <Stack direction="row" spacing={1}>
+        <PlaidLinkButton onSyncSuccess={() => window.location.reload()} />
+      </Stack>
 
       <Grid container spacing={1.5}>
         <Grid size={{ xs: 12, sm: 4 }}>
@@ -679,9 +684,14 @@ export default function AccountsPage() {
                         <Icon sx={{ fontSize: 18 }} />
                       </Box>
 
+                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                       <Typography variant="body2" sx={{ fontWeight: 500 }}>
                         {account.name}
                       </Typography>
+                      {!account.isManual && (
+                        <Chip label="Synced" size="small" sx={{ fontSize: 10, height: 18 }} />
+                      )}
+                    </Box>
                     </Box>
 
                     <Box>

@@ -89,7 +89,22 @@ export function useAccounts(user: any, authLoading: boolean) {
     });
   }
 
-  return { accounts, accountsLoading, error, addAccount, updateAccount, archiveAccount };
+  // Add this helper to the addAccount/update logic in useAccounts
+async function addSyncedAccount(name: string, plaidItemId: string) {
+  if (!user) throw new Error("Not signed in");
+  const ref = doc(collection(db, "users", user.uid, "accounts"));
+  await setDoc(ref, {
+    name,
+    accountType: "cash", // Or dynamically map from Plaid
+    normalBalance: "asset",
+    currentBalance: 0,
+    isManual: false, // Key change: this is a synced account
+    plaidItemId,
+    isArchived: false,
+    createdAt: serverTimestamp(),
+  });
+}
+  return { accounts, accountsLoading, error, addAccount, updateAccount, archiveAccount, addSyncedAccount };
 }
 
 export default useAccounts;

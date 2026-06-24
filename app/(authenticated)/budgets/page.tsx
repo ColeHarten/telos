@@ -1,15 +1,16 @@
 "use client";
 
+import MonthPickerControl, { getCurrentMonthKey } from "@/components/MonthPickerControl";
+import useAccounts from "@/lib/hooks/useAccounts";
+import useAuth from "@/lib/hooks/useAuth";
+import useBudget from "@/lib/hooks/useBudget";
+import useCashflows from "@/lib/hooks/useCashflows";
 import type {
   BudgetLines
 } from "@/lib/types/types";
-import useAuth from "@/lib/hooks/useAuth";
-import useCashflows from "@/lib/hooks/useCashflows";
-import useAccounts from "@/lib/hooks/useAccounts";
-import useBudget from "@/lib/hooks/useBudget";
+import { formatCurrency } from "@/lib/utils";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
-import MonthPickerControl, { getCurrentMonthKey } from "@/components/MonthPickerControl";
 import {
   Alert,
   Box,
@@ -24,7 +25,6 @@ import {
   Typography
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
-import { formatCurrency } from "@/lib/utils";
 
 type BudgetGroup = {
   title: string;
