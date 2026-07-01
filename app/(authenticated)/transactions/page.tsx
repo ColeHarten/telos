@@ -55,6 +55,11 @@ import {
 } from "@mui/material";
 import { useState } from "react";
 
+const DEFAULT_PAGE_SIZE = 10;
+const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
+const MAX_VISIBLE_PAGES = 7;
+const PAGINATION_WINDOW = 1;
+
 // ---- Presentation helpers (visual mapping only — data itself is untouched/placeholder) ----
 
 function getMerchantAvatar(name: string = "") {
@@ -105,6 +110,31 @@ function getCategoryStyle(category: string = "") {
   return { color: "#64748b", icon: <LabelOutlinedIcon sx={{ fontSize: 16 }} /> };
 }
 
+function buildPaginationItems(currentPage: number, totalPages: number) {
+  if (totalPages <= MAX_VISIBLE_PAGES) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  const items: Array<number | "..."> = [1];
+  const windowStart = Math.max(2, currentPage - PAGINATION_WINDOW);
+  const windowEnd = Math.min(totalPages - 1, currentPage + PAGINATION_WINDOW);
+
+  if (windowStart > 2) {
+    items.push("...");
+  }
+
+  for (let page = windowStart; page <= windowEnd; page += 1) {
+    items.push(page);
+  }
+
+  if (windowEnd < totalPages - 1) {
+    items.push("...");
+  }
+
+  items.push(totalPages);
+  return items;
+}
+
 export default function TransactionsPage() {
   const { user, authLoading } = useAuth();
   const { accounts } = useAccounts(user, authLoading);
@@ -118,7 +148,13 @@ export default function TransactionsPage() {
 
   const [syncing, setSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
-  const [currentTab, setCurrentTab] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+
+  const totalPages = Math.max(1, Math.ceil(transactions.length / pageSize));
+  const currentPageSafe = Math.min(currentPage, totalPages);
+  const paginatedTransactions = transactions.slice((currentPageSafe - 1) * pageSize, currentPageSafe * pageSize);
+  const paginationItems = buildPaginationItems(currentPageSafe, totalPages);
 
   async function handleSync() {
     setSyncing(true);
@@ -150,6 +186,9 @@ export default function TransactionsPage() {
       return dateInput;
     }
   };
+
+  const startItem = transactions.length === 0 ? 0 : (currentPageSafe - 1) * pageSize + 1;
+  const endItem = Math.min(currentPageSafe * pageSize, transactions.length);
 
   return (
     <Stack spacing={3} sx={{ p: 4, bgcolor: "#f8fafc", minHeight: "100vh", fontFamily: "Inter, sans-serif" }}>
@@ -300,78 +339,50 @@ export default function TransactionsPage() {
         sx={{
           flexDirection: { xs: "column", sm: "row" },
           alignItems: { xs: "stretch", sm: "center" },
-          justifyContent: "space-between",
+          width: "100%",
+          justifyContent: "flex-end",
           gap: 1.5,
-          paddingBottom: 1,
-          borderBottom: "1px solid #e2e8f0"
         }}
       >
-        <Tabs
-          value={currentTab}
-          onChange={(_, val) => setCurrentTab(val)}
+        <TextField
+          size="small"
+          placeholder="Search transactions..."
+          slotProps={{ input: { 
+            sx: { fontSize: "0.85rem" },
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ color: "#94a3b8", fontSize: 18 }} />
+              </InputAdornment>
+            ),
+          } }}
           sx={{
-            minHeight: "auto",
-            "& .MuiTabs-indicator": { bgcolor: "#2563eb", height: 2 },
-            "& .MuiTab-root": {
-              textTransform: "none",
-              fontWeight: 600,
+            bgcolor: "#fff",
+            minWidth: 260,
+            "& .MuiOutlinedInput-root": {
+              borderRadius: 2,
               fontSize: "0.875rem",
-              minWidth: "auto",
-              minHeight: "auto",
-              px: 2,
-              pb: 1.5,
-              color: "#64748b",
-              "&.Mui-selected": { color: "#2563eb" },
+              "& fieldset": { borderColor: "#e2e8f0" },
+              "&:hover fieldset": { borderColor: "#cbd5e1" },
             },
           }}
+        />
+        <Button
+          variant="outlined"
+          startIcon={<FilterListIcon sx={{ fontSize: 17 }} />}
+          sx={{
+            borderColor: "#e2e8f0",
+            color: "#334155",
+            textTransform: "none",
+            fontWeight: 600,
+            fontSize: "0.85rem",
+            borderRadius: 2,
+            bgcolor: "#fff",
+            px: 1.75,
+            "&:hover": { borderColor: "#cbd5e1", bgcolor: "#f8fafc" },
+          }}
         >
-          <Tab label="All Transactions" />
-          <Tab label="Inflows" />
-          <Tab label="Outflows" />
-          <Tab label="Transfers" />
-        </Tabs>
-
-        <Stack direction="row" spacing={1.5} sx={{ pb: 1.5 }}>
-          <TextField
-            size="small"
-            placeholder="Search transactions..."
-            slotProps={{ input: { 
-              sx: { fontSize: "0.85rem" },
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon sx={{ color: "#94a3b8", fontSize: 18 }} />
-                </InputAdornment>
-              ),
-            } }}
-            sx={{
-              bgcolor: "#fff",
-              minWidth: 260,
-              "& .MuiOutlinedInput-root": {
-                borderRadius: 2,
-                fontSize: "0.875rem",
-                "& fieldset": { borderColor: "#e2e8f0" },
-                "&:hover fieldset": { borderColor: "#cbd5e1" },
-              },
-            }}
-          />
-          <Button
-            variant="outlined"
-            startIcon={<FilterListIcon sx={{ fontSize: 17 }} />}
-            sx={{
-              borderColor: "#e2e8f0",
-              color: "#334155",
-              textTransform: "none",
-              fontWeight: 600,
-              fontSize: "0.85rem",
-              borderRadius: 2,
-              bgcolor: "#fff",
-              px: 1.75,
-              "&:hover": { borderColor: "#cbd5e1", bgcolor: "#f8fafc" },
-            }}
-          >
-            Filters
-          </Button>
-        </Stack>
+          Filters
+        </Button>
       </Stack>
 
       {transactionsError && (
@@ -410,10 +421,10 @@ export default function TransactionsPage() {
               </TableHead>
 
               <TableBody>
-                {transactions.map((tx) => {
+                {paginatedTransactions.map((tx) => {
                   const isExpense = tx.amount > 0;
                   const merchant = getMerchantAvatar(tx.displayName);
-                  const categoryStyle = getCategoryStyle(tx.categoryDetailed || tx.categoryPrimary || undefined);
+                  const categoryStyle = getCategoryStyle(tx.categoryDetailed || tx.categoryPrimary || "");
 
                   return (
                     <TableRow key={tx.id} sx={{ "&:hover": { backgroundColor: "#f8fafc" }, "& td": { py: 1.75, borderBottom: "1px solid #f1f5f9" } }}>
@@ -510,42 +521,63 @@ export default function TransactionsPage() {
 
           {/* 5. Pagination View */}
           <Stack
-            sx={{ 
-              display: "flex", 
-              flexDirection: "row", 
-              px: 3, py: 2, 
-              borderTop: "1px solid #f1f5f9", 
-              bgcolor: "#fff",
-              alignItems: "center",
-              spacing: 2,
-            }}
+            direction={{ xs: "column", sm: "row" }}
+            spacing={2}
+            sx={{ px: 3, py: 2, borderTop: "1px solid #f1f5f9", bgcolor: "#fff", alignItems: "center", justifyContent: "space-between" }}
           >
             <Typography variant="body2" sx={{ color: "#64748b", fontSize: "0.85rem" }}>
-              Showing 1 to {Math.min(transactions.length, 10)} of {transactions.length} transactions
+              Showing {startItem} to {endItem} of {transactions.length} transactions
             </Typography>
 
-            <Stack sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 1, ml: "auto"}}>
-              <Stack sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 0.5 }}>
-                <IconButton size="small" disabled sx={{ border: "1px solid #e2e8f0", borderRadius: 1.5, p: 0.5 }}>
+            <Stack direction="row" spacing={3} sx={{ alignItems: "center" }}>
+              <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
+                <IconButton
+                  size="small"
+                  disabled={currentPageSafe === 1}
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  sx={{ border: "1px solid #e2e8f0", borderRadius: 1.5, p: 0.5 }}
+                >
                   <KeyboardArrowLeftIcon fontSize="small" />
                 </IconButton>
 
-                <Button size="small" variant="outlined" sx={{ minWidth: 30, height: 30, p: 0, borderRadius: 1.5, bgcolor: "#eff6ff", color: "#2563eb", borderColor: "#bfdbfe", fontWeight: 600, fontSize: "0.85rem" }}>
-                  1
-                </Button>
-                <Button size="small" sx={{ minWidth: 30, height: 30, p: 0, color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>2</Button>
-                <Button size="small" sx={{ minWidth: 30, height: 30, p: 0, color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>3</Button>
-                <Button size="small" sx={{ minWidth: 30, height: 30, p: 0, color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>4</Button>
-                <Button size="small" sx={{ minWidth: 30, height: 30, p: 0, color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>5</Button>
+                {paginationItems.map((pageItem, index) =>
+                  pageItem === "..." ? (
+                    <Typography
+                      key={`ellipsis-${index}`}
+                      sx={{ minWidth: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontWeight: 600, fontSize: "0.85rem", userSelect: "none" }}
+                    >
+                      ...
+                    </Typography>
+                  ) : (
+                    <Button
+                      key={pageItem}
+                      size="small"
+                      variant={pageItem === currentPageSafe ? "outlined" : "text"}
+                      onClick={() => setCurrentPage(pageItem)}
+                      sx={{ minWidth: 30, height: 30, p: 0, borderRadius: 1.5, bgcolor: pageItem === currentPageSafe ? "#eff6ff" : "transparent", color: pageItem === currentPageSafe ? "#2563eb" : "#64748b", borderColor: pageItem === currentPageSafe ? "#bfdbfe" : "transparent", fontWeight: 600, fontSize: "0.85rem" }}
+                    >
+                      {pageItem}
+                    </Button>
+                  )
+                )}
 
-                <IconButton size="small" sx={{ border: "1px solid #e2e8f0", borderRadius: 1.5, p: 0.5 }}>
+                <IconButton
+                  size="small"
+                  disabled={currentPageSafe === totalPages}
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                  sx={{ border: "1px solid #e2e8f0", borderRadius: 1.5, p: 0.5 }}
+                >
                   <KeyboardArrowRightIcon fontSize="small" />
                 </IconButton>
               </Stack>
 
               <Select
-                value={10}
+                value={pageSize}
                 size="small"
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value));
+                  setCurrentPage(1);
+                }}
                 sx={{
                   height: 34,
                   fontSize: "0.82rem",
@@ -556,9 +588,11 @@ export default function TransactionsPage() {
                   bgcolor: "#fff",
                 }}
               >
-                <MenuItem value={10}>10 per page</MenuItem>
-                <MenuItem value={25}>25 per page</MenuItem>
-                <MenuItem value={50}>50 per page</MenuItem>
+                {PAGE_SIZE_OPTIONS.map((option) => (
+                  <MenuItem key={option} value={option}>
+                    {option} per page
+                  </MenuItem>
+                ))}
               </Select>
             </Stack>
           </Stack>
