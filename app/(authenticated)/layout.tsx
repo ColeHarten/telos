@@ -244,7 +244,7 @@ export default function AuthenticatedLayout({
               </Typography>
 
               <Typography variant="body2" color="text.secondary">
-                Phase 1: Manual budgeting
+                Phase 2: Plaid Integration (Cashflow Matching) is in progress. Some features may not work as expected.
               </Typography>
             </Box>
           </Container>

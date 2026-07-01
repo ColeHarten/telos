@@ -50,15 +50,18 @@ import {
   TextField,
   InputAdornment,
   IconButton,
+  Menu,
   MenuItem,
   Select,
 } from "@mui/material";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const DEFAULT_PAGE_SIZE = 10;
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 const MAX_VISIBLE_PAGES = 7;
 const PAGINATION_WINDOW = 1;
+
+type StatusFilter = "all" | "pending" | "posted";
 
 // ---- Presentation helpers (visual mapping only — data itself is untouched/placeholder) ----
 
@@ -135,6 +138,11 @@ function buildPaginationItems(currentPage: number, totalPages: number) {
   return items;
 }
 
+function parseDateValue(dateValue: string) {
+  const parsed = new Date(`${dateValue}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+}
+
 export default function TransactionsPage() {
   const { user, authLoading } = useAuth();
   const { accounts } = useAccounts(user, authLoading);
@@ -148,13 +156,50 @@ export default function TransactionsPage() {
 
   const [syncing, setSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
+  const [filtersAnchorEl, setFiltersAnchorEl] = useState<null | HTMLElement>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [minAmount, setMinAmount] = useState("");
+  const [maxAmount, setMaxAmount] = useState("");
 
-  const totalPages = Math.max(1, Math.ceil(transactions.length / pageSize));
+  const filteredTransactions = useMemo(() => {
+    const fromTime = dateFrom ? parseDateValue(dateFrom) : null;
+    const toTime = dateTo ? parseDateValue(dateTo) : null;
+    const min = minAmount === "" ? null : Number(minAmount);
+    const max = maxAmount === "" ? null : Number(maxAmount);
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
+    return transactions.filter((transaction) => {
+      if (normalizedSearch && !transaction.displayName.toLowerCase().includes(normalizedSearch)) return false;
+      if (statusFilter === "pending" && !transaction.pending) return false;
+      if (statusFilter === "posted" && transaction.pending) return false;
+
+      const transactionTime = parseDateValue(transaction.date);
+      if (fromTime !== null && transactionTime !== null && transactionTime < fromTime) return false;
+      if (toTime !== null && transactionTime !== null && transactionTime > toTime) return false;
+
+      const amount = Math.abs(transaction.amount);
+      if (min !== null && !Number.isNaN(min) && amount < min) return false;
+      if (max !== null && !Number.isNaN(max) && amount > max) return false;
+
+      return true;
+    });
+  }, [transactions, searchTerm, dateFrom, dateTo, statusFilter, minAmount, maxAmount]);
+  const hasActiveFilters = Boolean(searchTerm || dateFrom || dateTo || statusFilter !== "all" || minAmount || maxAmount);
+
+  const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / pageSize));
   const currentPageSafe = Math.min(currentPage, totalPages);
-  const paginatedTransactions = transactions.slice((currentPageSafe - 1) * pageSize, currentPageSafe * pageSize);
+  const paginatedTransactions = filteredTransactions.slice((currentPageSafe - 1) * pageSize, currentPageSafe * pageSize);
   const paginationItems = buildPaginationItems(currentPageSafe, totalPages);
+  const filtersOpen = Boolean(filtersAnchorEl);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, dateFrom, dateTo, statusFilter, minAmount, maxAmount, pageSize]);
 
   async function handleSync() {
     setSyncing(true);
@@ -187,8 +232,8 @@ export default function TransactionsPage() {
     }
   };
 
-  const startItem = transactions.length === 0 ? 0 : (currentPageSafe - 1) * pageSize + 1;
-  const endItem = Math.min(currentPageSafe * pageSize, transactions.length);
+  const startItem = filteredTransactions.length === 0 ? 0 : (currentPageSafe - 1) * pageSize + 1;
+  const endItem = Math.min(currentPageSafe * pageSize, filteredTransactions.length);
 
   return (
     <Stack spacing={3} sx={{ p: 4, bgcolor: "#f8fafc", minHeight: "100vh", fontFamily: "Inter, sans-serif" }}>
@@ -347,6 +392,8 @@ export default function TransactionsPage() {
         <TextField
           size="small"
           placeholder="Search transactions..."
+          value={searchTerm}
+          onChange={(event) => setSearchTerm(event.target.value)}
           slotProps={{ input: { 
             sx: { fontSize: "0.85rem" },
             startAdornment: (
@@ -369,9 +416,10 @@ export default function TransactionsPage() {
         <Button
           variant="outlined"
           startIcon={<FilterListIcon sx={{ fontSize: 17 }} />}
+          onClick={(event) => setFiltersAnchorEl(event.currentTarget)}
           sx={{
             borderColor: "#e2e8f0",
-            color: "#334155",
+            color: filtersOpen ? "#2563eb" : "#334155",
             textTransform: "none",
             fontWeight: 600,
             fontSize: "0.85rem",
@@ -385,6 +433,79 @@ export default function TransactionsPage() {
         </Button>
       </Stack>
 
+      <Menu
+        anchorEl={filtersAnchorEl}
+        open={filtersOpen}
+        onClose={() => setFiltersAnchorEl(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+        slotProps={{ paper: { sx: { mt: 1, p: 0, borderRadius: 3, border: "1px solid #e2e8f0", boxShadow: "0 12px 30px rgba(15, 23, 42, 0.12)", overflow: "visible" } } }}
+      >
+        <Box sx={{ p: 2.5, minWidth: 320, bgcolor: "#fff" }}>
+          <Stack direction="column" spacing={2} sx={{ width: "100%" }}>
+            <TextField
+              label="From"
+              type="date"
+              size="small"
+              value={dateFrom}
+              onChange={(event) => setDateFrom(event.target.value)}
+              slotProps={{ inputLabel: { shrink: true } }}
+              sx={{ width: "100%" }}
+            />
+            <TextField
+              label="To"
+              type="date"
+              size="small"
+              value={dateTo}
+              onChange={(event) => setDateTo(event.target.value)}
+              slotProps={{ inputLabel: { shrink: true } }}
+              sx={{ width: "100%" }}
+            />
+            <Select
+              value={statusFilter}
+              size="small"
+              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+              sx={{ width: "100%", height: 40, bgcolor: "#fff" }}
+            >
+              <MenuItem value="all">All statuses</MenuItem>
+              <MenuItem value="pending">Pending</MenuItem>
+              <MenuItem value="posted">Posted</MenuItem>
+            </Select>
+            <TextField
+              label="Min amount"
+              type="number"
+              size="small"
+              value={minAmount}
+              onChange={(event) => setMinAmount(event.target.value)}
+              slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
+              sx={{ width: "100%" }}
+            />
+            <TextField
+              label="Max amount"
+              type="number"
+              size="small"
+              value={maxAmount}
+              onChange={(event) => setMaxAmount(event.target.value)}
+              slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
+              sx={{ width: "100%" }}
+            />
+            <Button
+              variant="text"
+              onClick={() => {
+                setDateFrom("");
+                setDateTo("");
+                setStatusFilter("all");
+                setMinAmount("");
+                setMaxAmount("");
+              }}
+              sx={{ textTransform: "none", fontWeight: 600, alignSelf: "flex-start", px: 0 }}
+            >
+              Clear filters
+            </Button>
+          </Stack>
+        </Box>
+      </Menu>
+
       {transactionsError && (
         <Alert severity="error" onClose={() => setTransactionsError(null)} sx={{ borderRadius: 3 }}>
           {transactionsError}
@@ -396,10 +517,10 @@ export default function TransactionsPage() {
         <Box sx={{ display: "flex", justifyContent: "center", py: 12 }}>
           <CircularProgress size={40} thickness={4} sx={{ color: "#2563eb" }} />
         </Box>
-      ) : transactions.length === 0 ? (
+      ) : filteredTransactions.length === 0 ? (
         <Paper variant="outlined" sx={{ p: 8, textAlign: "center", borderRadius: 3, borderStyle: "dashed", bgcolor: "#fff" }}>
           <Typography color="text.secondary" variant="body2">
-            No transaction histories mapped yet.
+            {transactions.length === 0 && !hasActiveFilters ? "No transaction histories mapped yet." : "No transactions match the current filters."}
           </Typography>
         </Paper>
       ) : (
