@@ -9,10 +9,17 @@ import {
   Divider,
   Drawer,
   List,
+  ListItemIcon,
   ListItemButton,
   Toolbar,
   Typography
 } from "@mui/material";
+import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
+import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
+import SwapHorizOutlinedIcon from "@mui/icons-material/SwapHorizOutlined";
+import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutlined";
+import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import { onAuthStateChanged, User } from "firebase/auth";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -21,12 +28,12 @@ import { useEffect, useState } from "react";
 const drawerWidth = 240;
 
 const navItems = [
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Accounts", href: "/accounts" },
-  { label: "Cashflows", href: "/cashflows" },
-  { label: "Budgets", href: "/budgets" },
-  { label: "Transactions", href: "/transactions" },
-  { label: "Settings", href: "/settings" },
+  { label: "Dashboard", href: "/dashboard", icon: DashboardOutlinedIcon },
+  { label: "Accounts", href: "/accounts", icon: AccountBalanceOutlinedIcon },
+  { label: "Cashflows", href: "/cashflows", icon: SwapHorizOutlinedIcon },
+  { label: "Budgets", href: "/budgets", icon: PieChartOutlineOutlinedIcon },
+  { label: "Transactions", href: "/transactions", icon: ReceiptLongOutlinedIcon },
+  { label: "Settings", href: "/settings", icon: SettingsOutlinedIcon },
 ];
 
 export default function AuthenticatedLayout({
@@ -125,6 +132,14 @@ export default function AuthenticatedLayout({
                     borderRadius: 2,
                     mb: 0.5,
                     minHeight: 40,
+                    px: 1.5,
+                    gap: 1,
+                    justifyContent: "flex-start",
+                    color: "text.secondary",
+                    transition: "background-color 0.15s ease, color 0.15s ease",
+                    "&:hover": {
+                      bgcolor: "grey.100",
+                    },
                     "&.Mui-selected": {
                       bgcolor: "#eff6ff",
                       color: "#2563eb",
@@ -134,6 +149,15 @@ export default function AuthenticatedLayout({
                     },
                   }}
                 >
+                  <ListItemIcon
+                    sx={{
+                      minWidth: 0,
+                      color: "inherit",
+                    }}
+                  >
+                    <item.icon fontSize="small" />
+                  </ListItemIcon>
+
                   <Typography
                     variant="body2"
                     sx={{

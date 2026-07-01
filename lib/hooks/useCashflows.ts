@@ -3,9 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { db } from "@/lib/firebaseClient";
 import { collection, onSnapshot, doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
-import type { Cashflow, CashflowKind, WithholdingProfile } from "../types/types";
+import type { AuthUser, Cashflow, CashflowKind, WithholdingProfile } from "../types/types";
 
-export function useCashflows(user: any, authLoading: boolean) {
+export function useCashflows(user: AuthUser | null, authLoading: boolean) {
   const [cashflows, setCashflows] = useState<Cashflow[]>([]);
   const [withholdingProfiles, setWithholdingProfiles] = useState<WithholdingProfile[]>([]);
   const [cashflowsLoading, setCashflowsLoading] = useState(false);

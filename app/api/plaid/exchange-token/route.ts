@@ -46,29 +46,26 @@ export async function POST(req: Request) {
       .doc(user.uid)
       .collection("accounts");
 
-    for (const acc of accounts) {
-      await accountsRef.doc(acc.account_id).set({
-        // Common
-        name: acc.name,
+    const accountBatch = adminDb.batch();
 
+    for (const acc of accounts) {
+      accountBatch.set(accountsRef.doc(acc.account_id), {
+        name: acc.name,
         accountType: mapPlaidAccountType(acc),
         normalBalance: getNormalBalanceFromPlaid(acc),
-
         startingBalance: acc.balances.current ?? 0,
         currentBalance: acc.balances.current ?? 0,
-
         isManual: false,
         isArchived: false,
-
-        // Plaid fields
         plaidAccountId: acc.account_id,
         plaidItemId: plaidItemId,
         plaidMask: acc.mask ?? null,
-
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
     }
+
+    await accountBatch.commit();
 
     // initial sync
     await syncPlaidItem(user.uid, plaidItemId);

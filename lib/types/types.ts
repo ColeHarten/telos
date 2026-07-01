@@ -11,6 +11,13 @@ export type AccountType =
 
 export type NormalBalance = "asset" | "liability";
 
+export type AuthUser = {
+  uid: string;
+  email?: string | null;
+  displayName?: string | null;
+  photoURL?: string | null;
+};
+
 export type Account = {
   id: string;
 
@@ -90,4 +97,17 @@ export type AppSettings = {
   defaultBudgetMonth: DefaultBudgetMonth;
   createdAt?: unknown;
   updatedAt?: unknown;
+};
+
+export type Transaction = {
+  id: string;
+  accountId: string;
+  accountName: string;
+  displayName: string;
+  amount: number;
+  date: string;
+  pending: boolean;
+  categoryPrimary: string | null;
+  categoryDetailed: string | null;
+  cashflowId: string | null;
 };

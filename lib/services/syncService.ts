@@ -1,10 +1,90 @@
 import { adminDb } from "@/lib/firebaseAdmin";
-import {
-  syncTransactions,
-} from "./plaidService";
-import { applyRules } from "./ruleEngine";
+import { syncTransactions } from "./plaidService";
+import type {
+  Transaction as PlaidTransaction,
+  RemovedTransaction as PlaidRemovedTransaction,
+} from "plaid";
+import type { WriteBatch, DocumentReference } from "firebase-admin/firestore";
 
-export async function syncPlaidItem(uid: string, itemId: string) {
+const MAX_BATCH_SIZE = 500;
+
+/**
+ * Shape of a Plaid Item document as stored in Firestore.
+ */
+interface PlaidItemDoc {
+  accessToken: string;
+  itemId: string;
+  cursor: string;
+  createdAt: number;
+  institutionId: string | null;
+  institutionName: string | null;
+}
+
+/**
+ * Shape of a transaction document as stored in Firestore.
+ */
+interface TransactionDoc {
+  accountId: string;
+  amount: number;
+  date: string;
+  merchantName: string | null;
+  rawName: string; // Plaid's legacy `name` field, kept for reference/debugging
+  pending: boolean;
+  category: PlaidTransaction["personal_finance_category"] | null;
+  cashflowId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * Partial update applied to an existing transaction document.
+ */
+type TransactionUpdate = Pick<TransactionDoc, "amount" | "rawName" | "pending" | "updatedAt">;
+
+type BatchOp =
+  | { type: "set"; ref: DocumentReference; data: TransactionDoc }
+  | { type: "merge"; ref: DocumentReference; data: TransactionUpdate }
+  | { type: "delete"; ref: DocumentReference };
+
+interface SyncPlaidItemResult {
+  addedCount: number;
+  modifiedCount: number;
+  removedCount: number;
+}
+
+interface SyncAllPlaidItemsResult {
+  added: number;
+  modified: number;
+  removed: number;
+}
+
+/**
+ * Commits an arbitrary list of write operations in chunks of at most
+ * MAX_BATCH_SIZE, since a single Firestore batch cannot exceed 500 writes.
+ */
+async function commitInChunks(ops: BatchOp[]): Promise<void> {
+  for (let i = 0; i < ops.length; i += MAX_BATCH_SIZE) {
+    const chunk = ops.slice(i, i + MAX_BATCH_SIZE);
+    const batch: WriteBatch = adminDb.batch();
+
+    for (const op of chunk) {
+      if (op.type === "set") {
+        batch.set(op.ref, op.data);
+      } else if (op.type === "merge") {
+        batch.set(op.ref, op.data, { merge: true });
+      } else {
+        batch.delete(op.ref);
+      }
+    }
+
+    await batch.commit();
+  }
+}
+
+export async function syncPlaidItem(
+  uid: string,
+  itemId: string
+): Promise<SyncPlaidItemResult> {
   const itemRef = adminDb
     .collection("users")
     .doc(uid)
@@ -15,74 +95,85 @@ export async function syncPlaidItem(uid: string, itemId: string) {
 
   if (!itemSnap.exists) throw new Error("Plaid item not found");
 
-  const item = itemSnap.data()!;
-  const accessToken = item.accessToken;
-  const cursor = item.cursor || "";
+  const item = itemSnap.data() as PlaidItemDoc;
 
-  const data = await syncTransactions(accessToken, cursor);
+  let cursor = item.cursor || "";
+  let hasMore = true;
 
-  const txRef = adminDb
-    .collection("users")
-    .doc(uid)
-    .collection("transactions");
+  const added: PlaidTransaction[] = [];
+  const modified: PlaidTransaction[] = [];
+  const removed: PlaidRemovedTransaction[] = [];
 
-  // INSERT + UPDATE
-  for (const tx of data.added) {
-    const processed = await applyRules(tx);
+  while (hasMore) {
+    const data = await syncTransactions(item.accessToken, cursor);
+    added.push(...data.added);
+    modified.push(...data.modified);
+    removed.push(...data.removed);
+    cursor = data.next_cursor;
+    hasMore = data.has_more;
+  }
 
-    await txRef.doc(tx.transaction_id).set({
-      id: tx.transaction_id,
+  const txRef = adminDb.collection("users").doc(uid).collection("transactions");
+  const ops: BatchOp[] = [];
+
+  // INSERT
+  for (const tx of added) {
+    const data: TransactionDoc = {
       accountId: tx.account_id,
       amount: tx.amount,
       date: tx.date,
-      merchantName: tx.merchant_name,
-      name: tx.name,
+      merchantName: tx.merchant_name ?? null,
+      rawName: tx.name,
       pending: tx.pending,
-      category: tx.personal_finance_category || null,
+      category: tx.personal_finance_category ?? null,
       cashflowId: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      ...processed,
-    });
+    };
+
+    ops.push({ type: "set", ref: txRef.doc(tx.transaction_id), data });
   }
 
-  for (const tx of data.modified) {
-    await txRef.doc(tx.transaction_id).set(
-      {
-        amount: tx.amount,
-        name: tx.name,
-        pending: tx.pending,
-        updatedAt: Date.now(),
-      },
-      { merge: true }
-    );
+  // UPDATE
+  for (const tx of modified) {
+    const data: TransactionUpdate = {
+      amount: tx.amount,
+      rawName: tx.name,
+      pending: tx.pending,
+      updatedAt: Date.now(),
+    };
+
+    ops.push({ type: "merge", ref: txRef.doc(tx.transaction_id), data });
   }
 
   // DELETE
-  for (const tx of data.removed) {
-    await txRef.doc(tx.transaction_id).delete();
+  for (const tx of removed) {
+    ops.push({ type: "delete", ref: txRef.doc(tx.transaction_id) });
   }
 
-  // update cursor
-  await itemRef.update({
-    cursor: data.next_cursor,
-  });
+  await commitInChunks(ops);
+
+  // Only advance the cursor after all pages have been fetched and
+  // all writes for this sync have committed.
+  await itemRef.update({ cursor });
 
   return {
-    addedCount: data.added.length,
-    modifiedCount: data.modified.length,
-    removedCount: data.removed.length,
+    addedCount: added.length,
+    modifiedCount: modified.length,
+    removedCount: removed.length,
   };
 }
 
-export async function syncAllPlaidItems(uid: string) {
+export async function syncAllPlaidItems(
+  uid: string
+): Promise<SyncAllPlaidItemsResult> {
   const itemsSnap = await adminDb
     .collection("users")
     .doc(uid)
     .collection("plaidItems")
     .get();
 
-  let total = {
+  const total: SyncAllPlaidItemsResult = {
     added: 0,
     modified: 0,
     removed: 0,

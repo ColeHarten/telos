@@ -14,14 +14,14 @@ import {
   setDoc,
   where,
 } from "firebase/firestore";
-import type { BudgetLines, AppSettings, WithholdingProfile } from "../types/types";
+import type { AuthUser, BudgetLines, AppSettings, WithholdingProfile } from "../types/types";
 
 function getCurrentMonthKey() {
   const today = new Date();
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export function useBudget(user: any, authLoading: boolean, initialMonthKey?: string) {
+export function useBudget(user: AuthUser | null, authLoading: boolean, initialMonthKey?: string) {
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>(
     initialMonthKey ?? getCurrentMonthKey()
   );

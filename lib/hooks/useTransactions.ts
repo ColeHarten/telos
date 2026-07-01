@@ -1,34 +1,64 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { db } from "@/lib/firebaseClient";
 import { collection, query, getDocs, orderBy } from "firebase/firestore";
+import type { PersonalFinanceCategory } from "plaid";
+import type { AuthUser, Account, Transaction } from "../types/types";
 
-export type Transaction = {
-  id: string;
-  name: string;
-  merchantName?: string;
-  logoUrl?: string;
+interface TransactionRecord {
+  accountId: string;
   amount: number;
   date: string;
-  paymentChannel: string;
-  personalFinanceCategory?: {
-    primary: string;
-    detailed: string;
+  merchantName: string | null;
+  rawName: string;
+  pending: boolean;
+  category: PersonalFinanceCategory | null;
+  cashflowId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+function resolveDisplayName(tx: TransactionRecord): string {
+  return tx.merchantName ?? tx.rawName;
+}
+
+function toTransaction(
+  id: string,
+  record: TransactionRecord,
+  accountName: string
+): Transaction {
+  return {
+    id,
+    accountId: record.accountId,
+    accountName,
+    displayName: resolveDisplayName(record),
+    amount: record.amount,
+    date: record.date,
+    pending: record.pending,
+    categoryPrimary: record.category?.primary ?? null,
+    categoryDetailed: record.category?.detailed ?? null,
+    cashflowId: record.cashflowId,
   };
-  categoryIconUrl?: string;
-};
+}
 
-export type AccountWithTransactions = {
-  accountId: string;
-  name: string; // Ensure your sync script writes the "accountName" field to the doc!
-  transactions: Transaction[];
-};
-
-export default function useTransactions(user: any, authLoading: boolean) {
-  const [accountsWithTransactions, setAccountsWithTransactions] = useState<AccountWithTransactions[]>([]);
+export default function useTransactions(
+  user: AuthUser | null,
+  authLoading: boolean,
+  accounts: Account[]
+) {
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
+
+  // O(1) id -> name lookups, only recomputed when the accounts list changes.
+  const accountNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const acc of accounts) {
+      map.set(acc.id, acc.name);
+    }
+    return map;
+  }, [accounts]);
 
   const fetchFromFirebase = useCallback(async () => {
     if (authLoading || !user?.uid) return;
@@ -41,56 +71,31 @@ export default function useTransactions(user: any, authLoading: boolean) {
       const q = query(txCollectionRef, orderBy("date", "desc"));
       const snapshot = await getDocs(q);
 
-      const flatTransactions: any[] = [];
+      const flattenedTransactions: Transaction[] = [];
+
       snapshot.forEach((doc) => {
-        flatTransactions.push({ id: doc.id, ...doc.data() });
+        const record = doc.data() as TransactionRecord;
+        const accountId = record.accountId || "unlinked";
+        const accountName = accountNameById.get(accountId) ?? "Unlinked Account";
+
+        flattenedTransactions.push(toTransaction(doc.id, record, accountName));
       });
 
-      const groupedMap: Record<string, AccountWithTransactions> = {};
-
-      flatTransactions.forEach((tx) => {
-        const accountId = tx.accountId || "manual_unlinked";
-        const accountName = tx.accountName || "Unlinked Account"; // Ensure your sync script writes the "accountName" field to the doc!
-
-        if (!groupedMap[accountId]) {
-          groupedMap[accountId] = {
-            accountId,
-            name: accountName,
-            transactions: [],
-          };
-        }
-
-        // Map all your rich Plaid properties explicitly
-        groupedMap[accountId].transactions.push({
-          id: tx.id || tx.transaction_id,
-          name: tx.merchantName || tx.merchant_name || tx.name || "Unknown Transaction",
-          amount: tx.amount,
-          date: tx.date,
-          paymentChannel: tx.payment_channel || "other",
-          logoUrl: tx.logo_url,
-          categoryIconUrl: tx.personal_finance_category_icon_url,
-          personalFinanceCategory: tx.personal_finance_category ? {
-            primary: tx.personal_finance_category.primary,
-            detailed: tx.personal_finance_category.detailed
-          } : undefined
-        });
-      });
-
-      setAccountsWithTransactions(Object.values(groupedMap));
-    } catch (err: any) {
+      setTransactions(flattenedTransactions);
+    } catch (err) {
       console.error("Firebase read error:", err);
       setTransactionsError("Failed to fetch transaction logs.");
     } finally {
       setTransactionsLoading(false);
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, accountNameById]);
 
   useEffect(() => {
     fetchFromFirebase();
   }, [fetchFromFirebase]);
 
   return {
-    accountsWithTransactions,
+    transactions,
     transactionsLoading,
     transactionsError,
     setTransactionsError,

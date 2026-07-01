@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { db } from "@/lib/firebaseClient";
-import { collection, onSnapshot, orderBy, doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { collection, doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import { useEffect, useState } from "react";
 import type { Account, AccountType } from "../types/types";
+import type { AuthUser } from "../types/types";
 
-export function useAccounts(user: any, authLoading: boolean) {
+export function useAccounts(user: AuthUser | null, authLoading: boolean) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,10 +56,6 @@ export function useAccounts(user: any, authLoading: boolean) {
 
             plaidAccountId: data.plaidAccountId ?? null,
             plaidItemId: data.plaidItemId ?? null,
-            plaidInstitutionId:
-              data.plaidInstitutionId ?? null,
-            plaidInstitutionName:
-              data.plaidInstitutionName ?? null,
             plaidMask: data.plaidMask ?? null,
 
             createdAt: data.createdAt,
