@@ -27,6 +27,7 @@ import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFi
 import LocalGasStationOutlinedIcon from "@mui/icons-material/LocalGasStationOutlined";
 import LabelOutlinedIcon from "@mui/icons-material/LabelOutlined";
 import MovieOutlinedIcon from "@mui/icons-material/MovieOutlined";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 
 import {
   Alert,
@@ -34,6 +35,7 @@ import {
   Box,
   Button,
   CircularProgress,
+  Divider,
   Paper,
   Snackbar,
   Stack,
@@ -53,15 +55,24 @@ import {
   Menu,
   MenuItem,
   Select,
+  ListItemIcon,
+  ListItemText,
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 
 const DEFAULT_PAGE_SIZE = 10;
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
-const MAX_VISIBLE_PAGES = 7;
-const PAGINATION_WINDOW = 1;
+const MAX_VISIBLE_PAGES = 5;
 
 type StatusFilter = "all" | "pending" | "posted";
+type DateRangePreset = "all" | "7d" | "30d" | "mtd" | "ytd" | "ltm" | "custom";
+
+const DATE_RANGE_PRESETS: { value: DateRangePreset; label: string }[] = [
+  { value: "all", label: "All Time" },
+  { value: "mtd", label: "This month" },
+  { value: "ytd", label: "This year" },
+  { value: "custom", label: "Custom Range" },
+];
 
 // ---- Presentation helpers (visual mapping only — data itself is untouched/placeholder) ----
 
@@ -118,24 +129,15 @@ function buildPaginationItems(currentPage: number, totalPages: number) {
     return Array.from({ length: totalPages }, (_, index) => index + 1);
   }
 
-  const items: Array<number | "..."> = [1];
-  const windowStart = Math.max(2, currentPage - PAGINATION_WINDOW);
-  const windowEnd = Math.min(totalPages - 1, currentPage + PAGINATION_WINDOW);
-
-  if (windowStart > 2) {
-    items.push("...");
+  if (currentPage <= 3) {
+    return [1, 2, 3, "...", totalPages];
   }
 
-  for (let page = windowStart; page <= windowEnd; page += 1) {
-    items.push(page);
+  if (currentPage >= totalPages - 2) {
+    return [1, "...", totalPages - 2, totalPages - 1, totalPages];
   }
 
-  if (windowEnd < totalPages - 1) {
-    items.push("...");
-  }
-
-  items.push(totalPages);
-  return items;
+  return [1, "...", currentPage, "...", totalPages];
 }
 
 function parseDateValue(dateValue: string) {
@@ -143,9 +145,67 @@ function parseDateValue(dateValue: string) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
 }
 
+function formatMoney(value: number) {
+  const sign = value < 0 ? "-" : "";
+  return `${sign}$${Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatShortDate(value: string) {
+  try {
+    return new Date(`${value}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  } catch {
+    return value;
+  }
+}
+
+// Local (not UTC) YYYY-MM-DD, matching the format used by <input type="date"> and stored transaction dates.
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// Resolves a preset into a concrete { from, to } range, anchored to today.
+// "all" and "custom" are handled by the caller (custom uses user-entered dates).
+function computePresetRange(preset: DateRangePreset): { from: string; to: string } {
+  const now = new Date();
+  const today = toDateInputValue(now);
+
+  switch (preset) {
+    case "mtd": {
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { from: toDateInputValue(from), to: today };
+    }
+    case "ytd": {
+      const from = new Date(now.getFullYear(), 0, 1);
+      return { from: toDateInputValue(from), to: today };
+    }
+    case "ltm": {
+      const from = new Date(now);
+      from.setFullYear(from.getFullYear() - 1);
+      from.setDate(from.getDate() + 1);
+      return { from: toDateInputValue(from), to: today };
+    }
+    default:
+      return { from: "", to: "" };
+  }
+}
+
+function formatDateRangeButtonLabel(preset: DateRangePreset, customFrom: string, customTo: string) {
+  if (preset === "custom") {
+    if (!customFrom && !customTo) return "Custom Range";
+    if (customFrom && customTo) return `${formatShortDate(customFrom)} - ${formatShortDate(customTo)}`;
+    if (customFrom) return `From ${formatShortDate(customFrom)}`;
+    return `Until ${formatShortDate(customTo)}`;
+  }
+
+  return DATE_RANGE_PRESETS.find((option) => option.value === preset)?.label ?? "All Time";
+}
+
 export default function TransactionsPage() {
   const { user, authLoading } = useAuth();
-  const { accounts } = useAccounts(user, authLoading);
+  const { accounts = [] } = useAccounts(user, authLoading);
   const {
     transactions = [],
     transactionsLoading,
@@ -157,30 +217,70 @@ export default function TransactionsPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
   const [filtersAnchorEl, setFiltersAnchorEl] = useState<null | HTMLElement>(null);
+  const [accountMenuAnchorEl, setAccountMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const [dateRangeAnchorEl, setDateRangeAnchorEl] = useState<null | HTMLElement>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [searchTerm, setSearchTerm] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateRangePreset, setDateRangePreset] = useState<DateRangePreset>("all");
+  const [customDateFrom, setCustomDateFrom] = useState("");
+  const [customDateTo, setCustomDateTo] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [minAmount, setMinAmount] = useState("");
   const [maxAmount, setMaxAmount] = useState("");
 
-  const filteredTransactions = useMemo(() => {
-    const fromTime = dateFrom ? parseDateValue(dateFrom) : null;
-    const toTime = dateTo ? parseDateValue(dateTo) : null;
-    const min = minAmount === "" ? null : Number(minAmount);
-    const max = maxAmount === "" ? null : Number(maxAmount);
-    const normalizedSearch = searchTerm.trim().toLowerCase();
+  // Only offer active (non-archived) accounts in the account filter menu
+  const selectableAccounts = useMemo(() => accounts.filter((account) => !account.isArchived), [accounts]);
+  const selectedAccount = useMemo(
+    () => selectableAccounts.find((account) => account.id === selectedAccountId) ?? null,
+    [selectableAccounts, selectedAccountId]
+  );
+  const accountMenuOpen = Boolean(accountMenuAnchorEl);
+  const dateRangeOpen = Boolean(dateRangeAnchorEl);
+
+  // Resolve the active preset (or custom fields) into a concrete range once per render.
+  const { from: effectiveDateFrom, to: effectiveDateTo } = useMemo(() => {
+    if (dateRangePreset === "custom") return { from: customDateFrom, to: customDateTo };
+    if (dateRangePreset === "all") return { from: "", to: "" };
+    return computePresetRange(dateRangePreset);
+  }, [dateRangePreset, customDateFrom, customDateTo]);
+
+  const hasDateRange =
+    dateRangePreset !== "all" && (dateRangePreset !== "custom" || Boolean(customDateFrom || customDateTo));
+  const dateRangeLabel = useMemo(
+    () => formatDateRangeButtonLabel(dateRangePreset, customDateFrom, customDateTo),
+    [dateRangePreset, customDateFrom, customDateTo]
+  );
+
+  // Top-tier filters: account + date range. These scope both the summary cards
+  // and the list below, mirroring how account selection already works.
+  const scopedTransactions = useMemo(() => {
+    const fromTime = effectiveDateFrom ? parseDateValue(effectiveDateFrom) : null;
+    const toTime = effectiveDateTo ? parseDateValue(effectiveDateTo) : null;
 
     return transactions.filter((transaction) => {
-      if (normalizedSearch && !transaction.displayName.toLowerCase().includes(normalizedSearch)) return false;
-      if (statusFilter === "pending" && !transaction.pending) return false;
-      if (statusFilter === "posted" && transaction.pending) return false;
+      if (selectedAccountId && transaction.accountId !== selectedAccountId) return false;
 
       const transactionTime = parseDateValue(transaction.date);
       if (fromTime !== null && transactionTime !== null && transactionTime < fromTime) return false;
       if (toTime !== null && transactionTime !== null && transactionTime > toTime) return false;
+
+      return true;
+    });
+  }, [transactions, selectedAccountId, effectiveDateFrom, effectiveDateTo]);
+
+  // List-only filters: search, status, amount. These narrow down the table
+  // for finding specific transactions but should not move the summary cards.
+  const filteredTransactions = useMemo(() => {
+    const min = minAmount === "" ? null : Number(minAmount);
+    const max = maxAmount === "" ? null : Number(maxAmount);
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
+    return scopedTransactions.filter((transaction) => {
+      if (normalizedSearch && !transaction.displayName.toLowerCase().includes(normalizedSearch)) return false;
+      if (statusFilter === "pending" && !transaction.pending) return false;
+      if (statusFilter === "posted" && transaction.pending) return false;
 
       const amount = Math.abs(transaction.amount);
       if (min !== null && !Number.isNaN(min) && amount < min) return false;
@@ -188,8 +288,35 @@ export default function TransactionsPage() {
 
       return true;
     });
-  }, [transactions, searchTerm, dateFrom, dateTo, statusFilter, minAmount, maxAmount]);
-  const hasActiveFilters = Boolean(searchTerm || dateFrom || dateTo || statusFilter !== "all" || minAmount || maxAmount);
+  }, [scopedTransactions, searchTerm, statusFilter, minAmount, maxAmount]);
+  const hasActiveFilters = Boolean(searchTerm || hasDateRange || statusFilter !== "all" || minAmount || maxAmount || selectedAccountId);
+
+  // Summary metrics recompute from the top-tier scope only (account + date range),
+  // so list-only filters like search/status/amount don't move the cards.
+  const summary = useMemo(() => {
+    let inflows = 0;
+    let outflows = 0;
+    let inflowCount = 0;
+    let outflowCount = 0;
+
+    for (const transaction of scopedTransactions) {
+      if (transaction.amount > 0) {
+        outflows += transaction.amount;
+        outflowCount += 1;
+      } else {
+        inflows += Math.abs(transaction.amount);
+        inflowCount += 1;
+      }
+    }
+
+    return {
+      inflows,
+      outflows,
+      inflowCount,
+      outflowCount,
+      net: inflows - outflows,
+    };
+  }, [scopedTransactions]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / pageSize));
   const currentPageSafe = Math.min(currentPage, totalPages);
@@ -199,7 +326,7 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, dateFrom, dateTo, statusFilter, minAmount, maxAmount, pageSize]);
+  }, [searchTerm, effectiveDateFrom, effectiveDateTo, statusFilter, minAmount, maxAmount, selectedAccountId, pageSize]);
 
   async function handleSync() {
     setSyncing(true);
@@ -248,31 +375,55 @@ export default function TransactionsPage() {
           <Typography variant="h4" sx={{ fontWeight: 700, color: "#0f172a", letterSpacing: "-0.03em", fontSize: "1.75rem" }}>
             Transactions
           </Typography>
-          <Typography variant="body2" sx={{ color: "#64748b", mt: 0.5, fontSize: "0.9rem" }}>
-            Review and track your transactions across all connected accounts.
-          </Typography>
         </Box>
 
-        <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", flexWrap: "wrap", rowGap: 1.5 }}>
           <Button
             variant="outlined"
             endIcon={<KeyboardArrowDownIcon sx={{ fontSize: 18 }} />}
             startIcon={<AccountBalanceOutlinedIcon sx={{ color: "#0284c7", fontSize: 18 }} />}
+            onClick={(event) => setAccountMenuAnchorEl(event.currentTarget)}
             sx={{
-              borderColor: "#e2e8f0",
-              color: "#334155",
+              borderColor: selectedAccount ? "#bfdbfe" : "#e2e8f0",
+              color: selectedAccount ? "#2563eb" : "#334155",
               textTransform: "none",
               fontWeight: 600,
               fontSize: "0.85rem",
               borderRadius: 2,
-              bgcolor: "#fff",
+              bgcolor: selectedAccount ? "#eff6ff" : "#fff",
               px: 1.75,
               py: 0.85,
               boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.04)",
-              "&:hover": { borderColor: "#cbd5e1", bgcolor: "#f8fafc" },
+              maxWidth: 220,
+              "&:hover": { borderColor: "#cbd5e1", bgcolor: selectedAccount ? "#eff6ff" : "#f8fafc" },
             }}
           >
-            All Accounts
+            <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {selectedAccount ? selectedAccount.name : "All Accounts"}
+            </Box>
+          </Button>
+
+          <Button
+            variant="outlined"
+            endIcon={<KeyboardArrowDownIcon sx={{ fontSize: 18 }} />}
+            startIcon={<CalendarMonthOutlinedIcon sx={{ color: "#0284c7", fontSize: 18 }} />}
+            onClick={(event) => setDateRangeAnchorEl(event.currentTarget)}
+            sx={{
+              borderColor: hasDateRange ? "#bfdbfe" : "#e2e8f0",
+              color: hasDateRange ? "#2563eb" : "#334155",
+              textTransform: "none",
+              fontWeight: 600,
+              fontSize: "0.85rem",
+              borderRadius: 2,
+              bgcolor: hasDateRange ? "#eff6ff" : "#fff",
+              px: 1.75,
+              py: 0.85,
+              boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.04)",
+              whiteSpace: "nowrap",
+              "&:hover": { borderColor: "#cbd5e1", bgcolor: hasDateRange ? "#eff6ff" : "#f8fafc" },
+            }}
+          >
+            {dateRangeLabel}
           </Button>
 
           <Button
@@ -318,6 +469,155 @@ export default function TransactionsPage() {
         </Stack>
       </Stack>
 
+      {/* Account filter menu */}
+      <Menu
+        anchorEl={accountMenuAnchorEl}
+        open={accountMenuOpen}
+        onClose={() => setAccountMenuAnchorEl(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+        transformOrigin={{ vertical: "top", horizontal: "left" }}
+        slotProps={{
+          paper: {
+            sx: {
+              mt: 1,
+              borderRadius: 3,
+              minWidth: 260,
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 12px 30px rgba(15, 23, 42, 0.12)",
+            },
+          },
+        }}
+      >
+        <MenuItem
+          selected={selectedAccountId === null}
+          onClick={() => {
+            setSelectedAccountId(null);
+            setAccountMenuAnchorEl(null);
+          }}
+          sx={{ fontWeight: 600, fontSize: "0.85rem" }}
+        >
+          <ListItemText>All Accounts</ListItemText>
+          {selectedAccountId === null && (
+            <ListItemIcon sx={{ minWidth: "auto", ml: 1 }}>
+              <CheckRoundedIcon sx={{ fontSize: 18, color: "#2563eb" }} />
+            </ListItemIcon>
+          )}
+        </MenuItem>
+
+        {selectableAccounts.map((account) => (
+          <MenuItem
+            key={account.id}
+            selected={selectedAccountId === account.id}
+            onClick={() => {
+              setSelectedAccountId(account.id);
+              setAccountMenuAnchorEl(null);
+            }}
+            sx={{ fontSize: "0.85rem" }}
+          >
+            <ListItemText
+              primary={account.name}
+              slotProps={{ primary: { sx: { fontWeight: 500 } } }}
+            />
+            {selectedAccountId === account.id && (
+              <ListItemIcon sx={{ minWidth: "auto", ml: 1 }}>
+                <CheckRoundedIcon sx={{ fontSize: 18, color: "#2563eb" }} />
+              </ListItemIcon>
+            )}
+          </MenuItem>
+        ))}
+
+        {selectableAccounts.length === 0 && (
+          <MenuItem disabled sx={{ fontSize: "0.85rem" }}>
+            No accounts found
+          </MenuItem>
+        )}
+      </Menu>
+
+      {/* Date range filter menu: quick presets + inline custom range */}
+      <Menu
+        anchorEl={dateRangeAnchorEl}
+        open={dateRangeOpen}
+        onClose={() => setDateRangeAnchorEl(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+        transformOrigin={{ vertical: "top", horizontal: "left" }}
+        slotProps={{
+          paper: {
+            sx: {
+              mt: 1,
+              borderRadius: 3,
+              minWidth: 240,
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 12px 30px rgba(15, 23, 42, 0.12)",
+            },
+          },
+        }}
+      >
+        {DATE_RANGE_PRESETS.map((option) => (
+          <MenuItem
+            key={option.value}
+            selected={dateRangePreset === option.value}
+            onClick={() => {
+              setDateRangePreset(option.value);
+              // Every preset resolves to a concrete range immediately, so it's
+              // safe to close right away. Custom stays open to collect dates.
+              if (option.value !== "custom") {
+                setDateRangeAnchorEl(null);
+              }
+            }}
+            sx={{ fontSize: "0.85rem", fontWeight: dateRangePreset === option.value ? 600 : 500 }}
+          >
+            <ListItemText>{option.label}</ListItemText>
+            {dateRangePreset === option.value && (
+              <ListItemIcon sx={{ minWidth: "auto", ml: 1 }}>
+                <CheckRoundedIcon sx={{ fontSize: 18, color: "#2563eb" }} />
+              </ListItemIcon>
+            )}
+          </MenuItem>
+        ))}
+
+        {dateRangePreset === "custom" && (
+          <Box key="custom-range-fields" sx={{ px: 2, pt: 0.5, pb: 2 }}>
+            <Divider sx={{ mb: 1.5 }} />
+            <Stack direction="column" spacing={1.5}>
+              <TextField
+                label="From"
+                type="date"
+                size="small"
+                value={customDateFrom}
+                onChange={(event) => setCustomDateFrom(event.target.value)}
+                slotProps={{ inputLabel: { shrink: true } }}
+                sx={{ width: "100%" }}
+              />
+              <TextField
+                label="To"
+                type="date"
+                size="small"
+                value={customDateTo}
+                onChange={(event) => setCustomDateTo(event.target.value)}
+                slotProps={{ inputLabel: { shrink: true } }}
+                sx={{ width: "100%" }}
+              />
+              <Button
+                variant="contained"
+                disableElevation
+                size="small"
+                onClick={() => setDateRangeAnchorEl(null)}
+                disabled={!customDateFrom && !customDateTo}
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 600,
+                  bgcolor: "#2563eb",
+                  borderRadius: 1.5,
+                  "&:hover": { bgcolor: "#1d4ed8" },
+                }}
+              >
+                Apply
+              </Button>
+            </Stack>
+          </Box>
+        )}
+      </Menu>
+
       {/* 2. Top Metric Cards Dashboard Segment */}
       <Box
         sx={{
@@ -330,8 +630,12 @@ export default function TransactionsPage() {
           <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <Box>
               <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Total Inflows</Typography>
-              <Typography sx={{ fontWeight: 700, color: "#16a34a", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>$4,250.00</Typography>
-              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>28 transactions</Typography>
+              <Typography sx={{ fontWeight: 700, color: "#16a34a", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>
+                {formatMoney(summary.inflows)}
+              </Typography>
+              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
+                {summary.inflowCount} transactions
+              </Typography>
             </Box>
             <Avatar sx={{ bgcolor: "#f0fdf4", color: "#16a34a", width: 44, height: 44 }}>
               <SouthWestIcon sx={{ fontSize: 20 }} />
@@ -343,8 +647,12 @@ export default function TransactionsPage() {
           <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <Box>
               <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Total Outflows</Typography>
-              <Typography sx={{ fontWeight: 700, color: "#dc2626", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>$3,950.76</Typography>
-              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>42 transactions</Typography>
+              <Typography sx={{ fontWeight: 700, color: "#dc2626", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>
+                {formatMoney(summary.outflows)}
+              </Typography>
+              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
+                {summary.outflowCount} transactions
+              </Typography>
             </Box>
             <Avatar sx={{ bgcolor: "#fef2f2", color: "#dc2626", width: 44, height: 44 }}>
               <NorthEastIcon sx={{ fontSize: 20 }} />
@@ -356,8 +664,12 @@ export default function TransactionsPage() {
           <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <Box>
               <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Net Cash Flow</Typography>
-              <Typography sx={{ fontWeight: 700, color: "#0f172a", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>$299.24</Typography>
-              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>This month</Typography>
+              <Typography sx={{ fontWeight: 700, color: "#0f172a", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>
+                {formatMoney(summary.net)}
+              </Typography>
+              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
+                {selectedAccount ? selectedAccount.name : "All accounts"}{hasDateRange ? ` · ${dateRangeLabel}` : ""}
+              </Typography>
             </Box>
             <Avatar sx={{ bgcolor: "#f5f3ff", color: "#7c3aed", width: 44, height: 44 }}>
               <SwapHorizIcon sx={{ fontSize: 20 }} />
@@ -443,24 +755,6 @@ export default function TransactionsPage() {
       >
         <Box sx={{ p: 2.5, minWidth: 320, bgcolor: "#fff" }}>
           <Stack direction="column" spacing={2} sx={{ width: "100%" }}>
-            <TextField
-              label="From"
-              type="date"
-              size="small"
-              value={dateFrom}
-              onChange={(event) => setDateFrom(event.target.value)}
-              slotProps={{ inputLabel: { shrink: true } }}
-              sx={{ width: "100%" }}
-            />
-            <TextField
-              label="To"
-              type="date"
-              size="small"
-              value={dateTo}
-              onChange={(event) => setDateTo(event.target.value)}
-              slotProps={{ inputLabel: { shrink: true } }}
-              sx={{ width: "100%" }}
-            />
             <Select
               value={statusFilter}
               size="small"
@@ -492,8 +786,6 @@ export default function TransactionsPage() {
             <Button
               variant="text"
               onClick={() => {
-                setDateFrom("");
-                setDateTo("");
                 setStatusFilter("all");
                 setMinAmount("");
                 setMaxAmount("");
@@ -647,7 +939,7 @@ export default function TransactionsPage() {
             sx={{ px: 3, py: 2, borderTop: "1px solid #f1f5f9", bgcolor: "#fff", alignItems: "center", justifyContent: "space-between" }}
           >
             <Typography variant="body2" sx={{ color: "#64748b", fontSize: "0.85rem" }}>
-              Showing {startItem} to {endItem} of {transactions.length} transactions
+              Showing {startItem} to {endItem} of {filteredTransactions.length} transactions
             </Typography>
 
             <Stack direction="row" spacing={3} sx={{ alignItems: "center" }}>
@@ -670,15 +962,21 @@ export default function TransactionsPage() {
                       ...
                     </Typography>
                   ) : (
+                    (() => {
+                      const pageNumber = pageItem as number;
+
+                      return (
                     <Button
-                      key={pageItem}
+                      key={pageNumber}
                       size="small"
-                      variant={pageItem === currentPageSafe ? "outlined" : "text"}
-                      onClick={() => setCurrentPage(pageItem)}
-                      sx={{ minWidth: 30, height: 30, p: 0, borderRadius: 1.5, bgcolor: pageItem === currentPageSafe ? "#eff6ff" : "transparent", color: pageItem === currentPageSafe ? "#2563eb" : "#64748b", borderColor: pageItem === currentPageSafe ? "#bfdbfe" : "transparent", fontWeight: 600, fontSize: "0.85rem" }}
+                      variant={pageNumber === currentPageSafe ? "outlined" : "text"}
+                      onClick={() => setCurrentPage(pageNumber)}
+                      sx={{ minWidth: 30, height: 30, p: 0, borderRadius: 1.5, bgcolor: pageNumber === currentPageSafe ? "#eff6ff" : "transparent", color: pageNumber === currentPageSafe ? "#2563eb" : "#64748b", borderColor: pageNumber === currentPageSafe ? "#bfdbfe" : "transparent", fontWeight: 600, fontSize: "0.85rem" }}
                     >
-                      {pageItem}
+                      {pageNumber}
                     </Button>
+                      );
+                    })()
                   )
                 )}
 

@@ -169,3 +169,397 @@ Every time the `/api/plaid/sync` job pulls new transactions, it must pipe them t
 - Don't use MUI `Stack` — use `Box`, `Grid`, or plain flex containers.
 - Prefer explicit pixel values in `sx`/CSS (e.g. `"8px"`, `"16px"`) over MUI spacing shorthand (`p: 2`, `gap: 2`).
 - Soft-delete (archive) rather than hard-delete Cashflows and Accounts, since Budgets reference them by ID and shouldn't break if the referenced item is later archived.
+
+
+
+# Rules / Automations System — Product Spec
+
+## 1. Core Concept
+
+The system is not a traditional “rules engine exposed to users.”
+
+It is an **automation layer that maps messy financial data (Plaid + merchant signals) into a clean, user-defined financial model (Cashflows + Transfers).**
+
+Users should never think in terms of Plaid categories. Instead, they define:
+
+- **Cashflows** (e.g. Rent, Dining Out, Groceries)
+- **Transfers** (e.g. 401k, Savings, Credit Card Payment)
+
+Everything else is inference + automation.
+
+---
+
+## 2. Data Model Output
+
+Every transaction must resolve to exactly one of:
+
+### A. Cashflow Assignment
+Example:
+- Starbucks → Dining Out
+- Costco → Groceries
+
+### B. Account Transfer
+Example:
+- Paycheck → Income Account / Cash
+- 401k contribution → Retirement Transfer
+- Credit card payment → Liability transfer
+
+### C. Unclassified (temporary state)
+Only exists before rules + ML resolve it.
+
+---
+
+## 3. Rule System Overview
+
+Rules are **global, user-defined automations** that map:
+
+> Merchant / inferred features → Cashflow or Transfer
+
+Rules are:
+
+- Global (apply across all accounts)
+- Ordered by priority (manual control)
+- Explicit (user-defined rules override ML/default inference)
+- Transparent only when user-defined (ML + default logic is opaque)
+
+---
+
+## 4. Two-Layer Intelligence System
+
+### Layer 1 — Machine Learning Default Mapping (Opaque)
+
+The system uses a background ML model to map:
+
+> Plaid merchant metadata → internal Cashflow / Transfer
+
+Characteristics:
+
+- Hidden from user
+- Continuously learned from:
+  - Plaid merchant categories
+  - Merchant names
+  - User corrections
+- Provides baseline categorization
+
+**Important design intent:**
+This layer should make the system feel “smart out of the box” with minimal setup.
+
+---
+
+### Layer 2 — User Rules (Explicit Overrides)
+
+User rules always override ML.
+
+They are:
+
+- Deterministic
+- Visible
+- Editable
+- Priority-based
+
+Example:
+
+![alt text](image.png)
+
+
+
+
+
+# AI BITS
+# Transaction → Cashflow Classification Engine (Default System)
+
+## 1. Problem Context
+
+We are building a financial tracking application that categorizes user transactions (sourced from Plaid) into **user-defined cashflows** such as:
+
+- Rent
+- Mortgage
+- Coffee
+- Dining Out
+- Groceries
+- Entertainment
+- Amazon
+- Living Expenses
+
+Unlike traditional finance apps, **cashflows are not fixed categories**. Each user defines their own structure.
+
+### Key Constraint
+
+At the system level, we must classify transactions **before any user-defined rules exist**.
+
+This creates a cold-start problem:
+
+> How do we map raw transaction data into an unknown, user-specific taxonomy?
+
+---
+
+## 2. Available Inputs
+
+Each transaction includes:
+
+- Merchant name (e.g. "STARBUCKS #123")
+- Plaid category (e.g. FOOD_AND_DRINK)
+- Amount
+- Timestamp
+- Account type (credit card, debit, savings)
+
+---
+
+## 3. Output Goal
+
+The system must assign each transaction to:
+
+> exactly one user-defined cashflow (or transfer type)
+
+If uncertain:
+- leave unclassified OR
+- assign a fallback “general” bucket
+
+---
+
+## 4. Design Requirements
+
+The default engine must:
+
+- Work without any user input or rules
+- Be deterministic (no LLM dependency)
+- Produce reasonable results out-of-the-box
+- Handle diverse user-defined cashflow structures
+- Be easily overridable by user rules later
+- Minimize incorrect assignments (optimize precision over recall)
+
+---
+
+# 5. Potential Solutions
+
+## Solution A — Pure Plaid Category Mapping
+
+### Description
+
+Map Plaid categories directly to semantic buckets:
+
+
+FOOD_AND_DRINK → Food-like spending
+TRANSPORTATION → Transport
+RENT_AND_UTILITIES → Housing
+INCOME → Income
+
+
+Then map semantic buckets to closest cashflow.
+
+---
+
+### Pros
+
+- Extremely simple to implement
+- No heuristics or logic complexity
+- Fully deterministic
+- Zero maintenance cost
+
+---
+
+### Cons
+
+- Plaid categories are too coarse
+- Fails to distinguish sub-buckets (e.g. Coffee vs Dining Out)
+- Poor alignment with user-specific structures
+- Feels “dumb” to users
+- Low personalization quality
+
+---
+
+## Solution B — Merchant Rule Heuristics (Hardcoded Engine)
+
+### Description
+
+Use known merchant patterns:
+
+
+"uber", "lyft" → Transportation
+"starbucks" → Coffee
+"amazon" → Shopping
+"whole foods" → Groceries
+
+
+Combine with Plaid categories.
+
+---
+
+### Pros
+
+- Very high accuracy for common merchants
+- Fast and lightweight
+- No ML or external dependencies
+- Easy to extend incrementally
+
+---
+
+### Cons
+
+- Requires continuous manual maintenance
+- Long tail of merchants remains unhandled
+- Brittle to merchant naming variations
+- Does not generalize well globally
+
+---
+
+## Solution C — Hybrid Deterministic Scoring Engine (Recommended)
+
+### Description
+
+Build a scoring system that combines multiple signals:
+
+- Merchant name match score
+- Plaid category semantic mapping
+- Transaction amount heuristics
+- Recurring pattern detection
+- Account-type context
+
+Each transaction is assigned to the highest scoring cashflow.
+
+---
+
+### Example
+
+
+Score(transaction, cashflow):
+
+merchant similarity weight
+category alignment weight
+amount pattern match
+recurrence boost
+
+---
+
+### Pros
+
+- Strong accuracy without ML
+- Handles ambiguity gracefully
+- Extensible system
+- Fully deterministic and explainable
+- No external cost or dependencies
+- Works well with user-defined cashflows
+
+---
+
+### Cons
+
+- More complex to implement
+- Requires careful tuning of weights
+- Still limited in handling edge-case semantics
+- Can feel “handcrafted” without learning
+
+---
+
+## Solution D — Rule-First + Weak Default Engine (Recommended Architecture)
+
+### Description
+
+Separate system into two layers:
+
+### Layer 1: Default Engine (this system)
+- Provides best-effort classification
+- Uses hybrid scoring approach (Solution C)
+
+### Layer 2: User Rules (future override layer)
+- Explicit mappings
+- Always takes priority over default engine
+
+---
+
+### Pros
+
+- Clean separation of concerns
+- Enables strong out-of-box experience
+- Fully user-overridable
+- Scales well with product maturity
+- Supports learning loop via user corrections
+
+---
+
+### Cons
+
+- Requires careful conflict resolution design
+- Slightly more complex system architecture
+
+---
+
+## 6. Key Open Design Questions
+
+### 1. Granularity of Default Engine Output
+
+Should the engine:
+
+- Output directly to cashflows?
+- OR output intermediate “intent categories” first?
+
+Tradeoff:
+- Direct mapping → simpler
+- Intent layer → more flexible long-term
+
+---
+
+### 2. Handling Ambiguity
+
+When confidence is low:
+
+- Assign best guess?
+- Or leave unclassified?
+- Or assign “General Spending” bucket?
+
+---
+
+### 3. Weight Calibration
+
+How should we balance:
+
+- Merchant signals (strong but sparse)
+- Plaid categories (broad but reliable)
+- Amount patterns (useful but noisy)
+
+---
+
+### 4. Evolution Toward Learning
+
+Should the system eventually:
+
+- Learn from user corrections?
+- Or remain fully deterministic?
+
+(Separate from current scope, but impacts design choices)
+
+---
+
+## 7. Recommended Approach
+
+The best approach for the current product stage is:
+
+### ✔ Solution D: Rule-First + Hybrid Deterministic Engine
+
+With:
+
+- Merchant heuristics for high-confidence matches
+- Plaid categories as baseline signals
+- Amount + recurrence heuristics for refinement
+- Deterministic scoring (no ML required)
+- Full override capability via future user rules
+
+---
+
+## 8. Summary
+
+The problem is not traditional classification—it is **mapping noisy financial signals into arbitrary user-defined taxonomies.**
+
+The best solution is a **hybrid deterministic scoring engine** that:
+
+- Uses Plaid as a weak prior
+- Uses merchant patterns for precision
+- Uses heuristics for structure
+- Defers to user rules when available
+
+This creates a system that is:
+
+- Accurate enough out of the box
+- Fully transparent
+- Cheap to run
+- Easily extensible into smarter systems later

@@ -143,15 +143,15 @@ export default function AccountsPage() {
       return;
     }
 
-    // Duplicate check
+    const normalizedName = formData.name.trim().toLowerCase();
+
     const isDuplicate = accounts.some(
       (a) =>
         a.id !== selectedEditingAccount?.id &&
-        a.name.toLowerCase() === formData.name.toLowerCase() &&
-        !a.isArchived
+        a.name.trim().toLowerCase() === normalizedName
     );
     if (isDuplicate) {
-      setError(`An active account named "${formData.name}" already exists.`);
+      setError(`An account named "${formData.name.trim()}" already exists.`);
       return;
     }
 

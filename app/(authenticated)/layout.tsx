@@ -19,6 +19,7 @@ import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlin
 import SwapHorizOutlinedIcon from "@mui/icons-material/SwapHorizOutlined";
 import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutlined";
 import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
+import ChecklistIcon from '@mui/icons-material/Checklist';
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import { onAuthStateChanged, User } from "firebase/auth";
 import Link from "next/link";
@@ -33,6 +34,7 @@ const navItems = [
   { label: "Cashflows", href: "/cashflows", icon: SwapHorizOutlinedIcon },
   { label: "Budgets", href: "/budgets", icon: PieChartOutlineOutlinedIcon },
   { label: "Transactions", href: "/transactions", icon: ReceiptLongOutlinedIcon },
+  {label: "Rules", href: "/rules", icon: ChecklistIcon},
   { label: "Settings", href: "/settings", icon: SettingsOutlinedIcon },
 ];
 

@@ -39,6 +39,7 @@ function toTransaction(
     categoryPrimary: record.category?.primary ?? null,
     categoryDetailed: record.category?.detailed ?? null,
     cashflowId: record.cashflowId,
+
   };
 }
 
