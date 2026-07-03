@@ -266,300 +266,70 @@ Example:
 
 
 # AI BITS
-# Transaction → Cashflow Classification Engine (Default System)
+# Transaction → Cashflow Classification Engine (Semantic Anchor Architecture)
 
-## 1. Problem Context
+## 1. Problem Context & The Cold-Start Challenge
 
-We are building a financial tracking application that categorizes user transactions (sourced from Plaid) into **user-defined cashflows** such as:
+We are building a financial tracking application that categorizes raw transaction data (sourced from Plaid) into **user-defined cashflows** rather than rigid, hardcoded categories. Users can build entirely custom structures with names like *"Morning Fuel"*, *"Weekend Fun"*, or *"Living Expenses"*.
 
-- Rent
-- Mortgage
-- Coffee
-- Dining Out
-- Groceries
-- Entertainment
-- Amazon
-- Living Expenses
-
-Unlike traditional finance apps, **cashflows are not fixed categories**. Each user defines their own structure.
-
-### Key Constraint
-
-At the system level, we must classify transactions **before any user-defined rules exist**.
-
-This creates a cold-start problem:
-
-> How do we map raw transaction data into an unknown, user-specific taxonomy?
+The core architectural difficulty is a severe **cold-start problem**. The system must confidently classify incoming transactions before any explicit user-defined rules exist. Standard deterministic engines rely on predictable string matches or fixed category mappings. They completely break down when forced to map messy merchant strings (e.g., `"STARBUCKS #123"`) into arbitrary, unknown human taxonomies.
 
 ---
 
-## 2. Available Inputs
+## 2. The Proposed Solution: Semantic Anchor Space
 
-Each transaction includes:
+To achieve high precision without running heavy, expensive LLMs in the runtime transaction path, the system architecture uses an intermediate, hidden translation layer. This decouples transaction processing from the user's custom taxonomy through three distinct layers.
 
-- Merchant name (e.g. "STARBUCKS #123")
-- Plaid category (e.g. FOOD_AND_DRINK)
-- Amount
-- Timestamp
-- Account type (credit card, debit, savings)
+```
+[ Raw Plaid Transaction ] ──> Hardcoded Heuristics ┐
+                                                   ├─> [ Hidden System Anchor ] ─> [ User Cashflow ]
+[ User-Defined Cashflow ] ──> Vector Embedding ────┘
 
----
+```
 
-## 3. Output Goal
+### Layer 1: The Immutable Anchor Taxonomy (System Level)
 
-The system must assign each transaction to:
+The core architecture defines a hidden, standardized list of approximately 150 highly granular financial concepts. These are fixed system constants such as `specialty_coffee`, `fast_food`, `residential_rent`, and `rideshare`. Users never see these labels; they exist purely as an internal data routing matrix.
 
-> exactly one user-defined cashflow (or transfer type)
+### Layer 2: The Semantic Bridge (Asynchronous Embedding)
 
-If uncertain:
-- leave unclassified OR
-- assign a fallback “general” bucket
+When a user creates or modifies a custom cashflow bucket, the system generates a vector embedding of that category name using a lightweight, local bi-encoder model. The system calculates the cosine similarity between the user's custom label and the 150 hidden System Anchors. This computation happens **once, asynchronously at category creation**, mapping anchors like `specialty_coffee` directly to a user's custom *"Morning Fuel"* bucket.
 
----
+### Layer 3: The Runtime Engine (Deterministic Match)
 
-## 4. Design Requirements
-
-The default engine must:
-
-- Work without any user input or rules
-- Be deterministic (no LLM dependency)
-- Produce reasonable results out-of-the-box
-- Handle diverse user-defined cashflow structures
-- Be easily overridable by user rules later
-- Minimize incorrect assignments (optimize precision over recall)
+When a transaction hits the app, a fast, hardcoded rules engine maps the merchant string and Plaid data straight to a **System Anchor**, bypassing user taxonomy entirely. Because the system controls the anchors, it can use deterministic regex and account heuristics safely (e.g., if Merchant contains "Starbucks", map to `specialty_coffee` with 100% confidence). The transaction then instantly resolves to the user's custom cashflow using the pre-calculated Layer 2 routing matrix.
 
 ---
 
-# 5. Potential Solutions
+## 3. Metadata Enrichment & Ambiguity Safeguards
 
-## Solution A — Pure Plaid Category Mapping
+To maximize out-of-the-box accuracy and handle vague naming conventions, the engine utilizes user metadata and mathematical safety boundaries.
 
-### Description
+### Context Enrichment via Descriptions and Tags
 
-Map Plaid categories directly to semantic buckets:
+Short user strings like *"Amazon"* are inherently ambiguous—they could mean groceries, cloud hosting, or online shopping. To solve this, the cashflow creation UI accepts optional descriptions or keywords. When creating the vector embedding, the engine generates a **composite string**:
 
+> `"Category Name: Amazon. Keywords: packages, prime, shopping."`
 
-FOOD_AND_DRINK → Food-like spending
-TRANSPORTATION → Transport
-RENT_AND_UTILITIES → Housing
-INCOME → Income
+This increased semantic surface area pulls the mathematical vector directly toward the correct system anchors (`online_shopping`) and away from incorrect ones (`cloud_hosting`).
 
+### Precision-First Confidence Thresholding
 
-Then map semantic buckets to closest cashflow.
-
----
-
-### Pros
-
-- Extremely simple to implement
-- No heuristics or logic complexity
-- Fully deterministic
-- Zero maintenance cost
+To adhere to the requirement of minimizing incorrect assignments, the system enforces a strict similarity threshold. If an anchor’s cosine similarity to a user’s cashflow is low, the transaction is routed to a **"Needs Review"** bucket. This ensures the engine prioritizes high precision over raw recall, prompting the user for a one-time classification that creates a permanent Layer 0 override rule.
 
 ---
 
-### Cons
-
-- Plaid categories are too coarse
-- Fails to distinguish sub-buckets (e.g. Coffee vs Dining Out)
-- Poor alignment with user-specific structures
-- Feels “dumb” to users
-- Low personalization quality
-
----
-
-## Solution B — Merchant Rule Heuristics (Hardcoded Engine)
-
-### Description
-
-Use known merchant patterns:
-
-
-"uber", "lyft" → Transportation
-"starbucks" → Coffee
-"amazon" → Shopping
-"whole foods" → Groceries
-
-
-Combine with Plaid categories.
-
----
-
-### Pros
-
-- Very high accuracy for common merchants
-- Fast and lightweight
-- No ML or external dependencies
-- Easy to extend incrementally
-
----
-
-### Cons
-
-- Requires continuous manual maintenance
-- Long tail of merchants remains unhandled
-- Brittle to merchant naming variations
-- Does not generalize well globally
-
----
-
-## Solution C — Hybrid Deterministic Scoring Engine (Recommended)
-
-### Description
-
-Build a scoring system that combines multiple signals:
-
-- Merchant name match score
-- Plaid category semantic mapping
-- Transaction amount heuristics
-- Recurring pattern detection
-- Account-type context
-
-Each transaction is assigned to the highest scoring cashflow.
-
----
-
-### Example
-
-
-Score(transaction, cashflow):
-
-merchant similarity weight
-category alignment weight
-amount pattern match
-recurrence boost
-
----
-
-### Pros
-
-- Strong accuracy without ML
-- Handles ambiguity gracefully
-- Extensible system
-- Fully deterministic and explainable
-- No external cost or dependencies
-- Works well with user-defined cashflows
-
----
-
-### Cons
-
-- More complex to implement
-- Requires careful tuning of weights
-- Still limited in handling edge-case semantics
-- Can feel “handcrafted” without learning
-
----
-
-## Solution D — Rule-First + Weak Default Engine (Recommended Architecture)
-
-### Description
-
-Separate system into two layers:
-
-### Layer 1: Default Engine (this system)
-- Provides best-effort classification
-- Uses hybrid scoring approach (Solution C)
-
-### Layer 2: User Rules (future override layer)
-- Explicit mappings
-- Always takes priority over default engine
-
----
-
-### Pros
-
-- Clean separation of concerns
-- Enables strong out-of-box experience
-- Fully user-overridable
-- Scales well with product maturity
-- Supports learning loop via user corrections
-
----
-
-### Cons
-
-- Requires careful conflict resolution design
-- Slightly more complex system architecture
-
----
-
-## 6. Key Open Design Questions
-
-### 1. Granularity of Default Engine Output
-
-Should the engine:
-
-- Output directly to cashflows?
-- OR output intermediate “intent categories” first?
-
-Tradeoff:
-- Direct mapping → simpler
-- Intent layer → more flexible long-term
-
----
-
-### 2. Handling Ambiguity
-
-When confidence is low:
-
-- Assign best guess?
-- Or leave unclassified?
-- Or assign “General Spending” bucket?
-
----
-
-### 3. Weight Calibration
-
-How should we balance:
-
-- Merchant signals (strong but sparse)
-- Plaid categories (broad but reliable)
-- Amount patterns (useful but noisy)
-
----
-
-### 4. Evolution Toward Learning
-
-Should the system eventually:
-
-- Learn from user corrections?
-- Or remain fully deterministic?
-
-(Separate from current scope, but impacts design choices)
-
----
-
-## 7. Recommended Approach
-
-The best approach for the current product stage is:
-
-### ✔ Solution D: Rule-First + Hybrid Deterministic Engine
-
-With:
-
-- Merchant heuristics for high-confidence matches
-- Plaid categories as baseline signals
-- Amount + recurrence heuristics for refinement
-- Deterministic scoring (no ML required)
-- Full override capability via future user rules
-
----
-
-## 8. Summary
-
-The problem is not traditional classification—it is **mapping noisy financial signals into arbitrary user-defined taxonomies.**
-
-The best solution is a **hybrid deterministic scoring engine** that:
-
-- Uses Plaid as a weak prior
-- Uses merchant patterns for precision
-- Uses heuristics for structure
-- Defers to user rules when available
-
-This creates a system that is:
-
-- Accurate enough out of the box
-- Fully transparent
-- Cheap to run
-- Easily extensible into smarter systems later
+## 4. System Data Flow
+
+The operational sequence of a transaction moving through this architecture follows a clean, decoupled path:
+
+1. **Category Creation (Asynchronous)**
+The user creates a custom cashflow named "Daily Grind" and adds the tag "coffee". The system creates a composite string, embeds it, and maps it to the hidden `specialty_coffee` anchor.
+2. **Transaction Ingestion (Runtime <5ms)**
+A raw webhook from Plaid arrives: `{"merchant_name": "PEETS COFFEE #456", "category": "FOOD_AND_DRINK"}`.
+3. **Anchor Resolution (Deterministic Heuristic)**
+The Layer 3 heuristic engine processes the string, hits a regex match for "PEETS", and resolves the transaction to the system anchor: `specialty_coffee`.
+4. **Matrix Lookup (Database Query)**
+The system queries the user's local routing matrix to see which cashflow bucket claims the `specialty_coffee` anchor.
+5. **Final Assignment (Complete)**
+The transaction is automatically assigned to "Daily Grind". If an explicit user override rule exists for that merchant, it bypasses this flow entirely.
