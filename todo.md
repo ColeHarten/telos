@@ -333,3 +333,6 @@ The Layer 3 heuristic engine processes the string, hits a regex match for "PEETS
 The system queries the user's local routing matrix to see which cashflow bucket claims the `specialty_coffee` anchor.
 5. **Final Assignment (Complete)**
 The transaction is automatically assigned to "Daily Grind". If an explicit user override rule exists for that merchant, it bypasses this flow entirely.
+
+## Notes
+I will probably want to compute the latent vector of each cashflow in the user's **browser** on creation/edit and then just store it as a string or something in the firestore document. Then, I will reference it on each transaction.
