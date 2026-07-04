@@ -14,21 +14,17 @@ import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
 import PieChartRoundedIcon from "@mui/icons-material/PieChartRounded";
-import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
-import SecurityRoundedIcon from "@mui/icons-material/SecurityRounded";
 import SyncRoundedIcon from "@mui/icons-material/SyncRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import UnarchiveRoundedIcon from "@mui/icons-material/UnarchiveRounded";
 import {
   Alert,
+  Avatar,
   Box,
   Button,
-  Card,
-  CardContent,
   Chip,
   IconButton,
-  InputAdornment,
   Menu,
   MenuItem,
   Paper,
@@ -42,8 +38,7 @@ import {
   TableHead,
   TableRow,
   Tabs,
-  TextField,
-  Typography,
+  Typography
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 import AccountFormDialog from "./AccountFormDialog";
@@ -63,7 +58,6 @@ export default function AccountsPage() {
   const [selectedEditingAccount, setSelectedEditingAccount] = useState<Account | null>(null);
 
   const [viewFilter, setViewFilter] = useState<ViewFilter>("active");
-  const [searchQuery, setSearchQuery] = useState("");
 
   const [addMenuAnchor, setAddMenuAnchor] = useState<HTMLElement | null>(null);
   const addMenuOpen = Boolean(addMenuAnchor);
@@ -89,13 +83,6 @@ export default function AccountsPage() {
     if (viewFilter === "archived") return archivedAccounts;
     return accounts;
   }, [viewFilter, accounts, activeAccounts, archivedAccounts]);
-
-  const displayedAccounts = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    return baseFilteredAccounts.filter((account) => {
-      return query.length === 0 || account.name.toLowerCase().includes(query);
-    });
-  }, [baseFilteredAccounts, searchQuery]);
 
   const accountSummary = useMemo(() => {
     let assetTotal = 0;
@@ -233,7 +220,7 @@ export default function AccountsPage() {
   const rowMenuAccount = accounts.find((a) => a.id === rowMenuAccountId) ?? null;
 
   return (
-    <Stack spacing={2.25}>
+    <Stack spacing={3} sx={{ p: 4, bgcolor: "#f8fafc", minHeight: "100vh", fontFamily: "Inter, sans-serif" }}>
       {/* Header */}
       <Stack
         spacing={2}
@@ -244,22 +231,29 @@ export default function AccountsPage() {
         }}
       >
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: "-0.03em" }}>
+          <Typography variant="h4" sx={{ fontWeight: 700, color: "#0f172a", letterSpacing: "-0.03em", fontSize: "1.75rem" }}>
             Accounts
           </Typography>
         </Box>
 
-        <Stack direction="row" spacing={1.25} sx={{ flexShrink: 0 }}>
+        <Stack direction="row" spacing={1.5} sx={{ flexShrink: 0, alignItems: "center", flexWrap: "wrap", rowGap: 1.5 }}>
           <Button
             variant="outlined"
-            startIcon={<SyncRoundedIcon />}
+            startIcon={<SyncRoundedIcon sx={{ color: "#2563eb", fontSize: 18 }} />}
             onClick={() => window.location.reload()}
             sx={{
-              height: 40,
-              borderRadius: 2,
+              borderColor: "#bfdbfe",
+              color: "#2563eb",
               textTransform: "none",
-              fontWeight: 700,
+              fontWeight: 600,
+              fontSize: "0.85rem",
+              borderRadius: 2,
+              bgcolor: "#fff",
+              px: 1.75,
+              py: 0.85,
+              boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.04)",
               whiteSpace: "nowrap",
+              "&:hover": { borderColor: "#93c5fd", bgcolor: "#eff6ff" },
             }}
           >
             Refresh Balances
@@ -267,15 +261,20 @@ export default function AccountsPage() {
 
           <Button
             variant="contained"
-            startIcon={<AddRoundedIcon />}
-            endIcon={<ExpandMoreRoundedIcon />}
+            disableElevation
+            startIcon={<AddRoundedIcon sx={{ fontSize: 18 }} />}
+            endIcon={<ExpandMoreRoundedIcon sx={{ fontSize: 18 }} />}
             onClick={(event) => setAddMenuAnchor(event.currentTarget)}
             sx={{
-              height: 40,
-              borderRadius: 2,
+              bgcolor: "#2563eb",
               textTransform: "none",
-              fontWeight: 700,
+              fontWeight: 600,
+              fontSize: "0.85rem",
+              borderRadius: 2,
+              px: 1.75,
+              py: 0.85,
               whiteSpace: "nowrap",
+              "&:hover": { bgcolor: "#1d4ed8" },
             }}
           >
             Add Account
@@ -372,161 +371,217 @@ export default function AccountsPage() {
       </Stack>
 
       {error && (
-        <Snackbar open autoHideDuration={5000} onClose={() => setError(null)}>
-          <Alert severity="error" variant="filled" onClose={() => setError(null)} sx={{ borderRadius: 2, fontWeight: 600 }}>
+        <Snackbar open autoHideDuration={5000} onClose={() => setError(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }}>
+          <Alert severity="error" variant="filled" onClose={() => setError(null)} sx={{ borderRadius: 2.5 }}>
             {error}
           </Alert>
         </Snackbar>
       )}
 
-      {/* Overview Cards */}
-      <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-        <CardContent sx={{ p: 2.25 }}>
-          <Typography variant="body1" sx={{ fontWeight: 700, mb: 1.75 }}>
-            Overview
-          </Typography>
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", sm: "1fr 1fr 1fr 1fr" }, gap: 3 }}>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-              <Box sx={{ width: 40, height: 40, borderRadius: "50%", bgcolor: "#ecfdf5", color: "#059669", display: "flex", alignItems: "center", justifyValue: "center", justifyContent: "center" }}>
-                <TrendingUpRoundedIcon sx={{ fontSize: 20 }} />
-              </Box>
-              <Box>
-                <Typography variant="body2" color="text.secondary">Assets</Typography>
-                <Typography sx={{ fontWeight: 800, color: "#059669" }}>{formatCurrency(accountSummary.assetTotal)}</Typography>
-                <Typography variant="caption" color="text.secondary">{accountSummary.assetCount} accounts</Typography>
-              </Box>
+      {/* 2. Top Metric Cards Dashboard Segment */}
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", md: "1fr 1fr 1fr 1fr" },
+          gap: 2,
+        }}
+      >
+        <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
+          <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Box>
+              <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Assets</Typography>
+              <Typography sx={{ fontWeight: 700, color: "#16a34a", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>
+                {formatCurrency(accountSummary.assetTotal)}
+              </Typography>
+              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
+                {accountSummary.assetCount} accounts
+              </Typography>
             </Box>
+            <Avatar sx={{ bgcolor: "#f0fdf4", color: "#16a34a", width: 44, height: 44 }}>
+              <TrendingUpRoundedIcon sx={{ fontSize: 20 }} />
+            </Avatar>
+          </Stack>
+        </Paper>
 
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-              <Box sx={{ width: 40, height: 40, borderRadius: "50%", bgcolor: "#fef2f2", color: "#dc2626", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <TrendingDownRoundedIcon sx={{ fontSize: 20 }} />
-              </Box>
-              <Box>
-                <Typography variant="body2" color="text.secondary">Liabilities</Typography>
-                <Typography sx={{ fontWeight: 800, color: "#dc2626" }}>-{formatCurrency(accountSummary.liabilityTotal)}</Typography>
-                <Typography variant="caption" color="text.secondary">{accountSummary.liabilityCount} accounts</Typography>
-              </Box>
+        <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
+          <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Box>
+              <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Liabilities</Typography>
+              <Typography sx={{ fontWeight: 700, color: "#dc2626", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>
+                -{formatCurrency(accountSummary.liabilityTotal)}
+              </Typography>
+              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
+                {accountSummary.liabilityCount} accounts
+              </Typography>
             </Box>
+            <Avatar sx={{ bgcolor: "#fef2f2", color: "#dc2626", width: 44, height: 44 }}>
+              <TrendingDownRoundedIcon sx={{ fontSize: 20 }} />
+            </Avatar>
+          </Stack>
+        </Paper>
 
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-              <Box sx={{ width: 40, height: 40, borderRadius: "50%", bgcolor: "#eef2ff", color: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <PieChartRoundedIcon sx={{ fontSize: 20 }} />
-              </Box>
-              <Box>
-                <Typography variant="body2" color="text.secondary">Net Worth</Typography>
-                <Typography sx={{ fontWeight: 800 }}>{formatCurrency(accountSummary.netWorth)}</Typography>
-              </Box>
+        <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
+          <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Box>
+              <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Net Worth</Typography>
+              <Typography sx={{ fontWeight: 700, color: "#0f172a", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>
+                {formatCurrency(accountSummary.netWorth)}
+              </Typography>
+              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
+                Across all active accounts
+              </Typography>
             </Box>
+            <Avatar sx={{ bgcolor: "#f5f3ff", color: "#7c3aed", width: 44, height: 44 }}>
+              <PieChartRoundedIcon sx={{ fontSize: 20 }} />
+            </Avatar>
+          </Stack>
+        </Paper>
 
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-              <Box sx={{ width: 40, height: 40, borderRadius: "50%", bgcolor: "#eff6ff", color: "#2563eb", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <CreditCardRoundedIcon sx={{ fontSize: 20 }} />
-              </Box>
-              <Box>
-                <Typography variant="body2" color="text.secondary">Total Accounts</Typography>
-                <Typography sx={{ fontWeight: 800 }}>{accountSummary.totalCount}</Typography>
-              </Box>
+        <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
+          <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Box>
+              <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Total Accounts</Typography>
+              <Typography sx={{ fontWeight: 700, color: "#0f172a", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>
+                {accountSummary.totalCount}
+              </Typography>
+              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
+                {accountSummary.archivedCount} archived
+              </Typography>
             </Box>
+            <Avatar sx={{ bgcolor: "#eff6ff", color: "#2563eb", width: 44, height: 44 }}>
+              <CreditCardRoundedIcon sx={{ fontSize: 20 }} />
+            </Avatar>
+          </Stack>
+        </Paper>
+      </Box>
+
+      {/* 3. Accounts Data Grid Core View */}
+      <Tabs
+        value={viewFilter}
+        onChange={(_e, v: ViewFilter) => setViewFilter(v)}
+        sx={{
+          minHeight: 40,
+          bgcolor: "#fff",
+          borderRadius: 2,
+          border: "1px solid #e2e8f0",
+          p: 0.5,
+          width: "fit-content",
+          "& .MuiTabs-indicator": { display: "none" },
+        }}
+      >
+        <Tab
+          value="active"
+          disableRipple
+          sx={{
+              minHeight: 32,
+              minWidth: 0,
+              px: 1.75,
+              borderRadius: 1.5,
+              textTransform: "none",
+              fontWeight: 600,
+              fontSize: "0.8rem",
+              color: "#64748b",
+              "&.Mui-selected": {
+                color: "#2563eb",
+                bgcolor: "#eff6ff",
+              },
+            }}
+          label={
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Box>Active</Box>
+              <Chip size="small" label={accountSummary.activeCount} />
+            </Box>
+          }
+        />
+        <Tab
+          value="archived"
+          disableRipple
+          sx={{
+              minHeight: 32,
+              minWidth: 0,
+              px: 1.75,
+              borderRadius: 1.5,
+              textTransform: "none",
+              fontWeight: 600,
+              fontSize: "0.8rem",
+              color: "#64748b",
+              "&.Mui-selected": {
+                color: "#2563eb",
+                bgcolor: "#eff6ff",
+              },
+          }}
+          label={
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Box>Archived</Box>
+              <Chip size="small" label={accountSummary.archivedCount} />
+            </Box>
+          }
+        />
+      </Tabs>
+      
+      <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden", bgcolor: "#fff", borderColor: "#e2e8f0" }}>
+        {accountsLoading ? (
+          <Box sx={{ py: 8, textAlign: "center" }}>
+            <Typography variant="body2" sx={{ color: "#64748b" }}>Loading...</Typography>
           </Box>
-        </CardContent>
-      </Card>
-
-      {/* Accounts Table Section */}
-      <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, overflow: "hidden" }}>
-        <Box sx={{ px: 2.25, pt: 1.5, borderBottom: "1px solid", borderColor: "divider" }}>
-          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 1.5, mb: 1 }}>
-            <Tabs value={viewFilter} onChange={(_e, v: ViewFilter) => setViewFilter(v)} sx={{ minHeight: 0 }}>
-              <Tab
-                value="active"
-                sx={{ textTransform: "none", fontWeight: 700 }}
-                label={
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    <Box>Active</Box>
-                    <Chip size="small" label={accountSummary.activeCount} />
-                  </Box>
-                }
-              />
-              <Tab
-                value="archived"
-                sx={{ textTransform: "none", fontWeight: 700 }}
-                label={
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    <Box>Archived</Box>
-                    <Chip size="small" label={accountSummary.archivedCount} />
-                  </Box>
-                }
-              />
-            </Tabs>
-
-            <TextField
-              size="small"
-              placeholder="Search accounts..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              slotProps={{
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchRoundedIcon sx={{ fontSize: 18, color: "text.disabled" }} />
-                    </InputAdornment>
-                  ),
-                },
-              }}
-              sx={{ width: 240, "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2 } }}
-            />
+        ) : baseFilteredAccounts.length === 0 ? (
+          <Box sx={{ py: 8, textAlign: "center" }}>
+            <Typography variant="body2" sx={{ color: "#64748b" }}>No accounts found.</Typography>
           </Box>
-        </Box>
+        ) : (
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow sx={{ borderBottom: "1px solid #e2e8f0" }}>
+                  <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Account</TableCell>
+                  <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Type</TableCell>
+                  <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Balance</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem", pr: 3 }}>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {baseFilteredAccounts.map((account) => {
+                  const styleConfig = accountTypeStyles[account.accountType] || { label: account.accountType, color: "#64748b" };
+                  const balance = account.currentBalance ?? account.startingBalance ?? 0;
 
-        <CardContent sx={{ p: 0 }}>
-          {accountsLoading ? (
-            <Box sx={{ p: 2.25 }}><Typography variant="body2" color="text.secondary">Loading...</Typography></Box>
-          ) : displayedAccounts.length === 0 ? (
-            <Box sx={{ p: 2.25 }}><Typography variant="body2" color="text.secondary">No accounts found.</Typography></Box>
-          ) : (
-            <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 0 }}>
-              <Table sx={{ minWidth: 650 }}>
-                <TableHead>
-                  <TableRow sx={{ bgcolor: "#f8fafc" }}>
-                    <TableCell sx={{ fontWeight: 700 }}>Account</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }}>Type</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }}>Balance</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {displayedAccounts.map((account) => {
-                    const styleConfig = accountTypeStyles[account.accountType] || { label: account.accountType, color: "#64748b" };
-                    const balance = account.currentBalance ?? account.startingBalance ?? 0;
-
-                    return (
-                      <TableRow key={account.id} hover>
-                        <TableCell sx={{ fontWeight: 600}}>
-                          {account.name} <SyncRoundedIcon style={{ fontSize: 14, justifySelf: "center" }} />
-                        </TableCell>
-                        <TableCell>
-                          <Chip label={styleConfig.label} size="small" sx={{ 
-                            color: styleConfig.color, 
+                  return (
+                    <TableRow key={account.id} sx={{ "&:hover": { backgroundColor: "#f8fafc" }, "& td": { py: 1.75, borderBottom: "1px solid #f1f5f9" } }}>
+                      <TableCell sx={{ fontWeight: 600, color: "#0f172a", fontSize: "0.875rem" }}>
+                        <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+                          <Box component="span">{account.name}</Box>
+                          {account.plaidItemId && account.isArchived ? <ArchiveRoundedIcon sx={{ fontSize: 14, color: "#94a3b8" }} /> : <SyncRoundedIcon sx={{ fontSize: 14, color: "#94a3b8" }} />}
+                        </Stack>
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={styleConfig.label}
+                          size="small"
+                          sx={{
+                            height: 22,
+                            fontSize: "0.7rem",
+                            fontWeight: 600,
+                            color: styleConfig.color,
                             bgcolor: `${styleConfig.color}10`,
-                            fontWeight: 600 
-                          }} />
-                        </TableCell>
-                        <TableCell sx={{ fontWeight: 700, color: account.normalBalance === "liability" ? "#dc2626" : "text.primary" }}>
-                          {formatCurrency(balance)}
-                        </TableCell>
-                        <TableCell align="right">
-                          <IconButton size="small" onClick={(e) => handleOpenRowMenu(e, account.id)}>
-                            <MoreHorizRoundedIcon fontSize="small" />
-                          </IconButton>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </CardContent>
-      </Card>
+                            borderRadius: 1.5,
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 700, fontSize: "0.875rem", color: account.normalBalance === "liability" ? "#dc2626" : "#0f172a" }}>
+                        {formatCurrency(balance)}
+                      </TableCell>
+                      <TableCell align="right" sx={{ pr: 3 }}>
+                        <IconButton size="small" sx={{ color: "#94a3b8" }} onClick={(e) => handleOpenRowMenu(e, account.id)}>
+                          <MoreHorizRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </Paper>
 
       {/* Account Forms Dialog Popup Wrapper */}
       <AccountFormDialog

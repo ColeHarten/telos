@@ -66,11 +66,20 @@ const MAX_VISIBLE_PAGES = 5;
 
 type StatusFilter = "all" | "pending" | "posted";
 type DateRangePreset = "all" | "7d" | "30d" | "mtd" | "ytd" | "ltm" | "custom";
+// "credit" = money coming in (i.e. tx.amount < 0 in this schema)
+// "debit" = money going out (i.e. tx.amount > 0 in this schema)
+type FlowFilter = "all" | "credit" | "debit";
+
+const FLOW_FILTER_TABS: { value: FlowFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "credit", label: "Money In" },
+  { value: "debit", label: "Money Out" },
+];
 
 const DATE_RANGE_PRESETS: { value: DateRangePreset; label: string }[] = [
   { value: "all", label: "All Time" },
-  { value: "mtd", label: "This month" },
-  { value: "ytd", label: "This year" },
+  { value: "mtd", label: "This Month" },
+  { value: "ytd", label: "This Year" },
   { value: "custom", label: "Custom Range" },
 ];
 
@@ -227,6 +236,7 @@ export default function TransactionsPage() {
   const [customDateFrom, setCustomDateFrom] = useState("");
   const [customDateTo, setCustomDateTo] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [flowFilter, setFlowFilter] = useState<FlowFilter>("all");
   const [minAmount, setMinAmount] = useState("");
   const [maxAmount, setMaxAmount] = useState("");
 
@@ -281,6 +291,8 @@ export default function TransactionsPage() {
       if (normalizedSearch && !transaction.displayName.toLowerCase().includes(normalizedSearch)) return false;
       if (statusFilter === "pending" && !transaction.pending) return false;
       if (statusFilter === "posted" && transaction.pending) return false;
+      if (flowFilter === "credit" && transaction.amount >= 0) return false;
+      if (flowFilter === "debit" && transaction.amount < 0) return false;
 
       const amount = Math.abs(transaction.amount);
       if (min !== null && !Number.isNaN(min) && amount < min) return false;
@@ -288,8 +300,8 @@ export default function TransactionsPage() {
 
       return true;
     });
-  }, [scopedTransactions, searchTerm, statusFilter, minAmount, maxAmount]);
-  const hasActiveFilters = Boolean(searchTerm || hasDateRange || statusFilter !== "all" || minAmount || maxAmount || selectedAccountId);
+  }, [scopedTransactions, searchTerm, statusFilter, flowFilter, minAmount, maxAmount]);
+  const hasActiveFilters = Boolean(searchTerm || hasDateRange || statusFilter !== "all" || flowFilter !== "all" || minAmount || maxAmount || selectedAccountId);
 
   // Summary metrics recompute from the top-tier scope only (account + date range),
   // so list-only filters like search/status/amount don't move the cards.
@@ -326,7 +338,7 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, effectiveDateFrom, effectiveDateTo, statusFilter, minAmount, maxAmount, selectedAccountId, pageSize]);
+  }, [searchTerm, effectiveDateFrom, effectiveDateTo, statusFilter, flowFilter, minAmount, maxAmount, selectedAccountId, pageSize]);
 
   async function handleSync() {
     setSyncing(true);
@@ -697,10 +709,54 @@ export default function TransactionsPage() {
           flexDirection: { xs: "column", sm: "row" },
           alignItems: { xs: "stretch", sm: "center" },
           width: "100%",
-          justifyContent: "flex-end",
+          justifyContent: "space-between",
           gap: 1.5,
         }}
       >
+        <Tabs
+          value={flowFilter}
+          onChange={(_event, value) => setFlowFilter(value as FlowFilter)}
+          sx={{
+            minHeight: 40,
+            bgcolor: "#fff",
+            borderRadius: 2,
+            border: "1px solid #e2e8f0",
+            p: 0.5,
+            width: "fit-content",
+            "& .MuiTabs-indicator": { display: "none" },
+          }}
+        >
+          {FLOW_FILTER_TABS.map((tab) => (
+            <Tab
+              key={tab.value}
+              value={tab.value}
+              label={tab.label}
+              disableRipple
+              sx={{
+                minHeight: 32,
+                minWidth: 0,
+                px: 1.75,
+                borderRadius: 1.5,
+                textTransform: "none",
+                fontWeight: 600,
+                fontSize: "0.8rem",
+                color: "#64748b",
+                "&.Mui-selected": {
+                  color: "#2563eb",
+                  bgcolor: "#eff6ff",
+                },
+              }}
+            />
+          ))}
+        </Tabs>
+
+        <Stack
+          sx={{
+            flexDirection: { xs: "column", sm: "row" },
+            alignItems: { xs: "stretch", sm: "center" },
+            gap: 1.5,
+          }}
+        >
         <TextField
           size="small"
           placeholder="Search transactions..."
@@ -743,6 +799,7 @@ export default function TransactionsPage() {
         >
           Filters
         </Button>
+        </Stack>
       </Stack>
 
       <Menu
@@ -787,6 +844,7 @@ export default function TransactionsPage() {
               variant="text"
               onClick={() => {
                 setStatusFilter("all");
+                setFlowFilter("all");
                 setMinAmount("");
                 setMaxAmount("");
               }}
@@ -872,19 +930,6 @@ export default function TransactionsPage() {
                           <Typography sx={{ fontWeight: 500, color: "#334155", fontSize: "0.85rem" }}>
                             {tx.accountName || "Plaid Account"}
                           </Typography>
-                          {/* <Chip
-                            label={tx.accountType === "credit" ? "Credit Card" : "Cash"}
-                            size="small"
-                            sx={{
-                              height: 20,
-                              fontSize: "0.7rem",
-                              fontWeight: 600,
-                              bgcolor: tx.accountType === "credit" ? "#fef2f2" : "#f0fdf4",
-                              color: tx.accountType === "credit" ? "#ef4444" : "#16a34a",
-                              border: "none",
-                              borderRadius: 1.25,
-                            }}
-                          /> */}
                         </Stack>
                       </TableCell>
 
@@ -915,8 +960,8 @@ export default function TransactionsPage() {
                       </TableCell>
 
                       {/* Amount */}
-                      <TableCell align="right" sx={{ fontWeight: 700, fontSize: "0.875rem", color: isExpense ? "#0f172a" : "#16a34a", pr: 3 }}>
-                        {isExpense ? `-$${tx.amount.toFixed(2)}` : `+$${Math.abs(tx.amount).toFixed(2)}`}
+                      <TableCell align="right" sx={{ fontWeight: 700, fontSize: "0.875rem", color: isExpense ? "#dc2626" : "#16a34a", pr: 3 }}>
+                        {isExpense ? `(${tx.amount.toFixed(2)})` : `${Math.abs(tx.amount).toFixed(2)}`}
                       </TableCell>
 
                       {/* Actions */}
@@ -1025,7 +1070,7 @@ export default function TransactionsPage() {
         anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
       >
         <Alert severity="success" variant="filled" onClose={() => setSyncSuccess(false)} sx={{ borderRadius: 2.5 }}>
-          Account transaction logs verified and updated successfully.
+          Transactions synced successfully.
         </Alert>
       </Snackbar>
     </Stack>
