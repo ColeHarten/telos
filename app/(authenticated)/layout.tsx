@@ -34,7 +34,7 @@ const navItems = [
   { label: "Cashflows", href: "/cashflows", icon: SwapHorizOutlinedIcon },
   { label: "Budgets", href: "/budgets", icon: PieChartOutlineOutlinedIcon },
   { label: "Transactions", href: "/transactions", icon: ReceiptLongOutlinedIcon },
-  {label: "Rules", href: "/rules", icon: ChecklistIcon},
+  {label: "Automations", href: "/automations", icon: ChecklistIcon},
   { label: "Settings", href: "/settings", icon: SettingsOutlinedIcon },
 ];
 
