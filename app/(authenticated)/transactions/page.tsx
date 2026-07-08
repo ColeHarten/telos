@@ -1,62 +1,62 @@
 "use client";
 
-import useAuth from "@/lib/hooks/useAuth";
-import { useAccounts } from "@/lib/hooks/useAccounts";
-import useTransactions from "@/lib/hooks/useTransactions";
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
+import { useAccounts } from "@/lib/hooks/useAccounts";
+import useAuth from "@/lib/hooks/useAuth";
+import { useCashflows } from "@/lib/hooks/useCashflows";
+import useTransactions from "@/lib/hooks/useTransactions";
+import { Cashflow } from "@/lib/types/types";
 
 // Icons
-import SyncIcon from "@mui/icons-material/Sync";
+import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
+import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import FileUploadOutlinedIcon from "@mui/icons-material/FileUploadOutlined";
-import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
-import SearchIcon from "@mui/icons-material/Search";
 import FilterListIcon from "@mui/icons-material/FilterList";
-import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
+import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowLeftIcon from "@mui/icons-material/KeyboardArrowLeft";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
-import SouthWestIcon from "@mui/icons-material/SouthWest";
-import NorthEastIcon from "@mui/icons-material/NorthEast";
-import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
-import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
-import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
-import StorefrontOutlinedIcon from "@mui/icons-material/StorefrontOutlined";
-import ShoppingCartOutlinedIcon from "@mui/icons-material/ShoppingCartOutlined";
-import MusicNoteOutlinedIcon from "@mui/icons-material/MusicNoteOutlined";
-import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
-import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
 import LocalGasStationOutlinedIcon from "@mui/icons-material/LocalGasStationOutlined";
-import LabelOutlinedIcon from "@mui/icons-material/LabelOutlined";
+import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import MovieOutlinedIcon from "@mui/icons-material/MovieOutlined";
-import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
+import MusicNoteOutlinedIcon from "@mui/icons-material/MusicNoteOutlined";
+import NorthEastIcon from "@mui/icons-material/NorthEast";
+import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
+import SearchIcon from "@mui/icons-material/Search";
+import ShoppingCartOutlinedIcon from "@mui/icons-material/ShoppingCartOutlined";
+import SouthWestIcon from "@mui/icons-material/SouthWest";
+import StorefrontOutlinedIcon from "@mui/icons-material/StorefrontOutlined";
+import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
+import SyncIcon from "@mui/icons-material/Sync";
 
 import {
   Alert,
   Avatar,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Divider,
+  IconButton,
+  InputAdornment,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
   Paper,
+  Select,
   Snackbar,
   Stack,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Typography,
-  Chip,
   Tabs,
-  Tab,
   TextField,
-  InputAdornment,
-  IconButton,
-  Menu,
-  MenuItem,
-  Select,
-  ListItemIcon,
-  ListItemText,
+  Typography,
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 
@@ -111,26 +111,11 @@ function getMerchantAvatar(name: string = "") {
   return { bgcolor: "#f1f5f9", color: "#64748b", icon: <StorefrontOutlinedIcon sx={{ fontSize: 18 }} /> };
 }
 
-function getCategoryStyle(category: string = "") {
-  const c = category.toLowerCase();
 
-  if (c.includes("shop")) {
-    return { color: "#2563eb", icon: <ShoppingCartOutlinedIcon sx={{ fontSize: 16 }} /> };
-  }
-  if (c.includes("entertain") || c.includes("subscription")) {
-    return { color: "#7c3aed", icon: <MusicNoteOutlinedIcon sx={{ fontSize: 16 }} /> };
-  }
-  if (c.includes("income") || c.includes("payroll") || c.includes("deposit")) {
-    return { color: "#16a34a", icon: <PaidOutlinedIcon sx={{ fontSize: 16 }} /> };
-  }
-  if (c.includes("auto") || c.includes("transport") || c.includes("gas")) {
-    return { color: "#ea580c", icon: <DirectionsCarFilledOutlinedIcon sx={{ fontSize: 16 }} /> };
-  }
-  if (c.includes("financ") || c.includes("interest") || c.includes("bank")) {
-    return { color: "#2563eb", icon: <AccountBalanceOutlinedIcon sx={{ fontSize: 16 }} /> };
-  }
-
-  return { color: "#64748b", icon: <LabelOutlinedIcon sx={{ fontSize: 16 }} /> };
+function getCashflowName(cashflowId: string | undefined, cashflows: Cashflow[]|undefined): string {
+  if (!cashflowId || !cashflows) return "No Cashflow or Cashflows Unavailable";
+  const cashflow = cashflows.find((cf) => cf.id === cashflowId);
+  return cashflow ? cashflow.name : "Unknown Cashflow";
 }
 
 function buildPaginationItems(currentPage: number, totalPages: number) {
@@ -221,7 +206,10 @@ export default function TransactionsPage() {
     transactionsError,
     setTransactionsError,
     refetchTransactions,
+    updateTransactionCashflow,
   } = useTransactions(user, authLoading, accounts);
+
+  const { cashflows = [] } = useCashflows(user, authLoading);
 
   const [syncing, setSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
@@ -895,7 +883,6 @@ export default function TransactionsPage() {
                 {paginatedTransactions.map((tx) => {
                   const isExpense = tx.amount > 0;
                   const merchant = getMerchantAvatar(tx.displayName);
-                  const categoryStyle = getCategoryStyle(tx.categoryDetailed || tx.categoryPrimary || "");
 
                   return (
                     <TableRow key={tx.id} sx={{ "&:hover": { backgroundColor: "#f8fafc" }, "& td": { py: 1.75, borderBottom: "1px solid #f1f5f9" } }}>
@@ -935,12 +922,28 @@ export default function TransactionsPage() {
 
                       {/* Category */}
                       <TableCell>
-                        <Stack sx={{ flexDirection: "row", alignItems: "center", gap: 1 }}>
-                          <Box sx={{ display: "flex", color: categoryStyle.color }}>{categoryStyle.icon}</Box>
-                          <Typography sx={{ fontWeight: 600, fontSize: "0.8rem", color: categoryStyle.color }}>
-                            {tx.categoryDetailed || tx.categoryPrimary || "Uncategorized"}
-                          </Typography>
-                        </Stack>
+                        <Select
+                          size="small"
+                          value={tx.cashflowId ?? ""}
+                          onChange={(event) => updateTransactionCashflow(tx.id, event.target.value)}
+                          displayEmpty
+                          sx={{
+                            minWidth: 160,
+                            height: 32,
+                            fontSize: "0.8rem",
+                            bgcolor: "#fff",
+                            "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e2e8f0" },
+                          }}
+                        >
+                          <MenuItem value="" disabled sx={{ fontSize: "0.8rem" }}>
+                            <em>Unassigned</em>
+                          </MenuItem>
+                          {cashflows.map((cf) => (
+                            <MenuItem key={cf.id} value={cf.id} sx={{ fontSize: "0.8rem" }}>
+                              {cf.name}
+                            </MenuItem>
+                          ))}
+                        </Select>
                       </TableCell>
 
                       {/* Status */}

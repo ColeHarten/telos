@@ -4,6 +4,7 @@ import type { Cashflow, CashflowKind } from "@/lib/types/types";
 import {
   Alert,
   Button,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -25,6 +26,8 @@ interface AddCashflowModalProps {
     name: string;
     kind: CashflowKind;
     estimatedMonthly: number;
+    description: string;
+    keywords: string[];
   }) => Promise<void>;
   isSaving: boolean;
   editingCashflow: Cashflow | null;
@@ -42,6 +45,9 @@ export default function AddCashflowModal({
   const [name, setName] = useState("");
   const [kind, setKind] = useState<CashflowKind>("expense");
   const [estimatedMonthly, setEstimatedMonthly] = useState("0");
+  const [description, setDescription] = useState("");
+  const [keywordInput, setKeywordInput] = useState("");
+  const [keywords, setKeywords] = useState<string[]>([]);
 
   const isEditing = editingCashflow !== null;
 
@@ -52,22 +58,57 @@ export default function AddCashflowModal({
         setName(editingCashflow.name);
         setKind(editingCashflow.kind);
         setEstimatedMonthly(String(editingCashflow.estimatedMonthly ?? 0));
+        setDescription(editingCashflow.description ?? "");
+        setKeywords(editingCashflow.keywords ?? []);
       } else {
         setName("");
         setKind("expense");
         setEstimatedMonthly("0");
+        setDescription("");
+        setKeywords([]);
       }
+      setKeywordInput("");
     }
   }, [open, editingCashflow]);
+
+  const commitKeywordInput = () => {
+    const trimmed = keywordInput.trim().toLowerCase();
+    if (trimmed && !keywords.includes(trimmed)) {
+      setKeywords((prev) => [...prev, trimmed]);
+    }
+    setKeywordInput("");
+  };
+
+  const handleKeywordKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      commitKeywordInput();
+    } else if (e.key === "Backspace" && keywordInput === "" && keywords.length > 0) {
+      setKeywords((prev) => prev.slice(0, -1));
+    }
+  };
+
+  const removeKeyword = (kw: string) => {
+    setKeywords((prev) => prev.filter((k) => k !== kw));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const parsedEstimatedMonthly = Number(estimatedMonthly || 0);
 
+    // Catch any keyword left in the input box that the user didn't press Enter/comma for
+    const trimmedPending = keywordInput.trim().toLowerCase();
+    const finalKeywords =
+      trimmedPending && !keywords.includes(trimmedPending)
+        ? [...keywords, trimmedPending]
+        : keywords;
+
     await onSave({
       name: name.trim(),
       kind,
       estimatedMonthly: Number.isNaN(parsedEstimatedMonthly) ? 0 : parsedEstimatedMonthly,
+      description: description.trim(),
+      keywords: finalKeywords,
     });
   };
 
@@ -136,6 +177,52 @@ export default function AddCashflowModal({
             sx={{
               "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2 },
               "& input": { textAlign: "right" },
+            }}
+          />
+
+          <TextField
+            fullWidth
+            size="small"
+            label="Description"
+            placeholder="e.g., Daily coffee purchases"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            disabled={isSaving}
+            multiline
+            minRows={2}
+            helperText="Optional — helps auto-categorize future transactions"
+            sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+          />
+
+          <TextField
+            fullWidth
+            size="small"
+            label="Keywords"
+            placeholder="e.g., starbucks, peets, cafe (press Enter to add)"
+            value={keywordInput}
+            onChange={(e) => setKeywordInput(e.target.value)}
+            onKeyDown={handleKeywordKeyDown}
+            onBlur={commitKeywordInput}
+            disabled={isSaving}
+            helperText="Optional — merchant names or terms to match against"
+            sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+            slotProps={{
+              input: keywords.length
+                ? {
+                    startAdornment: (
+                      <Stack sx={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 0.5, mr: 0.5 }}>
+                        {keywords.map((kw) => (
+                          <Chip
+                            key={kw}
+                            label={kw}
+                            size="small"
+                            onDelete={isSaving ? undefined : () => removeKeyword(kw)}
+                          />
+                        ))}
+                      </Stack>
+                    ),
+                  }
+                : undefined,
             }}
           />
         </Stack>

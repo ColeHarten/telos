@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { db } from "@/lib/firebaseClient";
-import { collection, query, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, getDocs, orderBy, doc, updateDoc } from "firebase/firestore";
 import type { PersonalFinanceCategory } from "plaid";
 import type { AuthUser, Account, Transaction } from "../types/types";
 
@@ -39,7 +39,6 @@ function toTransaction(
     categoryPrimary: record.category?.primary ?? null,
     categoryDetailed: record.category?.detailed ?? null,
     cashflowId: record.cashflowId,
-
   };
 }
 
@@ -52,7 +51,6 @@ export default function useTransactions(
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
 
-  // O(1) id -> name lookups, only recomputed when the accounts list changes.
   const accountNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const acc of accounts) {
@@ -95,11 +93,36 @@ export default function useTransactions(
     fetchFromFirebase();
   }, [fetchFromFirebase]);
 
+  // Updates a transaction's cashflow assignment. Optimistically updates local
+  // state so the dropdown reflects the change instantly; reverts via refetch
+  // if the write fails.
+  const updateTransactionCashflow = useCallback(
+    async (transactionId: string, cashflowId: string) => {
+      if (!user?.uid) return;
+
+      const previous = transactions;
+      setTransactions((prev) =>
+        prev.map((tx) => (tx.id === transactionId ? { ...tx, cashflowId } : tx))
+      );
+
+      try {
+        const txRef = doc(db, "users", user.uid, "transactions", transactionId);
+        await updateDoc(txRef, { cashflowId, updatedAt: Date.now() });
+      } catch (err) {
+        console.error("Failed to update cashflow:", err);
+        setTransactionsError("Failed to update cashflow.");
+        setTransactions(previous); // revert optimistic update
+      }
+    },
+    [user, transactions]
+  );
+
   return {
     transactions,
     transactionsLoading,
     transactionsError,
     setTransactionsError,
     refetchTransactions: fetchFromFirebase,
+    updateTransactionCashflow,
   };
 }

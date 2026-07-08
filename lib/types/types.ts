@@ -44,6 +44,14 @@ export type Account = {
 
 export type CashflowKind = "income" | "expense";
 
+export type CashflowKind = "income" | "expense";
+
+export type CashflowMatchStats = {
+  count: number;
+  avgAmount: number;
+  merchantFrequency: Record<string, number>; // normalized merchant -> count
+};
+
 export type Cashflow = {
   id: string;
   name: string;
@@ -54,6 +62,12 @@ export type Cashflow = {
   isArchived: boolean;
   createdAt?: unknown;
   updatedAt?: unknown;
+
+  // --- Rules engine fields (Phase 1) ---
+  description?: string;
+  keywords?: string[];            // lowercase, normalized
+  plaidCategories?: string[];     // e.g. ["FOOD_AND_DRINK_COFFEE"]
+  matchStats?: CashflowMatchStats;
 };
 
 export type PayFrequency = "weekly" | "biweekly" | "semimonthly" | "monthly";
@@ -109,5 +123,12 @@ export type Transaction = {
   pending: boolean;
   categoryPrimary: string | null;
   categoryDetailed: string | null;
-  cashflowId: string | null;
+  cashflowId: string | undefined;
+};
+
+export type Automation = {
+  id: string;            // normalized merchant key, doubles as doc id
+  merchantKey: string;
+  cashflowId: string;
+  createdAt?: unknown;
 };

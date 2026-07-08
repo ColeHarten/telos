@@ -1,10 +1,12 @@
 import { adminDb } from "@/lib/firebaseAdmin";
-import { syncTransactions } from "./plaidService";
+import type { DocumentReference, WriteBatch } from "firebase-admin/firestore";
 import type {
-  Transaction as PlaidTransaction,
   RemovedTransaction as PlaidRemovedTransaction,
+  Transaction as PlaidTransaction,
 } from "plaid";
-import type { WriteBatch, DocumentReference } from "firebase-admin/firestore";
+import { syncTransactions } from "./plaidService";
+import { applyRules } from "./ruleEngine";
+import { buildRulesContext } from "./ruleEngine";
 
 const MAX_BATCH_SIZE = 500;
 
@@ -116,20 +118,26 @@ export async function syncPlaidItem(
   const txRef = adminDb.collection("users").doc(uid).collection("transactions");
   const ops: BatchOp[] = [];
 
+  // Fetch cashflows + automations once for this sync run, not once per transaction.
+  const rulesContext = await buildRulesContext(uid);
+
   // INSERT
   for (const tx of added) {
-    const data: TransactionDoc = {
-      accountId: tx.account_id,
-      amount: tx.amount,
-      date: tx.date,
-      merchantName: tx.merchant_name ?? null,
-      rawName: tx.name,
-      pending: tx.pending,
-      category: tx.personal_finance_category ?? null,
-      cashflowId: null,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
+    const data: TransactionDoc = await applyRules(
+      {
+        accountId: tx.account_id,
+        amount: tx.amount,
+        date: tx.date,
+        merchantName: tx.merchant_name ?? null,
+        rawName: tx.name,
+        pending: tx.pending,
+        category: tx.personal_finance_category ?? null,
+        cashflowId: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+      rulesContext
+    );
 
     ops.push({ type: "set", ref: txRef.doc(tx.transaction_id), data });
   }
