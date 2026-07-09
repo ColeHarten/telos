@@ -1,8 +1,8 @@
 "use client";
 
-import type { Cashflow, WithholdingProfile } from "@/lib/types/types";
+import type { Category, PaycheckProfile } from "@/lib/types/types";
 import useAuth from "@/lib/hooks/useAuth";
-import useCashflows from "@/lib/hooks/useCashflows";
+import useCategories from "@/lib/hooks/useCategories";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DeleteRoundedIcon from "@mui/icons-material/DeleteRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
@@ -41,7 +41,7 @@ const payFrequencyOptions = [
   { label: "Monthly (12/yr)", value: "monthly", multiplier: 12 / 12 },
 ];
 
-export function calculateWithholdings(gross: number, deductions: WithholdingProfile["deductions"], frequency: string) {
+export function calculateWithholdings(gross: number, deductions: PaycheckProfile["deductions"], frequency: string) {
   let totalWithheld = 0;
 
   for (const deduction of deductions) {
@@ -70,22 +70,22 @@ export default function ProfileEditorDialog({
   open,
   onClose,
   editingProfileId,
-  incomeCashflows,
+  incomeCategories,
 }: {
   open: boolean;
   onClose: () => void;
   editingProfileId: string | null;
-  incomeCashflows: Cashflow[];
+  incomeCategories: Category[];
 }) {
   const isEditing = editingProfileId !== null;
   const { user, authLoading } = useAuth();
-  const { addWithholdingProfile, updateWithholdingProfile, getProfileById } = useCashflows(user, authLoading);
+  const { addPaycheckProfile, updatePaycheckProfile, getProfileById } = useCategories(user, authLoading);
 
   const [profileName, setProfileName] = useState("");
   const [payFrequency, setPayFrequency] = useState("biweekly");
   const [grossSalary, setGrossSalary] = useState("0");
-  const [relatedCashflowId, setRelatedCashflowId] = useState("");
-  const [deductions, setDeductions] = useState<WithholdingProfile["deductions"]>([]);
+  const [relatedCategoryId, setRelatedCategoryId] = useState("");
+  const [deductions, setDeductions] = useState<PaycheckProfile["deductions"]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,22 +102,22 @@ export default function ProfileEditorDialog({
         setProfileName(profile.name);
         setPayFrequency(profile.payFrequency);
         setGrossSalary(String(profile.grossSalary));
-        setRelatedCashflowId(profile.linkedIncomeCashflowId);
+        setRelatedCategoryId(profile.linkedIncomeCategoryId);
         setDeductions(profile.deductions || []);
       }
     } else {
       setProfileName("");
       setPayFrequency("biweekly");
       setGrossSalary("0");
-      setRelatedCashflowId("");
+      setRelatedCategoryId("");
       setDeductions([]);
     }
   }, [open, isEditing, editingProfileId, getProfileById]);
 
   async function handleSave() {
     setError(null);
-    if (!profileName.trim() || !relatedCashflowId) {
-      setError("Profile name and an income cashflow are required.");
+    if (!profileName.trim() || !relatedCategoryId) {
+      setError("Profile name and an income category are required.");
       return;
     }
 
@@ -125,9 +125,9 @@ export default function ProfileEditorDialog({
       setIsSaving(true);
       const payload = {
         name: profileName.trim(),
-        payFrequency: payFrequency as WithholdingProfile["payFrequency"],
+        payFrequency: payFrequency as PaycheckProfile["payFrequency"],
         grossSalary: Number(grossSalary),
-        linkedIncomeCashflowId: relatedCashflowId,
+        linkedIncomeCategoryId: relatedCategoryId,
         deductions: deductions.map(d => ({
           label: d.label,
           value: d.value,
@@ -137,9 +137,9 @@ export default function ProfileEditorDialog({
       };
 
       if (isEditing) {
-        await updateWithholdingProfile(editingProfileId, payload);
+        await updatePaycheckProfile(editingProfileId, payload);
       } else {
-        await addWithholdingProfile(payload);
+        await addPaycheckProfile(payload);
       }
       onClose();
     } catch (saveError) {
@@ -234,10 +234,10 @@ export default function ProfileEditorDialog({
                 <Grid size={{ xs: 12 }}>
                   <Autocomplete
                     getOptionLabel={(option) => `${option.name} (${formatCurrency(option.estimatedMonthly)}/mo expected)`}
-                    options={incomeCashflows}
+                    options={incomeCategories}
                     size="small"
-                    value={incomeCashflows.find((c) => c.id === relatedCashflowId) || null}
-                    onChange={(_, newValue) => setRelatedCashflowId(newValue ? newValue.id : "")}
+                    value={incomeCategories.find((c) => c.id === relatedCategoryId) || null}
+                    onChange={(_, newValue) => setRelatedCategoryId(newValue ? newValue.id : "")}
                     renderInput={(params) => <TextField {...params} label="Link directly to Income Budget Category" />}
                   />
                 </Grid>

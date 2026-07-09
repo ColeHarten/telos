@@ -31,7 +31,7 @@ const drawerWidth = 240;
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: DashboardOutlinedIcon },
   { label: "Accounts", href: "/accounts", icon: AccountBalanceOutlinedIcon },
-  { label: "Cashflows", href: "/cashflows", icon: SwapHorizOutlinedIcon },
+  { label: "Categories", href: "/categories", icon: SwapHorizOutlinedIcon },
   { label: "Budgets", href: "/budgets", icon: PieChartOutlineOutlinedIcon },
   { label: "Transactions", href: "/transactions", icon: ReceiptLongOutlinedIcon },
   {label: "Automations", href: "/automations", icon: ChecklistIcon},

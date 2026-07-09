@@ -4,7 +4,7 @@ import MonthPickerControl, { getCurrentMonthKey } from "@/components/MonthPicker
 import useAccounts from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
 import useBudget from "@/lib/hooks/useBudget";
-import useCashflows from "@/lib/hooks/useCashflows";
+import useCategories from "@/lib/hooks/useCategories";
 import type {
   BudgetLines
 } from "@/lib/types/types";
@@ -50,7 +50,7 @@ function parseBudgetInput(value: string) {
 
 export default function BudgetsPage() {
   const { user, authLoading } = useAuth();
-  const { cashflows } = useCashflows(user, authLoading);
+  const { categories } = useCategories(user, authLoading);
   const { accounts } = useAccounts(user, authLoading);
   const {
     selectedMonthKey: monthKey,
@@ -98,9 +98,9 @@ export default function BudgetsPage() {
     setMonthKey(getCurrentMonthKey());
   }
 
-  const activeCashflows = useMemo(
-    () => cashflows.filter((cashflow) => !cashflow.isArchived),
-    [cashflows]
+  const activeCategories = useMemo(
+    () => categories.filter((category) => !category.isArchived),
+    [categories]
   );
 
   const activeAccounts = useMemo(
@@ -108,14 +108,14 @@ export default function BudgetsPage() {
     [accounts]
   );
 
-  const incomeCashflows = useMemo(
-    () => activeCashflows.filter((cashflow) => cashflow.kind === "income"),
-    [activeCashflows]
+  const incomeCategories = useMemo(
+    () => activeCategories.filter((category) => category.kind === "income"),
+    [activeCategories]
   );
 
-  const expenseCashflows = useMemo(
-    () => activeCashflows.filter((cashflow) => cashflow.kind === "expense"),
-    [activeCashflows]
+  const expenseCategories = useMemo(
+    () => activeCategories.filter((category) => category.kind === "expense"),
+    [activeCategories]
   );
 
   const assetAccounts = useMemo(
@@ -136,10 +136,10 @@ export default function BudgetsPage() {
         description: "Expected money coming in this month.",
         color: "#059669",
         background: "#ecfdf5",
-        items: incomeCashflows.map((cashflow) => ({
-          id: `cashflow_${cashflow.id}`,
-          label: cashflow.name,
-          value: budgetValues[`cashflow_${cashflow.id}`] ?? "0.00",
+        items: incomeCategories.map((category) => ({
+          id: `category_${category.id}`,
+          label: category.name,
+          value: budgetValues[`category_${category.id}`] ?? "0.00",
         })),
       },
       {
@@ -147,10 +147,10 @@ export default function BudgetsPage() {
         description: "Planned monthly spending.",
         color: "#dc2626",
         background: "#fef2f2",
-        items: expenseCashflows.map((cashflow) => ({
-          id: `cashflow_${cashflow.id}`,
-          label: cashflow.name,
-          value: budgetValues[`cashflow_${cashflow.id}`] ?? "0.00",
+        items: expenseCategories.map((category) => ({
+          id: `category_${category.id}`,
+          label: category.name,
+          value: budgetValues[`category_${category.id}`] ?? "0.00",
         })),
       },
       {
@@ -177,8 +177,8 @@ export default function BudgetsPage() {
       },
     ],
     [
-      incomeCashflows,
-      expenseCashflows,
+      incomeCategories,
+      expenseCategories,
       assetAccounts,
       liabilityAccounts,
       budgetValues,
@@ -186,12 +186,12 @@ export default function BudgetsPage() {
   );
 
   const summary = useMemo(() => {
-    const income = incomeCashflows.reduce((total, cashflow) => {
-      return total + parseBudgetInput(budgetValues[`cashflow_${cashflow.id}`]);
+    const income = incomeCategories.reduce((total, category) => {
+      return total + parseBudgetInput(budgetValues[`category_${category.id}`]);
     }, 0);
 
-    const expenses = expenseCashflows.reduce((total, cashflow) => {
-      return total + parseBudgetInput(budgetValues[`cashflow_${cashflow.id}`]);
+    const expenses = expenseCategories.reduce((total, category) => {
+      return total + parseBudgetInput(budgetValues[`category_${category.id}`]);
     }, 0);
 
     const savings = assetAccounts.reduce((total, account) => {
@@ -216,8 +216,8 @@ export default function BudgetsPage() {
       },
     ];
   }, [
-    incomeCashflows,
-    expenseCashflows,
+    incomeCategories,
+    expenseCategories,
     assetAccounts,
     liabilityAccounts,
     budgetValues,
@@ -237,13 +237,13 @@ export default function BudgetsPage() {
 
       const lines: BudgetLines = {};
 
-      for (const cashflow of activeCashflows) {
-        const lineId = `cashflow_${cashflow.id}`;
+      for (const category of activeCategories) {
+        const lineId = `cashflow_${category.id}`;
 
         lines[lineId] = {
           id: lineId,
-          lineType: "cashflow",
-          cashflowId: cashflow.id,
+          lineType: category.kind,
+          categoryId: category.id,
           planned: parseBudgetInput(budgetValues[lineId]),
         };
       }
@@ -253,8 +253,8 @@ export default function BudgetsPage() {
 
         lines[lineId] = {
           id: lineId,
-          lineType: "account_transfer",
-          toAccountId: account.id,
+          lineType: "transfer",
+          categoryId: account.id,
           planned: parseBudgetInput(budgetValues[lineId]),
         };
       }

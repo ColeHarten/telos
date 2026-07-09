@@ -3,9 +3,9 @@
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useAccounts } from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
-import { useCashflows } from "@/lib/hooks/useCashflows";
+import { useCategories } from "@/lib/hooks/useCategories";
 import useTransactions from "@/lib/hooks/useTransactions";
-import { Cashflow } from "@/lib/types/types";
+import type { Category } from "@/lib/types/types";
 
 // Icons
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
@@ -112,7 +112,7 @@ function getMerchantAvatar(name: string = "") {
 }
 
 
-function getCashflowName(cashflowId: string | undefined, cashflows: Cashflow[]|undefined): string {
+function getCashflowName(cashflowId: string | undefined, cashflows: Category[]|undefined): string {
   if (!cashflowId || !cashflows) return "No Cashflow or Cashflows Unavailable";
   const cashflow = cashflows.find((cf) => cf.id === cashflowId);
   return cashflow ? cashflow.name : "Unknown Cashflow";
@@ -209,7 +209,7 @@ export default function TransactionsPage() {
     updateTransactionAssignment,
   } = useTransactions(user, authLoading, accounts);
 
-  const { cashflows = [] } = useCashflows(user, authLoading);
+  const { categories = [] } = useCategories(user, authLoading);
 
   const [syncing, setSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
@@ -940,9 +940,9 @@ export default function TransactionsPage() {
                               <em>Unassigned</em>
                             </MenuItem>
                           )}
-                          {cashflows.map((cf) => (
-                            <MenuItem key={cf.id} value={cf.id} sx={{ fontSize: "0.8rem" }}>
-                              {cf.name}
+                          {categories.map((category) => (
+                            <MenuItem key={category.id} value={category.id} sx={{ fontSize: "0.8rem" }}>
+                              {category.name}
                             </MenuItem>
                           ))}
                         </Select>

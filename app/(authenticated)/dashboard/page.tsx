@@ -4,7 +4,7 @@ import { MonthPickerControl, formatMonthLabel, getCurrentMonthKey, shiftMonthKey
 import useAccounts from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
 import useBudget from "@/lib/hooks/useBudget";
-import useCashflows from "@/lib/hooks/useCashflows";
+import useCategories from "@/lib/hooks/useCategories";
 import useTransactions from "@/lib/hooks/useTransactions";
 import { formatCurrency } from "@/lib/utils";
 
@@ -32,7 +32,7 @@ import { Avatar, Box, Card, CardContent, Chip, LinearProgress, Typography } from
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { Line, LineChart, ResponsiveContainer, XAxis } from "recharts";
-import type { Account, BudgetLine, Cashflow, Transaction } from "@/lib/types/types";
+import type { Account, BudgetLine, Category, Transaction } from "@/lib/types/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -107,10 +107,10 @@ const CASHFLOW_ICON_RULES: { match: RegExp; icon: ReactNode; bg: string; color: 
   { match: /entertain|movie|stream|music|netflix|spotify/i, icon: <MusicNoteRoundedIcon sx={{ fontSize: 18 }} />, bg: "#fef2f2", color: "#dc2626" },
 ];
 
-function getCashflowVisual(cashflow: Cashflow) {
-  const rule = CASHFLOW_ICON_RULES.find((r) => r.match.test(cashflow.name));
+function getCategoryVisual(category: Category) {
+  const rule = CASHFLOW_ICON_RULES.find((r) => r.match.test(category.name));
   if (rule) return rule;
-  const palette = FALLBACK_PALETTE[hashToIndex(cashflow.id, FALLBACK_PALETTE.length)];
+  const palette = FALLBACK_PALETTE[hashToIndex(category.id, FALLBACK_PALETTE.length)];
   return { icon: <LabelRoundedIcon sx={{ fontSize: 18 }} />, ...palette };
 }
 
@@ -158,7 +158,7 @@ const VISIBLE_BUDGET_ROWS = 5;
 export default function DashboardPage() {
   const { user, authLoading } = useAuth();
   const { accounts = [] } = useAccounts(user, authLoading);
-  const { cashflows = [] } = useCashflows(user, authLoading);
+  const { categories = [] } = useCategories(user, authLoading);
   const { rangeBudgets, rangeLoading, loadBudgetRange } = useBudget(user, authLoading);
   const { transactions = [], transactionsLoading } = useTransactions(user, authLoading, accounts);
 
@@ -170,8 +170,8 @@ export default function DashboardPage() {
     loadBudgetRange(monthKey, monthKey).catch(() => {});
   }, [authLoading, user, monthKey, loadBudgetRange]);
 
-  const cashflowsById = useMemo(() => new Map(cashflows.map((c) => [c.id, c])), [cashflows]);
-  const activeCashflows = useMemo(() => cashflows.filter((c) => !c.isArchived), [cashflows]);
+  const categoriesById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
+  const activeCategories = useMemo(() => categories.filter((c) => !c.isArchived), [categories]);
 
   // Net worth -----------------------------------------------------------------
   const netWorth = useMemo(() => {
@@ -194,11 +194,11 @@ export default function DashboardPage() {
     return Object.values(lines);
   }, [rangeBudgets, monthKey]);
 
-  const plannedByCashflowId = useMemo(() => {
+  const plannedByCategoryId = useMemo(() => {
     const map = new Map<string, number>();
     for (const line of budgetLines) {
-      if (line.lineType === "cashflow" && line.cashflowId) {
-        map.set(line.cashflowId, (map.get(line.cashflowId) ?? 0) + Number(line.planned ?? 0));
+      if(line.lineType === "expense" || line.lineType === "income") {
+        map.set(line.categoryId, (map.get(line.categoryId) ?? 0) + Number(line.planned ?? 0));
       }
     }
     return map;
@@ -210,31 +210,31 @@ export default function DashboardPage() {
     [transactions, monthKey]
   );
 
-  const actualByCashflowId = useMemo(() => {
+  const actualByCategoryId = useMemo(() => {
     const map = new Map<string, number>();
     for (const tx of monthTransactions) {
       if (tx.assignmentType !== "cashflow" || !tx.assignmentId) continue;
-      const cashflow = cashflowsById.get(tx.assignmentId);
+      const cashflow = categoriesById.get(tx.assignmentId);
       if (!cashflow) continue;
       const contribution = cashflow.kind === "income" ? Math.max(0, -tx.amount) : Math.max(0, tx.amount);
       map.set(tx.assignmentId, (map.get(tx.assignmentId) ?? 0) + contribution);
     }
     return map;
-  }, [monthTransactions, cashflowsById]);
+  }, [monthTransactions, categoriesById]);
 
   // Budget vs Actual rows, ordered by the user's own cashflow sort order --------
   const budgetRows = useMemo(() => {
-    return activeCashflows
+    return activeCategories
       .filter((c) => c.kind === "expense")
-      .map((cashflow) => {
-        const planned = plannedByCashflowId.get(cashflow.id) ?? 0;
-        const actual = actualByCashflowId.get(cashflow.id) ?? 0;
+      .map((category) => {
+        const planned = plannedByCategoryId.get(category.id) ?? 0;
+        const actual = actualByCategoryId.get(category.id) ?? 0;
         const pct = planned > 0 ? actual / planned : actual > 0 ? Infinity : 0;
-        return { cashflow, planned, actual, pct };
+        return { category: category, planned, actual, pct };
       })
       .filter((row) => row.planned > 0 || row.actual > 0)
-      .sort((a, b) => a.cashflow.sortOrder - b.cashflow.sortOrder);
-  }, [activeCashflows, plannedByCashflowId, actualByCashflowId]);
+      .sort((a, b) => a.category.sortOrder - b.category.sortOrder);
+  }, [activeCategories, plannedByCategoryId, actualByCategoryId]);
 
   const heroTotals = useMemo(() => {
     const planned = budgetRows.reduce((sum, r) => sum + r.planned, 0);
@@ -247,18 +247,18 @@ export default function DashboardPage() {
 
   // Income vs Expected ------------------------------------------------------------
   const incomeCashflowIds = useMemo(
-    () => new Set(activeCashflows.filter((c) => c.kind === "income").map((c) => c.id)),
-    [activeCashflows]
+    () => new Set(activeCategories.filter((c) => c.kind === "income").map((c) => c.id)),
+    [activeCategories]
   );
 
   const incomeExpected = useMemo(
-    () => [...incomeCashflowIds].reduce((sum, id) => sum + (plannedByCashflowId.get(id) ?? 0), 0),
-    [incomeCashflowIds, plannedByCashflowId]
+    () => [...incomeCashflowIds].reduce((sum, id) => sum + (plannedByCategoryId.get(id) ?? 0), 0),
+    [incomeCashflowIds, plannedByCategoryId]
   );
 
   const incomeActual = useMemo(
-    () => [...incomeCashflowIds].reduce((sum, id) => sum + (actualByCashflowId.get(id) ?? 0), 0),
-    [incomeCashflowIds, actualByCashflowId]
+    () => [...incomeCashflowIds].reduce((sum, id) => sum + (actualByCategoryId.get(id) ?? 0), 0),
+    [incomeCashflowIds, actualByCategoryId]
   );
 
   // Cash flow trend (actual, last 6 months) ----------------------------------------
@@ -386,7 +386,7 @@ export default function DashboardPage() {
                       pb: 1.5,
                     }}
                   >
-                    {["CASHFLOW", "", "SPENT", "BUDGET", "% OF BUDGET", "VS. PACE"].map((label, i) => (
+                    {["CATEGORY", "", "SPENT", "BUDGET", "% OF BUDGET", "VS. PACE"].map((label, i) => (
                       <Typography key={i} variant="caption" sx={{ color: "#94a3b8", fontWeight: 700, letterSpacing: "0.04em", textAlign: i >= 2 ? "right" : "left" }}>
                         {label}
                       </Typography>
@@ -395,7 +395,7 @@ export default function DashboardPage() {
 
                   <Box sx={{ display: "flex", flexDirection: "column" }}>
                     {visibleRows.map((row) => (
-                      <BudgetRow key={row.cashflow.id} row={row} />
+                      <BudgetRow key={row.category.id} row={row} />
                     ))}
                   </Box>
                 </>
@@ -405,7 +405,7 @@ export default function DashboardPage() {
                 {hiddenCount > 0 ? (
                   <Link href="/budgets" style={{ textDecoration: "none" }}>
                     <Typography variant="body2" sx={{ color: "#2563eb", fontWeight: 600, cursor: "pointer" }} onClick={(e) => { e.preventDefault(); setShowAllBudgetRows((v) => !v); }}>
-                      {showAllBudgetRows ? "Show less" : `+ ${hiddenCount} more cashflows`}
+                      {showAllBudgetRows ? "Show less" : `+ ${hiddenCount} more categories`}
                     </Typography>
                   </Link>
                 ) : (
@@ -643,10 +643,8 @@ type BudgetStatus = {
   icon: ReactElement | null;
 };
 
-type BudgetRowData = { cashflow: Cashflow; planned: number; actual: number; pct: number };
-
-function BudgetRow({ row }: { row: BudgetRowData }) {
-  const visual = getCashflowVisual(row.cashflow);
+function BudgetRow({ row }: { row: { category: Category; planned: number; actual: number; pct: number } }) {
+  const visual = getCategoryVisual(row.category);
   const hasPlan = row.planned > 0;
   const status = getBudgetStatus(row.pct, hasPlan) as BudgetStatus;
   const barPct = hasPlan ? Math.min(1, row.actual / row.planned) : row.actual > 0 ? 1 : 0;
@@ -668,10 +666,10 @@ function BudgetRow({ row }: { row: BudgetRowData }) {
       <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "12px", minWidth: 0 }}>
         <Avatar sx={{ width: 36, height: 36, bgcolor: visual.bg, color: visual.color }}>{visual.icon}</Avatar>
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a" }}>{row.cashflow.name}</Typography>
-          {row.cashflow.description && (
+          <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a" }}>{row.category.name}</Typography>
+          {row.category.description && (
             <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {row.cashflow.description}
+              {row.category.description}
             </Typography>
           )}
         </Box>

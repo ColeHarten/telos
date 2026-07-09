@@ -62,7 +62,7 @@ export function normalizeMerchant(name: string): string {
  */
 function isKeywordMatch(haystack: string, cashflow: Cashflow): boolean {
   const keywords = (cashflow.keywords ?? []).concat(cashflow.name);
-  return keywords.some((kw) => kw.trim().length > 0 && haystack.includes(normalizeMerchant(kw)));
+  return keywords.some((kw: string) => kw.trim().length > 0 && haystack.includes(normalizeMerchant(kw)));
 }
 
 // ---------------------------------------------------------------------------

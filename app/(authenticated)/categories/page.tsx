@@ -1,8 +1,8 @@
 "use client";
 
 import useAuth from "@/lib/hooks/useAuth";
-import useCashflows from "@/lib/hooks/useCashflows";
-import type { Cashflow, CashflowKind } from "@/lib/types/types";
+import useCategories from "@/lib/hooks/useCategories";
+import type { Category, CategoryKind } from "@/lib/types/types";
 import { formatCurrency } from "@/lib/utils";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
@@ -30,11 +30,11 @@ import {
   Typography
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
-import AddCashflowModal from "./AddCashflowModal";
+import AddCategoryModal from "./AddCategoryModal";
 import ProfileEditorDialog, { calculateWithholdings } from "./ProfileEditorDialog";
 
-const cashflowStyles: Record<
-  CashflowKind,
+const categoryStyles: Record<
+  CategoryKind,
   {
     label: string;
     color: string;
@@ -54,27 +54,33 @@ const cashflowStyles: Record<
     background: "#fef2f2",
     icon: TrendingDownRoundedIcon,
   },
+  transfer: {
+    label: "Transfer",
+    color: "#2563eb",
+    background: "#eff6ff",
+    icon: TrendingUpRoundedIcon,
+  },
 };
 
 // --- Main Page Component ---
-export default function CashflowsPage() {
+export default function CategoriesPage() {
   const { user, authLoading } = useAuth();
   const {
-    cashflows,
-    withholdingProfiles,
-    addCashflow,
-    updateCashflow,
-    archiveCashflow,
-    cashflowsLoading,
-  } = useCashflows(user, authLoading);
-  const isLoading = cashflowsLoading;
+    categories,
+    paycheckProfiles,
+    addCategory,
+    updateCategory,
+    archiveCategory,
+    categoriesLoading,
+  } = useCategories(user, authLoading);
+  const isLoading = categoriesLoading;
 
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedEditingCashflow, setSelectedEditingCashflow] = useState<Cashflow | null>(null);
+  const [selectedEditingCategory, setSelectedEditingCategory] = useState<Category | null>(null);
 
   // Filter state for viewing active vs archived records
   const [showArchived, setShowArchived] = useState(false);
@@ -83,59 +89,59 @@ export default function CashflowsPage() {
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
 
   const [rowMenuAnchor, setRowMenuAnchor] = useState<HTMLElement | null>(null);
-  const [rowMenuCashflowId, setRowMenuCashflowId] = useState<string | null>(null);
+  const [rowMenuCategoryId, setRowMenuCategoryId] = useState<string | null>(null);
 
   useEffect(() => {
     setError(null);
-  }, [user, cashflows]);
+  }, [user, categories]);
 
-  const activeCashflows = useMemo(() => cashflows.filter((cashflow) => !cashflow.isArchived), [cashflows]);
-  const archivedCashflows = useMemo(() => cashflows.filter((cashflow) => cashflow.isArchived), [cashflows]);
+  const activeCategories = useMemo(() => categories.filter((category) => !category.isArchived), [categories]);
+  const archivedCategories = useMemo(() => categories.filter((category) => category.isArchived), [categories]);
 
-  const displayedCashflows = showArchived ? archivedCashflows : activeCashflows;
+  const displayedCategories = showArchived ? archivedCategories : activeCategories;
 
-  const incomeCount = activeCashflows.filter((c) => c.kind === "income").length;
-  const expenseCount = activeCashflows.filter((c) => c.kind === "expense").length;
-  const incomeCashflows = useMemo(() => activeCashflows.filter((c) => c.kind === "income"), [activeCashflows]);
+  const incomeCount = activeCategories.filter((c) => c.kind === "income").length;
+  const expenseCount = activeCategories.filter((c) => c.kind === "expense").length;
+  const incomeCategories = useMemo(() => activeCategories.filter((c) => c.kind === "income"), [activeCategories]);
 
   function handleOpenAddForm() {
     setFormError(null);
-    setSelectedEditingCashflow(null);
+    setSelectedEditingCategory(null);
     setDialogOpen(true);
   }
 
-  function handleOpenEditForm(cashflow: Cashflow) {
+  function handleOpenEditForm(category: Category) {
     setFormError(null);
-    setSelectedEditingCashflow(cashflow);
+    setSelectedEditingCategory(category);
     setDialogOpen(true);
   }
 
   function handleCloseDialog() {
     setDialogOpen(false);
-    setSelectedEditingCashflow(null);
+    setSelectedEditingCategory(null);
     setFormError(null);
   }
 
-  async function handleSaveCashflowForm(formData: {
+  async function handleSaveCategoryForm(formData: {
     name: string;
-    kind: CashflowKind;
+    kind: CategoryKind;
     estimatedMonthly: number;
   }) {
     const trimmedName = formData.name.trim();
     const normalizedName = trimmedName.toLowerCase();
 
     if (!trimmedName) {
-      setFormError("Cashflow name is required.");
+      setFormError("Category name is required.");
       return;
     }
 
-    const isDuplicate = cashflows.some(
+    const isDuplicate = categories.some(
       (c) =>
-        c.id !== selectedEditingCashflow?.id &&
+        c.id !== selectedEditingCategory?.id &&
         c.name.trim().toLowerCase() === normalizedName
     );
     if (isDuplicate) {
-      setFormError(`A cashflow named "${trimmedName}" already exists.`);
+      setFormError(`A category named "${trimmedName}" already exists.`);
       return;
     }
 
@@ -143,14 +149,14 @@ export default function CashflowsPage() {
       setFormError(null);
       setIsSaving(true);
 
-      if (selectedEditingCashflow) {
-        await updateCashflow(selectedEditingCashflow.id, {
+      if (selectedEditingCategory) {
+        await updateCategory(selectedEditingCategory.id, {
           name: trimmedName,
           kind: formData.kind,
           estimatedMonthly: formData.estimatedMonthly,
         });
       } else {
-        await addCashflow({
+        await addCategory({
           name: trimmedName,
           kind: formData.kind,
           estimatedMonthly: formData.estimatedMonthly,
@@ -158,41 +164,41 @@ export default function CashflowsPage() {
       }
 
       setDialogOpen(false);
-      setSelectedEditingCashflow(null);
+      setSelectedEditingCategory(null);
     } catch (saveError) {
       console.error(saveError);
-      setFormError(selectedEditingCashflow ? "Could not update cashflow." : "Could not add cashflow.");
+      setFormError(selectedEditingCategory ? "Could not update category." : "Could not add category.");
     } finally {
       setIsSaving(false);
     }
   }
 
-  async function handleArchiveCashflow(cashflowId: string) {
+  async function handleArchiveCategory(categoryId: string) {
     try {
       setError(null);
-      await archiveCashflow(cashflowId);
-      if (selectedEditingCashflow?.id === cashflowId) {
+      await archiveCategory(categoryId);
+      if (selectedEditingCategory?.id === categoryId) {
         handleCloseDialog();
       }
     } catch (archiveError) {
       console.error(archiveError);
-      setError("Could not archive cashflow.");
+      setError("Could not archive category.");
     }
   }
 
   // Restore callback unarchives a category and matches existing update infrastructure
-  async function handleRestoreCashflow(cashflow: Cashflow) {
+  async function handleRestoreCategory(category: Category) {
     try {
       setError(null);
-      await updateCashflow(cashflow.id, {
-        name: cashflow.name,
-        kind: cashflow.kind,
-        estimatedMonthly: cashflow.estimatedMonthly,
+      await updateCategory(category.id, {
+        name: category.name,
+        kind: category.kind,
+        estimatedMonthly: category.estimatedMonthly,
         isArchived: false,
       });
     } catch (restoreError) {
       console.error(restoreError);
-      setError("Could not restore cashflow.");
+      setError("Could not restore category.");
     }
   }
 
@@ -211,17 +217,17 @@ export default function CashflowsPage() {
     setEditingProfileId(null);
   }
 
-  function handleOpenRowMenu(event: React.MouseEvent<HTMLElement>, cashflowId: string) {
+  function handleOpenRowMenu(event: React.MouseEvent<HTMLElement>, categoryId: string) {
     setRowMenuAnchor(event.currentTarget);
-    setRowMenuCashflowId(cashflowId);
+    setRowMenuCategoryId(categoryId);
   }
 
   function handleCloseRowMenu() {
     setRowMenuAnchor(null);
-    setRowMenuCashflowId(null);
+    setRowMenuCategoryId(null);
   }
 
-  const rowMenuCashflow = cashflows.find((c) => c.id === rowMenuCashflowId) ?? null;
+  const rowMenuCategory = categories.find((c) => c.id === rowMenuCategoryId) ?? null;
 
   return (
     <Stack spacing={2.25}>
@@ -235,7 +241,7 @@ export default function CashflowsPage() {
         }}
       >
         <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: "-0.03em" }}>
-          Cashflows
+          Categories
         </Typography>
 
         <Button
@@ -251,7 +257,7 @@ export default function CashflowsPage() {
             alignSelf: { xs: "stretch", sm: "auto" },
           }}
         >
-          Add Cashflow
+          Add Category
         </Button>
       </Stack>
 
@@ -340,10 +346,10 @@ export default function CashflowsPage() {
         </Grid>
       </Grid>
 
-      {/* Your Cashflows Datagrid View */}
+      {/* Your Categories Datagrid View */}
       <Card sx={{ bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 3, overflow: "hidden" }} elevation={0}>
         <Box sx={{ p: 2.25, px: 2.25, borderBottom: "1px solid", borderColor: "divider", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <Typography variant="body1" sx={{ fontWeight: 700 }}>Your Cashflows</Typography>
+          <Typography variant="body1" sx={{ fontWeight: 700 }}>Your Categories</Typography>
 
           {/* Archive View Toggle */}
           <Button
@@ -353,7 +359,7 @@ export default function CashflowsPage() {
             startIcon={showArchived ? <RestorePageRoundedIcon /> : <ArchiveRoundedIcon />}
             sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, px: 1.5 }}
           >
-            {showArchived ? "View Active" : `View Archived (${archivedCashflows.length})`}
+            {showArchived ? "View Active" : `View Archived (${archivedCategories.length})`}
           </Button>
         </Box>
         <CardContent sx={{ p: 0 }}>
@@ -376,19 +382,19 @@ export default function CashflowsPage() {
           </Box>
 
           {isLoading ? (
-            <Box sx={{ p: 2.25 }}><Typography color="text.secondary" variant="body2">Loading cashflows...</Typography></Box>
-          ) : displayedCashflows.length === 0 ? (
+            <Box sx={{ p: 2.25 }}><Typography color="text.secondary" variant="body2">Loading categories...</Typography></Box>
+          ) : displayedCategories.length === 0 ? (
             <Box sx={{ p: 2.25 }}>
               <Typography color="text.secondary" variant="body2">
-                {showArchived ? "No archived categories found." : "No cashflows yet."}
+                {showArchived ? "No archived categories found." : "No categories yet."}
               </Typography>
             </Box>
           ) : (
-            displayedCashflows.map((cashflow, index) => {
-              const style = cashflowStyles[cashflow.kind];
+            displayedCategories.map((category, index) => {
+              const style = categoryStyles[category.kind];
               const Icon = style.icon;
               return (
-                <Box key={cashflow.id}>
+                <Box key={category.id}>
                   <Box
                     sx={{
                       display: "grid",
@@ -416,7 +422,7 @@ export default function CashflowsPage() {
                       >
                         <Icon sx={{ fontSize: 17 }} />
                       </Box>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>{cashflow.name}</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>{category.name}</Typography>
                     </Box>
                     <Box>
                       <Chip
@@ -427,11 +433,11 @@ export default function CashflowsPage() {
                     </Box>
                     <Box>
                       <Chip
-                        label={cashflow.isArchived ? "Archived" : "Active"}
+                        label={category.isArchived ? "Archived" : "Active"}
                         size="small"
                         sx={{
-                          bgcolor: cashflow.isArchived ? "#f1f5f9" : "#ecfdf5",
-                          color: cashflow.isArchived ? "#475569" : "#059669",
+                          bgcolor: category.isArchived ? "#f1f5f9" : "#ecfdf5",
+                          color: category.isArchived ? "#475569" : "#059669",
                           fontWeight: 700,
                           fontSize: 12,
                           height: 22,
@@ -442,20 +448,20 @@ export default function CashflowsPage() {
                     </Box>
                     <Box>
                       <Typography variant="body2" sx={{ fontWeight: 700, textAlign: { xs: "left", md: "right" } }}>
-                        {formatCurrency(cashflow.estimatedMonthly ?? 0)}
+                        {formatCurrency(category.estimatedMonthly ?? 0)}
                       </Typography>
                     </Box>
                     <Box sx={{ display: "flex", justifyContent: { xs: "flex-start", md: "flex-end" } }}>
                       <IconButton
-                        aria-label={`Actions for ${cashflow.name}`}
+                        aria-label={`Actions for ${category.name}`}
                         size="small"
-                        onClick={(e) => handleOpenRowMenu(e, cashflow.id)}
+                        onClick={(e) => handleOpenRowMenu(e, category.id)}
                       >
                         <MoreHorizRoundedIcon fontSize="small" />
                       </IconButton>
                     </Box>
                   </Box>
-                  {index < displayedCashflows.length - 1 && <Divider />}
+                  {index < displayedCategories.length - 1 && <Divider />}
                 </Box>
               );
             })
@@ -471,10 +477,10 @@ export default function CashflowsPage() {
             Create Profile
           </Button>
         </Box>
-        <CardContent sx={{ p: withholdingProfiles.length > 0 ? 0 : 2.25 }}>
+        <CardContent sx={{ p: paycheckProfiles.length > 0 ? 0 : 2.25 }}>
           {isLoading ? (
             <Typography color="text.secondary" variant="body2">Loading profiles...</Typography>
-          ) : withholdingProfiles.length === 0 ? (
+          ) : paycheckProfiles.length === 0 ? (
             <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", bgcolor: "#f8fafc", p: 3, borderRadius: 2, gap: 1, color: "text.secondary" }}>
               <PercentRoundedIcon sx={{ fontSize: 32 }} />
               <Typography variant="body2" sx={{ textAlign: "center" }}>
@@ -483,9 +489,9 @@ export default function CashflowsPage() {
             </Box>
           ) : (
             <Stack divider={<Divider />}>
-              {withholdingProfiles.map((profile) => {
+              {paycheckProfiles.map((profile) => {
                 const calculated = calculateWithholdings(profile.grossSalary, profile.deductions, profile.payFrequency);
-                const relatedCashflow = cashflows.find((c) => c.id === profile.linkedIncomeCashflowId);
+                const relatedCategory = categories.find((c) => c.id === profile.linkedIncomeCategoryId);
 
                 return (
                   <Box key={profile.id} sx={{ p: 2.25 }}>
@@ -499,7 +505,7 @@ export default function CashflowsPage() {
                       <Stack spacing={0.5}>
                         <Typography variant="caption" color="text.secondary">Linked Category</Typography>
                         <Typography variant="body2" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontWeight: 500 }}>
-                          {relatedCashflow?.name ?? "None Linked"}
+                          {relatedCategory?.name ?? "None Linked"}
                         </Typography>
                       </Stack>
                       <Box sx={{ textAlign: "right" }}>
@@ -524,22 +530,22 @@ export default function CashflowsPage() {
         </CardContent>
       </Card>
 
-      {/* Add / Edit Cashflow Modal */}
-      <AddCashflowModal
+      {/* Add / Edit Category Modal */}
+      <AddCategoryModal
         open={dialogOpen}
         onClose={handleCloseDialog}
-        onSave={handleSaveCashflowForm}
+        onSave={handleSaveCategoryForm}
         isSaving={isSaving}
-        editingCashflow={selectedEditingCashflow}
+        editingCategory={selectedEditingCategory}
         error={formError}
       />
 
       {/* Row context action options menu popup */}
       <Menu anchorEl={rowMenuAnchor} open={Boolean(rowMenuAnchor)} onClose={handleCloseRowMenu}>
-        {rowMenuCashflow && !rowMenuCashflow.isArchived && (
+        {rowMenuCategory && !rowMenuCategory.isArchived && (
           <MenuItem
             onClick={() => {
-              handleOpenEditForm(rowMenuCashflow);
+              handleOpenEditForm(rowMenuCategory);
               handleCloseRowMenu();
             }}
             sx={{ gap: 1 }}
@@ -547,10 +553,10 @@ export default function CashflowsPage() {
             <EditRoundedIcon sx={{ fontSize: 16 }} /> Edit
           </MenuItem>
         )}
-        {rowMenuCashflow && !rowMenuCashflow.isArchived ? (
+        {rowMenuCategory && !rowMenuCategory.isArchived ? (
           <MenuItem
             onClick={() => {
-              handleArchiveCashflow(rowMenuCashflow.id);
+              handleArchiveCategory(rowMenuCategory.id);
               handleCloseRowMenu();
             }}
             sx={{ gap: 1, color: "error.main" }}
@@ -558,10 +564,10 @@ export default function CashflowsPage() {
             <ArchiveRoundedIcon sx={{ fontSize: 16 }} /> Archive
           </MenuItem>
         ) : (
-          rowMenuCashflow && (
+          rowMenuCategory && (
             <MenuItem
               onClick={() => {
-                handleRestoreCashflow(rowMenuCashflow);
+                handleRestoreCategory(rowMenuCategory);
                 handleCloseRowMenu();
               }}
               sx={{ gap: 1, color: "success.main" }}
@@ -573,7 +579,7 @@ export default function CashflowsPage() {
       </Menu>
 
       {/* Editor Dialogue Modal */}
-      <ProfileEditorDialog editingProfileId={editingProfileId} incomeCashflows={incomeCashflows} onClose={handleCloseProfileDialog} open={profileDialogOpen} />
+      <ProfileEditorDialog editingProfileId={editingProfileId} incomeCategories={incomeCategories} onClose={handleCloseProfileDialog} open={profileDialogOpen} />
     </Stack>
   );
 }

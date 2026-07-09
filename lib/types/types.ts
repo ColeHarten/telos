@@ -42,18 +42,12 @@ export type Account = {
   updatedAt?: unknown;
 };
 
-export type CashflowKind = "income" | "expense";
+export type CategoryKind = "income" | "expense" | "transfer";
 
-export type CashflowMatchStats = {
-  count: number;
-  avgAmount: number;
-  merchantFrequency: Record<string, number>; // normalized merchant -> count
-};
-
-export type Cashflow = {
+export type Category = {
   id: string;
   name: string;
-  kind: CashflowKind;
+  kind: CategoryKind;
   estimatedMonthly: number;
   sortOrder: number;
   isDefault?: boolean;
@@ -61,11 +55,13 @@ export type Cashflow = {
   createdAt?: unknown;
   updatedAt?: unknown;
 
+  // TODO
+  groupId?: string | null; // optional grouping of categories, e.g. "food", "transportation", etc.
+
   // --- Rules engine fields (Phase 1) ---
   description?: string;
   keywords?: string[];            // lowercase, normalized
   plaidCategories?: string[];     // e.g. ["FOOD_AND_DRINK_COFFEE"]
-  matchStats?: CashflowMatchStats;
 };
 
 export type PayFrequency = "weekly" | "biweekly" | "semimonthly" | "monthly";
@@ -79,22 +75,20 @@ export interface Deduction {
   when: DeductionWhen;
 }
 
-export interface WithholdingProfile {
-  id: string; // Used to fetch, update, and match profiles in useBudgetingData
+export interface PaycheckProfile {
+  id: string;
   name: string;
   payFrequency: PayFrequency;
   grossSalary: number;
-  linkedIncomeCashflowId: string; // Explicitly maps to Cashflow.id
+  linkedIncomeCategoryId: string;
   deductions: Deduction[];
 }
 
-export type BudgetLineType = "cashflow" | "account_transfer";
 
 export type BudgetLine = {
   id: string;
-  lineType: BudgetLineType;
-  cashflowId?: string;
-  toAccountId?: string;
+  lineType: CategoryKind;
+  categoryId: string;
   planned: number;
   notes?: string;
 };

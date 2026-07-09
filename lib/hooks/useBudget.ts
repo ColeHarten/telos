@@ -1,6 +1,5 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import { db } from "@/lib/firebaseClient";
 import {
   collection,
@@ -14,7 +13,8 @@ import {
   setDoc,
   where,
 } from "firebase/firestore";
-import type { AuthUser, BudgetLines, AppSettings, WithholdingProfile } from "../types/types";
+import { useCallback, useEffect, useState } from "react";
+import type { AppSettings, AuthUser, BudgetLines } from "../types/types";
 
 function getCurrentMonthKey() {
   const today = new Date();

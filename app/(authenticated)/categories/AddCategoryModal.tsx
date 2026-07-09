@@ -1,6 +1,6 @@
 "use client";
 
-import type { Cashflow, CashflowKind } from "@/lib/types/types";
+import type { Category, CategoryKind } from "@/lib/types/types";
 import {
   Alert,
   Button,
@@ -19,47 +19,47 @@ import {
 } from "@mui/material";
 import { useEffect, useState } from "react";
 
-interface AddCashflowModalProps {
+interface AddCategoryModalProps {
   open: boolean;
   onClose: () => void;
   onSave: (data: {
     name: string;
-    kind: CashflowKind;
+    kind: CategoryKind;
     estimatedMonthly: number;
     description: string;
     keywords: string[];
   }) => Promise<void>;
   isSaving: boolean;
-  editingCashflow: Cashflow | null;
+  editingCategory: Category | null;
   error?: string | null;
 }
 
-export default function AddCashflowModal({
+export default function AddCategoryModal({
   open,
   onClose,
   onSave,
   isSaving,
-  editingCashflow,
+  editingCategory,
   error,
-}: AddCashflowModalProps) {
+}: AddCategoryModalProps) {
   const [name, setName] = useState("");
-  const [kind, setKind] = useState<CashflowKind>("expense");
+  const [kind, setKind] = useState<CategoryKind>("expense");
   const [estimatedMonthly, setEstimatedMonthly] = useState("0");
   const [description, setDescription] = useState("");
   const [keywordInput, setKeywordInput] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
 
-  const isEditing = editingCashflow !== null;
+  const isEditing = editingCategory !== null;
 
   // Sync internal state whenever the modal opens or the target record changes
   useEffect(() => {
     if (open) {
-      if (editingCashflow) {
-        setName(editingCashflow.name);
-        setKind(editingCashflow.kind);
-        setEstimatedMonthly(String(editingCashflow.estimatedMonthly ?? 0));
-        setDescription(editingCashflow.description ?? "");
-        setKeywords(editingCashflow.keywords ?? []);
+      if (editingCategory) {
+        setName(editingCategory.name);
+        setKind(editingCategory.kind);
+        setEstimatedMonthly(String(editingCategory.estimatedMonthly ?? 0));
+        setDescription(editingCategory.description ?? "");
+        setKeywords(editingCategory.keywords ?? []);
       } else {
         setName("");
         setKind("expense");
@@ -69,7 +69,7 @@ export default function AddCashflowModal({
       }
       setKeywordInput("");
     }
-  }, [open, editingCashflow]);
+  }, [open, editingCategory]);
 
   const commitKeywordInput = () => {
     const trimmed = keywordInput.trim().toLowerCase();
@@ -129,7 +129,7 @@ export default function AddCashflowModal({
       }}
     >
       <DialogTitle sx={{ fontWeight: 700, pt: 2.5 }}>
-        {isEditing ? "Edit Cashflow" : "Add Cashflow"}
+        {isEditing ? "Edit Category" : "Add Category"}
       </DialogTitle>
 
       <DialogContent>
@@ -139,7 +139,7 @@ export default function AddCashflowModal({
           <TextField
             fullWidth
             size="small"
-            label="Cashflow name"
+            label="Category name"
             placeholder="e.g., Groceries"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -149,12 +149,12 @@ export default function AddCashflowModal({
           />
 
           <FormControl fullWidth size="small" sx={{ "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2 } }}>
-            <InputLabel id="cashflow-type-label">Type</InputLabel>
+            <InputLabel id="category-type-label">Type</InputLabel>
             <Select
-              labelId="cashflow-type-label"
+              labelId="category-type-label"
               label="Type"
               value={kind}
-              onChange={(e) => setKind(e.target.value as CashflowKind)}
+              onChange={(e) => setKind(e.target.value as CategoryKind)}
               disabled={isSaving}
             >
               <MenuItem value="income">Income</MenuItem>
@@ -238,7 +238,7 @@ export default function AddCashflowModal({
           disabled={isSaving}
           sx={{ height: 36, borderRadius: 2, textTransform: "none", fontWeight: 700, px: 3 }}
         >
-          {isSaving ? "Saving..." : isEditing ? "Save Changes" : "Add Cashflow"}
+          {isSaving ? "Saving..." : isEditing ? "Save Changes" : "Add Category"}
         </Button>
       </DialogActions>
     </Dialog>
