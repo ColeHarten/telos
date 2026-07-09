@@ -1,4 +1,4 @@
-import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
+import { Configuration, CountryCode, PlaidApi, PlaidEnvironments, Products } from "plaid";
 import type { AccountType, NormalBalance } from "@/lib/types/types";
 
 const config = new Configuration({
@@ -18,8 +18,8 @@ export async function createLinkToken(uid: string) {
     user: { client_user_id: uid },
     client_name: "Budgeting App",
     language: "en",
-    products: ["transactions"],
-    country_codes: ["US"],
+    products: [Products.Transactions] as Products[],
+    country_codes: [CountryCode.Us] as CountryCode[],
   });
 
   return res.data.link_token;
@@ -65,7 +65,7 @@ export async function getInstitutionForItem(accessToken: string) {
   const institutionResponse =
     await plaidClient.institutionsGetById({
       institution_id: institutionId,
-      country_codes: ["US"],
+      country_codes: [CountryCode.Us] as CountryCode[],
     });
 
   return {

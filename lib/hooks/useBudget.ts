@@ -38,6 +38,7 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
   const [rangeLoading, setRangeLoading] = useState(false);
   const [rangeError, setRangeError] = useState<string | null>(null);
 
+  // Load the single selected month's budget doc, live.
   useEffect(() => {
     if (authLoading) return;
 
@@ -83,6 +84,7 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
     return () => unsubscribe();
   }, [authLoading, user, selectedMonthKey]);
 
+  // Load (and lazily create) the user's app settings doc, live.
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
@@ -130,44 +132,45 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
     return () => unsubscribe();
   }, [authLoading, user]);
 
-  useEffect(() => {
-    if (authLoading || !user) return;
+  // NOTE: removed a dead effect here that reassigned setBudgetValues to its
+  // own current value on every [authLoading, user] change. It was a no-op
+  // (React bails out of re-rendering when a setState updater returns the
+  // same reference), so it did nothing but wasn't a bug — just noise.
 
-    setBudgetValues((currentValues) => {
-      let nextValues = currentValues;
+  const saveBudget = useCallback(
+    async (monthKey: string, lines: BudgetLines) => {
+      if (!user) throw new Error("Not signed in");
+      setIsSaving(true);
+      try {
+        await setDoc(doc(db, "users", user.uid, "budgets", monthKey), {
+          monthKey,
+          currency: "USD",
+          lines,
+          updatedAt: serverTimestamp(),
+        });
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [user]
+  );
 
-      return nextValues;
-    });
-  }, [authLoading, user]);
+  const updateSettings = useCallback(
+    async (next: Partial<AppSettings>) => {
+      if (!user) throw new Error("Not signed in");
+      await setDoc(
+        doc(db, "users", user.uid, "settings", "app"),
+        {
+          ...next,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true } as any
+      );
+    },
+    [user]
+  );
 
-  async function saveBudget(monthKey: string, lines: BudgetLines) {
-    if (!user) throw new Error("Not signed in");
-    setIsSaving(true);
-    try {
-      await setDoc(doc(db, "users", user.uid, "budgets", monthKey), {
-        monthKey,
-        currency: "USD",
-        lines,
-        updatedAt: serverTimestamp(),
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function updateSettings(next: Partial<AppSettings>) {
-    if (!user) throw new Error("Not signed in");
-    await setDoc(
-      doc(db, "users", user.uid, "settings", "app"),
-      {
-        ...next,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true } as any
-    );
-  }
-
-  async function ensureUserProfile() {
+  const ensureUserProfile = useCallback(async () => {
     if (!user) throw new Error("Not signed in");
     await setDoc(
       doc(db, "users", user.uid),
@@ -180,81 +183,87 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
       },
       { merge: true }
     );
-  }
+  }, [user]);
 
-  async function copyPreviousMonth(monthKey: string) {
-    if (!user) throw new Error("Not signed in");
+  const copyPreviousMonth = useCallback(
+    async (monthKey: string) => {
+      if (!user) throw new Error("Not signed in");
 
-    const [year, month] = monthKey.split("-").map(Number);
-    const previousMonthDate = new Date(year, month - 2, 1);
-    const previousMonthKey = `${previousMonthDate.getFullYear()}-${String(
-      previousMonthDate.getMonth() + 1
-    ).padStart(2, "0")}`;
+      const [year, month] = monthKey.split("-").map(Number);
+      const previousMonthDate = new Date(year, month - 2, 1);
+      const previousMonthKey = `${previousMonthDate.getFullYear()}-${String(
+        previousMonthDate.getMonth() + 1
+      ).padStart(2, "0")}`;
 
-    const previousBudgetSnapshot = await getDoc(
-      doc(db, "users", user.uid, "budgets", previousMonthKey)
-    );
-
-    if (!previousBudgetSnapshot.exists()) {
-      // No previous budget to copy from, so just clear the current budget values and lines
-      setBudgetValues({});
-      setBudgetLines({});
-      return;
-    }
-
-    const previousBudget = previousBudgetSnapshot.data();
-    const previousLines = (previousBudget.lines ?? {}) as BudgetLines;
-
-    const copiedValues: Record<string, string> = {};
-    for (const [lineId, line] of Object.entries(previousLines)) {
-      copiedValues[lineId] = String(line.planned ?? 0);
-    }
-
-    setBudgetValues(copiedValues);
-    setBudgetLines(previousLines);
-  }
-
-  function setBudgetValue(lineId: string, nextValue: string) {
-    setBudgetValues((cur) => ({ ...cur, [lineId]: nextValue }));
-  }
-
-  async function loadBudgetRange(startMonthKey: string, endMonthKey: string) {
-    if (!user) throw new Error("Not signed in");
-
-    setRangeLoading(true);
-    setRangeError(null);
-
-    try {
-      const budgetsRef = collection(db, "users", user.uid, "budgets");
-      const rangeQuery = query(
-        budgetsRef,
-        where(documentId(), ">=", startMonthKey),
-        where(documentId(), "<=", endMonthKey)
+      const previousBudgetSnapshot = await getDoc(
+        doc(db, "users", user.uid, "budgets", previousMonthKey)
       );
 
-      const snapshot = await getDocs(rangeQuery);
-
-      const next: Record<string, BudgetLines> = {};
-      for (const docSnapshot of snapshot.docs) {
-        const data = docSnapshot.data();
-        next[docSnapshot.id] = (data.lines ?? {}) as BudgetLines;
+      if (!previousBudgetSnapshot.exists()) {
+        // No previous budget to copy from, so just clear the current budget values and lines
+        setBudgetValues({});
+        setBudgetLines({});
+        return;
       }
 
-      setRangeBudgets(next);
-      return next;
-    } catch (err) {
-      console.error(err);
-      setRangeError("Could not load budgets for the selected range.");
-      throw err;
-    } finally {
-      setRangeLoading(false);
-    }
-  }
+      const previousBudget = previousBudgetSnapshot.data();
+      const previousLines = (previousBudget.lines ?? {}) as BudgetLines;
 
-  function clearBudgetRange() {
+      const copiedValues: Record<string, string> = {};
+      for (const [lineId, line] of Object.entries(previousLines)) {
+        copiedValues[lineId] = String(line.planned ?? 0);
+      }
+
+      setBudgetValues(copiedValues);
+      setBudgetLines(previousLines);
+    },
+    [user]
+  );
+
+  const setBudgetValue = useCallback((lineId: string, nextValue: string) => {
+    setBudgetValues((cur) => ({ ...cur, [lineId]: nextValue }));
+  }, []);
+
+  const loadBudgetRange = useCallback(
+    async (startMonthKey: string, endMonthKey: string) => {
+      if (!user) throw new Error("Not signed in");
+
+      setRangeLoading(true);
+      setRangeError(null);
+
+      try {
+        const budgetsRef = collection(db, "users", user.uid, "budgets");
+        const rangeQuery = query(
+          budgetsRef,
+          where(documentId(), ">=", startMonthKey),
+          where(documentId(), "<=", endMonthKey)
+        );
+
+        const snapshot = await getDocs(rangeQuery);
+
+        const next: Record<string, BudgetLines> = {};
+        for (const docSnapshot of snapshot.docs) {
+          const data = docSnapshot.data();
+          next[docSnapshot.id] = (data.lines ?? {}) as BudgetLines;
+        }
+
+        setRangeBudgets(next);
+        return next;
+      } catch (err) {
+        console.error(err);
+        setRangeError("Could not load budgets for the selected range.");
+        throw err;
+      } finally {
+        setRangeLoading(false);
+      }
+    },
+    [user]
+  );
+
+  const clearBudgetRange = useCallback(() => {
     setRangeBudgets({});
     setRangeError(null);
-  }
+  }, []);
 
   return {
     selectedMonthKey,

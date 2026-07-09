@@ -206,7 +206,7 @@ export default function TransactionsPage() {
     transactionsError,
     setTransactionsError,
     refetchTransactions,
-    updateTransactionCashflow,
+    updateTransactionAssignment,
   } = useTransactions(user, authLoading, accounts);
 
   const { cashflows = [] } = useCashflows(user, authLoading);
@@ -258,7 +258,7 @@ export default function TransactionsPage() {
     const toTime = effectiveDateTo ? parseDateValue(effectiveDateTo) : null;
 
     return transactions.filter((transaction) => {
-      if (selectedAccountId && transaction.accountId !== selectedAccountId) return false;
+      if (selectedAccountId && transaction.originAccId !== selectedAccountId) return false;
 
       const transactionTime = parseDateValue(transaction.date);
       if (fromTime !== null && transactionTime !== null && transactionTime < fromTime) return false;
@@ -915,7 +915,7 @@ export default function TransactionsPage() {
                       <TableCell>
                         <Stack sx={{ flexDirection: "row", alignItems: "center", gap: 1 }}>
                           <Typography sx={{ fontWeight: 500, color: "#334155", fontSize: "0.85rem" }}>
-                            {tx.accountName || "Plaid Account"}
+                            {tx.originAccName || "Plaid Account"}
                           </Typography>
                         </Stack>
                       </TableCell>
@@ -924,8 +924,8 @@ export default function TransactionsPage() {
                       <TableCell>
                         <Select
                           size="small"
-                          value={tx.cashflowId ?? ""}
-                          onChange={(event) => updateTransactionCashflow(tx.id, event.target.value)}
+                          value={tx.assignmentId ?? ""}
+                          onChange={(event) => updateTransactionAssignment(tx.id, "cashflow", event.target.value)}
                           displayEmpty
                           sx={{
                             minWidth: 160,
@@ -935,9 +935,11 @@ export default function TransactionsPage() {
                             "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e2e8f0" },
                           }}
                         >
-                          <MenuItem value="" disabled sx={{ fontSize: "0.8rem" }}>
-                            <em>Unassigned</em>
-                          </MenuItem>
+                          {!tx.assignmentId && (
+                            <MenuItem value="" disabled sx={{ fontSize: "0.8rem" }}>
+                              <em>Unassigned</em>
+                            </MenuItem>
+                          )}
                           {cashflows.map((cf) => (
                             <MenuItem key={cf.id} value={cf.id} sx={{ fontSize: "0.8rem" }}>
                               {cf.name}

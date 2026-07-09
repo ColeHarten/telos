@@ -1,20 +1,11 @@
 import { adminDb } from "@/lib/firebaseAdmin";
 import type { Transaction as PlaidTransaction } from "plaid";
-import type { Cashflow } from "@/lib/types/types.ts"; 
-
-/**
- * Rolling match statistics used for amount/recurrence scoring.
- * Optional on Cashflow since new cashflows won't have any yet.
- */
-export type CashflowMatchStats = {
-  count: number;
-  avgAmount: number;
-  merchantFrequency: Record<string, number>; // normalized merchant -> count
-};
+import type { AssignmentType, Cashflow } from "@/lib/types/types.ts";
 
 /**
  * Manual merchant -> cashflow override, created when a user corrects
- * a transaction (Phase 2) or defines one explicitly.
+ * a transaction (Phase 2) or defines one explicitly. Always takes
+ * precedence over keyword matching.
  */
 export type Automation = {
   id: string; // normalized merchant key, doubles as doc id
@@ -52,7 +43,7 @@ export async function buildRulesContext(uid: string): Promise<RulesContext> {
 }
 
 // ---------------------------------------------------------------------------
-// Normalization + individual scoring signals
+// Normalization + matching
 // ---------------------------------------------------------------------------
 
 export function normalizeMerchant(name: string): string {
@@ -62,112 +53,53 @@ export function normalizeMerchant(name: string): string {
     .trim();
 }
 
-function textSimilarityScore(haystack: string, cashflow: Cashflow): number {
+/**
+ * Plain substring match: does the transaction's merchant/description text
+ * contain the cashflow's name or any of its keywords?
+ *
+ * Deliberately simple for now — no category/amount/recurrence weighting.
+ * The first cashflow (in Firestore doc order) that matches wins.
+ */
+function isKeywordMatch(haystack: string, cashflow: Cashflow): boolean {
   const keywords = (cashflow.keywords ?? []).concat(cashflow.name);
-  if (keywords.length === 0) return 0;
-
-  const normalized = normalizeMerchant(haystack);
-  const matches = keywords.filter((kw) =>
-    normalized.includes(kw.toLowerCase())
-  ).length;
-
-  return matches / keywords.length;
-}
-
-function categoryMatchScore(
-  category: PlaidTransaction["personal_finance_category"] | null,
-  cashflow: Cashflow
-): number {
-  const plaidCategories = cashflow.plaidCategories ?? [];
-  if (!category || plaidCategories.length === 0) return 0;
-
-  const set = new Set(plaidCategories.map((c) => c.toUpperCase()));
-  const detailed = category.detailed?.toUpperCase();
-  const primary = category.primary?.toUpperCase();
-
-  if (detailed && set.has(detailed)) return 1;
-  if (primary && set.has(primary)) return 0.6; // less specific match
-  return 0;
-}
-
-function amountSimilarityScore(amount: number, cashflow: Cashflow): number {
-  const stats = cashflow.matchStats;
-  if (!stats || stats.count === 0) return 0;
-
-  const diff = Math.abs(amount - stats.avgAmount);
-  const scale = Math.max(Math.abs(stats.avgAmount), 1);
-  return Math.max(0, 1 - diff / scale);
-}
-
-function recurrenceScore(merchantKey: string, cashflow: Cashflow): number {
-  const stats = cashflow.matchStats;
-  if (!stats || stats.count === 0) return 0;
-
-  const freq = stats.merchantFrequency[merchantKey] ?? 0;
-  return Math.min(1, freq / stats.count);
+  return keywords.some((kw) => kw.trim().length > 0 && haystack.includes(normalizeMerchant(kw)));
 }
 
 // ---------------------------------------------------------------------------
-// Scoring + applyRules
+// applyRules
 // ---------------------------------------------------------------------------
-
-const WEIGHTS = {
-  text: 4,
-  category: 3,
-  amount: 1.5,
-  recurrence: 1.5,
-};
-
-const CONFIDENCE_THRESHOLD = 5; // out of a max of 10; tune against real data
-
-function scoreCashflow(
-  tx: {
-    merchantName: string | null;
-    rawName: string;
-    amount: number;
-    category: PlaidTransaction["personal_finance_category"] | null;
-  },
-  merchantKey: string,
-  cashflow: Cashflow
-): number {
-  const haystack = tx.merchantName ?? tx.rawName;
-
-  const text = textSimilarityScore(haystack, cashflow);
-  const category = categoryMatchScore(tx.category, cashflow);
-  const amount = amountSimilarityScore(tx.amount, cashflow);
-  const recurrence = recurrenceScore(merchantKey, cashflow);
-
-  return (
-    text * WEIGHTS.text +
-    category * WEIGHTS.category +
-    amount * WEIGHTS.amount +
-    recurrence * WEIGHTS.recurrence
-  );
-}
 
 /**
- * Assigns a cashflowId to a transaction using, in order:
+ * Assigns a transaction to a cashflow using, in order:
  *   1. A manual automation (merchant -> cashflow override) — always wins.
- *   2. The highest-scoring cashflow, if it clears CONFIDENCE_THRESHOLD.
- *   3. Otherwise leaves cashflowId as null ("Needs Review").
+ *   2. The first cashflow whose name/keywords appear in the merchant text.
+ *   3. Otherwise leaves the transaction unassigned ("Needs Review").
  *
- * Phase 2 will replace the scoring internals (weights, signals) but the
- * signature and control flow here should stay stable.
+ * Signature intentionally mirrors the assignmentType/assignmentId shape
+ * used everywhere else (useTransactions.ts, dashboard) so callers don't
+ * need to translate between a `cashflowId` and an assignment pair.
  */
 export async function applyRules<T extends {
   merchantName: string | null;
   rawName: string;
-  amount: number;
   category: PlaidTransaction["personal_finance_category"] | null;
-  cashflowId: string | null;
+  assignmentType: AssignmentType;
+  assignmentId: string | null;
 }>(transaction: T, context: RulesContext): Promise<T> {
   const merchantKey = normalizeMerchant(transaction.merchantName ?? transaction.rawName);
 
-  
-  // For now, just assign a random cashflowId from the list of cashflows. 
-  // In Phase 2, this will be replaced with a scoring algorithm.
-  const bestCashflow = context.cashflows[Math.floor(Math.random() * context.cashflows.length)];
-  const bestCashflowId = bestCashflow?.id ?? null;
+  // 1. Manual automation always wins.
+  const automatedCashflowId = context.automations.get(merchantKey);
+  if (automatedCashflowId) {
+    return { ...transaction, assignmentType: "cashflow", assignmentId: automatedCashflowId };
+  }
 
-  return { ...transaction, cashflowId: bestCashflowId };
+  // 2. Simple keyword/name match.
+  const match = context.cashflows.find((cf) => isKeywordMatch(merchantKey, cf));
+  if (match) {
+    return { ...transaction, assignmentType: "cashflow", assignmentId: match.id };
+  }
+
+  // 3. No match — leave for the user to review.
+  return { ...transaction, assignmentType: "unassigned", assignmentId: null };
 }

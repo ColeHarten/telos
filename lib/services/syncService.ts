@@ -1,12 +1,12 @@
 import { adminDb } from "@/lib/firebaseAdmin";
+import type { AssignmentType } from "@/lib/types/types";
 import type { DocumentReference, WriteBatch } from "firebase-admin/firestore";
 import type {
   RemovedTransaction as PlaidRemovedTransaction,
   Transaction as PlaidTransaction,
 } from "plaid";
 import { syncTransactions } from "./plaidService";
-import { applyRules } from "./ruleEngine";
-import { buildRulesContext } from "./ruleEngine";
+import { applyRules, buildRulesContext } from "./ruleEngine";
 
 const MAX_BATCH_SIZE = 500;
 
@@ -24,6 +24,11 @@ interface PlaidItemDoc {
 
 /**
  * Shape of a transaction document as stored in Firestore.
+ *
+ * assignmentType/assignmentId replace the old cashflowId field. The read
+ * side (useTransactions.ts) still falls back to a legacy `cashflowId` if it
+ * finds one on an old doc, but every doc written from here on out uses the
+ * new shape directly.
  */
 interface TransactionDoc {
   accountId: string;
@@ -33,13 +38,18 @@ interface TransactionDoc {
   rawName: string; // Plaid's legacy `name` field, kept for reference/debugging
   pending: boolean;
   category: PlaidTransaction["personal_finance_category"] | null;
-  cashflowId: string | null;
+  assignmentType: AssignmentType;
+  assignmentId: string | null;
   createdAt: number;
   updatedAt: number;
 }
 
 /**
  * Partial update applied to an existing transaction document.
+ *
+ * Deliberately does NOT include assignmentType/assignmentId — a Plaid
+ * "modified" event should never clobber a user's (or a prior rule's)
+ * assignment on an existing transaction.
  */
 type TransactionUpdate = Pick<TransactionDoc, "amount" | "rawName" | "pending" | "updatedAt">;
 
@@ -132,7 +142,8 @@ export async function syncPlaidItem(
         rawName: tx.name,
         pending: tx.pending,
         category: tx.personal_finance_category ?? null,
-        cashflowId: null,
+        assignmentType: "unassigned",
+        assignmentId: null,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       },

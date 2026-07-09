@@ -44,8 +44,6 @@ export type Account = {
 
 export type CashflowKind = "income" | "expense";
 
-export type CashflowKind = "income" | "expense";
-
 export type CashflowMatchStats = {
   count: number;
   avgAmount: number;
@@ -113,17 +111,22 @@ export type AppSettings = {
   updatedAt?: unknown;
 };
 
+export type AssignmentType = "cashflow" | "account_transfer" | "unassigned";
+
 export type Transaction = {
   id: string;
-  accountId: string;
-  accountName: string;
+  originAccId: string;   // the account that the transaction originated from (e.g. a checking account)
+  originAccName: string; // the name of the account that the transaction originated from (e.g. a checking account)
   displayName: string;
   amount: number;
   date: string;
   pending: boolean;
+
   categoryPrimary: string | null;
   categoryDetailed: string | null;
-  cashflowId: string | undefined;
+
+  assignmentType: AssignmentType;
+  assignmentId: string | undefined;
 };
 
 export type Automation = {
