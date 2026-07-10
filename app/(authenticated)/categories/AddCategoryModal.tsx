@@ -1,32 +1,81 @@
 "use client";
 
-import type { Account, Category, CategoryKind } from "@/lib/types/types";
+import type {
+  Account,
+  Category,
+  CategoryKind,
+  Deduction,
+  DeductionType,
+  PayFrequency,
+  PaycheckDetails,
+} from "@/lib/types/types";
+import { calculateWithholdings, payFrequencyOptions } from "@/lib/paycheck/paycheck";
+import { formatCurrency } from "@/lib/utils";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import DeleteRoundedIcon from "@mui/icons-material/DeleteRounded";
+import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import {
   Alert,
   Autocomplete,
   Box,
   Button,
+  Card,
+  CardContent,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   FormControl,
+  FormControlLabel,
+  Grid,
+  IconButton,
   InputAdornment,
   InputLabel,
   MenuItem,
   Select,
   Stack,
+  Switch,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const KIND_OPTIONS: { value: CategoryKind; label: string; color: string }[] = [
   { value: "income", label: "Income", color: "#059669" },
   { value: "expense", label: "Expense", color: "#dc2626" },
   { value: "transfer", label: "Transfer", color: "#2563eb" },
 ];
+
+// Logical order: money leaves gross pay pre-tax first, then taxes are withheld,
+// then whatever's left has post-tax deductions taken out.
+const DEDUCTION_TYPE_ORDER: DeductionType[] = ["preTaxDeduction", "tax", "postTaxDeduction"];
+
+const DEDUCTION_TYPE_META: Record<DeductionType, { label: string; color: string; background: string }> = {
+  preTaxDeduction: { label: "Pre-tax", color: "#7c3aed", background: "#f5f3ff" },
+  tax: { label: "Tax", color: "#475569", background: "#f1f5f9" },
+  postTaxDeduction: { label: "Post-tax", color: "#c2410c", background: "#fff7ed" },
+};
+
+const QUICK_ADD_OPTIONS: Record<DeductionType, { label: string; defaultPercent: number }[]> = {
+  preTaxDeduction: [
+    { label: "401(k) Contribution", defaultPercent: 5 },
+    { label: "Health Insurance", defaultPercent: 3 },
+    { label: "HSA Contribution", defaultPercent: 2 },
+  ],
+  tax: [
+    { label: "Federal Income Tax", defaultPercent: 12 },
+    { label: "State Income Tax", defaultPercent: 5 },
+    { label: "Social Security (FICA)", defaultPercent: 6.2 },
+    { label: "Medicare (FICA)", defaultPercent: 1.45 },
+  ],
+  postTaxDeduction: [
+    { label: "Roth 401(k)", defaultPercent: 5 },
+    { label: "Union Dues", defaultPercent: 0 },
+  ],
+};
 
 function KindDot({ color }: { color: string }) {
   return <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: color, flexShrink: 0 }} />;
@@ -42,6 +91,7 @@ interface AddCategoryModalProps {
     description: string;
     keywords: string[];
     transferAccountId: string | null;
+    paycheckDetails: PaycheckDetails | null;
   }) => Promise<void>;
   isSaving: boolean;
   editingCategory: Category | null;
@@ -67,31 +117,174 @@ export default function AddCategoryModal({
   const [transferAccountId, setTransferAccountId] = useState("");
   const [destinationError, setDestinationError] = useState<string | null>(null);
 
+  // --- Paycheck fields (only relevant when kind === "income") ---
+  const [usePaycheckProfile, setUsePaycheckProfile] = useState(false);
+  const [payFrequency, setPayFrequency] = useState<PayFrequency>("biweekly");
+  const [grossSalary, setGrossSalary] = useState("0");
+  const [deductions, setDeductions] = useState<Deduction[]>([]);
+
   const isEditing = editingCategory !== null;
   const activeAccounts = accounts.filter((a) => !a.isArchived);
 
-  // Sync internal state whenever the modal opens or the target record changes
   useEffect(() => {
-    if (open) {
-      if (editingCategory) {
-        setName(editingCategory.name);
-        setKind(editingCategory.kind);
-        setEstimatedMonthly(String(editingCategory.estimatedMonthly ?? 0));
-        setDescription(editingCategory.description ?? "");
-        setKeywords(editingCategory.keywords ?? []);
-        setTransferAccountId(editingCategory.transferAccountId ?? "");
+    if (!open) return;
+
+    if (editingCategory) {
+      setName(editingCategory.name);
+      setKind(editingCategory.kind);
+      setEstimatedMonthly(String(editingCategory.estimatedMonthly ?? 0));
+      setDescription(editingCategory.description ?? "");
+      setKeywords(editingCategory.keywords ?? []);
+      setTransferAccountId(editingCategory.transferAccountId ?? "");
+
+      if (editingCategory.paycheckDetails) {
+        setUsePaycheckProfile(true);
+        setPayFrequency(editingCategory.paycheckDetails.payFrequency);
+        setGrossSalary(String(editingCategory.paycheckDetails.grossSalary));
+        setDeductions(editingCategory.paycheckDetails.deductions);
       } else {
-        setName("");
-        setKind("expense");
-        setEstimatedMonthly("0");
-        setDescription("");
-        setKeywords([]);
-        setTransferAccountId("");
+        setUsePaycheckProfile(false);
+        setPayFrequency("biweekly");
+        setGrossSalary("0");
+        setDeductions([]);
       }
-      setKeywordInput("");
-      setDestinationError(null);
+    } else {
+      setName("");
+      setKind("expense");
+      setEstimatedMonthly("0");
+      setDescription("");
+      setKeywords([]);
+      setTransferAccountId("");
+      setUsePaycheckProfile(false);
+      setPayFrequency("biweekly");
+      setGrossSalary("0");
+      setDeductions([]);
     }
+    setKeywordInput("");
+    setDestinationError(null);
   }, [open, editingCategory]);
+
+  const calculatedValues = useMemo(
+    () => calculateWithholdings(Number(grossSalary) || 0, deductions, payFrequency),
+    [grossSalary, deductions, payFrequency]
+  );
+
+  const frequencyShortLabel = payFrequencyOptions.find((o) => o.value === payFrequency)?.shortLabel ?? "";
+
+  function addDeductionRow(type: DeductionType, label = "", defaultPercent = 0) {
+    setDeductions((prev) => [...prev, { label, value: defaultPercent, kind: "percentOfGross", type }]);
+  }
+
+  function updateDeductionRow(index: number, changes: Partial<Deduction>) {
+    setDeductions((prev) => prev.map((d, i) => (i === index ? { ...d, ...changes } : d)));
+  }
+
+  function removeDeductionRow(index: number) {
+    setDeductions((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  const groupedIndexed = useMemo(() => {
+    const withIndex = deductions.map((d, i) => ({ ...d, index: i }));
+    return {
+      preTaxDeduction: withIndex.filter((d) => d.type === "preTaxDeduction"),
+      tax: withIndex.filter((d) => d.type === "tax"),
+      postTaxDeduction: withIndex.filter((d) => d.type === "postTaxDeduction"),
+    };
+  }, [deductions]);
+
+  function renderDeductionRow(row: Deduction & { index: number }) {
+    return (
+      <Box
+        key={row.index}
+        sx={{ display: "grid", gridTemplateColumns: "1fr 150px 130px 40px", alignItems: "center", gap: 1, px: 2, py: 1 }}
+      >
+        <TextField
+          placeholder={row.type === "tax" ? "e.g., Federal Income Tax" : "e.g., 401k Contribution"}
+          size="small"
+          value={row.label}
+          onChange={(e) => updateDeductionRow(row.index, { label: e.target.value })}
+          variant="standard"
+          slotProps={{ input: { disableUnderline: true } }}
+        />
+        <Select
+          size="small"
+          variant="standard"
+          value={row.kind}
+          onChange={(e) => updateDeductionRow(row.index, { kind: e.target.value as Deduction["kind"] })}
+          disableUnderline
+        >
+          <MenuItem value="percentOfGross">% of Gross</MenuItem>
+          <MenuItem value="flatAmount">Flat Amount</MenuItem>
+        </Select>
+        <TextField
+          size="small"
+          type="number"
+          variant="standard"
+          value={row.value}
+          onChange={(e) => updateDeductionRow(row.index, { value: Number(e.target.value) || 0 })}
+          slotProps={{
+            input: {
+              disableUnderline: true,
+              endAdornment: <InputAdornment position="end">{row.kind === "percentOfGross" ? "%" : "$"}</InputAdornment>,
+            },
+          }}
+        />
+        <Tooltip title="Delete Item">
+          <IconButton onClick={() => removeDeductionRow(row.index)} size="small">
+            <DeleteRoundedIcon sx={{ color: "#dc2626", fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>
+      </Box>
+    );
+  }
+
+  function renderDeductionSection(type: DeductionType) {
+    const meta = DEDUCTION_TYPE_META[type];
+    const rows = groupedIndexed[type];
+    const quickAdds = QUICK_ADD_OPTIONS[type];
+
+    return (
+      <Box key={type}>
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 0.75, bgcolor: meta.background }}>
+          <Typography variant="caption" sx={{ fontWeight: 700, color: meta.color, letterSpacing: 0.3 }}>
+            {meta.label.toUpperCase()}
+          </Typography>
+          <Button
+            onClick={() => addDeductionRow(type)}
+            size="small"
+            startIcon={<AddRoundedIcon sx={{ fontSize: 14 }} />}
+            disabled={isSaving}
+            sx={{ textTransform: "none", fontWeight: 700, fontSize: "0.7rem", minWidth: 0, py: 0, color: meta.color }}
+          >
+            Add
+          </Button>
+        </Box>
+
+        <Stack sx={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 1, px: 2, py: 1.25 }}>
+          {quickAdds.map((option) => {
+            const alreadyAdded = deductions.some((d) => d.label === option.label);
+            return (
+              <Chip
+                key={option.label}
+                size="small"
+                icon={<AddRoundedIcon sx={{ fontSize: 14 }} />}
+                label={option.label}
+                onClick={() => !alreadyAdded && addDeductionRow(type, option.label, option.defaultPercent)}
+                disabled={alreadyAdded || isSaving}
+                sx={{ borderRadius: 999, bgcolor: "#f1f5f9", color: "#475569", fontWeight: 600 }}
+              />
+            );
+          })}
+        </Stack>
+
+        {rows.length > 0 && (
+          <Stack divider={<Divider />} sx={{ borderTop: "1px solid", borderColor: "divider" }}>
+            {rows.map(renderDeductionRow)}
+          </Stack>
+        )}
+      </Box>
+    );
+  }
 
   const commitKeywordInput = () => {
     const trimmed = keywordInput.trim().toLowerCase();
@@ -123,24 +316,43 @@ export default function AddCategoryModal({
     }
     setDestinationError(null);
 
-    const parsedEstimatedMonthly = Number(estimatedMonthly || 0);
-
-    // Catch any keyword left in the input box that the user didn't press Enter/comma for
     const trimmedPending = keywordInput.trim().toLowerCase();
-    const finalKeywords =
-      trimmedPending && !keywords.includes(trimmedPending)
-        ? [...keywords, trimmedPending]
-        : keywords;
+    const finalKeywords = trimmedPending && !keywords.includes(trimmedPending) ? [...keywords, trimmedPending] : keywords;
+
+    const isPaycheckSynced = kind === "income" && usePaycheckProfile;
+
+    let paycheckDetails: PaycheckDetails | null = null;
+    let finalEstimatedMonthly: number;
+
+    if (isPaycheckSynced) {
+      const cleanedDeductions = deductions
+        .filter((d) => d.label.trim().length > 0)
+        .map((d) => ({ label: d.label.trim(), value: d.value, kind: d.kind, type: d.type }));
+      const calculated = calculateWithholdings(Number(grossSalary) || 0, cleanedDeductions, payFrequency);
+
+      paycheckDetails = {
+        payFrequency,
+        grossSalary: Number(grossSalary) || 0,
+        deductions: cleanedDeductions,
+      };
+      finalEstimatedMonthly = calculated.estimatedMonthlyNet;
+    } else {
+      const parsed = Number(estimatedMonthly || 0);
+      finalEstimatedMonthly = Number.isNaN(parsed) ? 0 : parsed;
+    }
 
     await onSave({
       name: name.trim(),
       kind,
-      estimatedMonthly: Number.isNaN(parsedEstimatedMonthly) ? 0 : parsedEstimatedMonthly,
+      estimatedMonthly: finalEstimatedMonthly,
       description: description.trim(),
       keywords: finalKeywords,
       transferAccountId: kind === "transfer" ? transferAccountId : null,
+      paycheckDetails,
     });
   };
+
+  const showPaycheckCard = kind === "income" && usePaycheckProfile;
 
   return (
     <Dialog
@@ -149,13 +361,9 @@ export default function AddCategoryModal({
         if (reason !== "backdropClick" && !isSaving) onClose();
       }}
       fullWidth
-      maxWidth="sm"
+      maxWidth={showPaycheckCard ? "md" : "sm"}
       slotProps={{
-        paper: {
-          component: "form",
-          onSubmit: handleSubmit,
-          sx: { borderRadius: 3 },
-        },
+        paper: { component: "form", onSubmit: handleSubmit, sx: { borderRadius: 3 } },
       }}
     >
       <DialogTitle sx={{ fontWeight: 700, pt: 2.5 }}>
@@ -229,35 +437,126 @@ export default function AddCategoryModal({
                   />
                 )}
               />
-              {destinationError ? (
-                <Typography variant="caption" sx={{ color: "error.main", mt: 0.5, display: "block" }}>
-                  {destinationError}
-                </Typography>
-              ) : (
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
-                  Where this transfer's money ends up.
-                </Typography>
-              )}
+              <Typography
+                variant="caption"
+                color={destinationError ? "error.main" : "text.secondary"}
+                sx={{ mt: 0.5, display: "block" }}
+              >
+                {destinationError ?? "Where this transfer's money ends up."}
+              </Typography>
             </Box>
           )}
 
-          <TextField
-            fullWidth
-            size="small"
-            label={kind === "transfer" ? "Estimated monthly transfer" : "Estimated monthly"}
-            type="number"
-            value={estimatedMonthly}
-            onChange={(e) => setEstimatedMonthly(e.target.value)}
-            disabled={isSaving}
-            slotProps={{
-              htmlInput: { min: 0, step: 0.01 },
-              input: { startAdornment: <InputAdornment position="start">$</InputAdornment> },
-            }}
-            sx={{
-              "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2 },
-              "& input": { textAlign: "right" },
-            }}
-          />
+          {kind === "income" && (
+            <FormControlLabel
+              control={
+                <Switch checked={usePaycheckProfile} onChange={(e) => setUsePaycheckProfile(e.target.checked)} disabled={isSaving} />
+              }
+              label={
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  Add withholdings and deductions
+                </Typography>
+              }
+              sx={{ ml: 0, "& .MuiFormControlLabel-label": { mt: 0.25 } }}
+            />
+          )}
+
+          {showPaycheckCard && (
+            <Card sx={{ bgcolor: "#f8fafc", border: "1px solid", borderColor: "divider", borderRadius: 2 }} elevation={0}>
+              <CardContent sx={{ p: 2 }}>
+                <Grid container spacing={1.5}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Pay Frequency</InputLabel>
+                      <Select
+                        onChange={(e) => setPayFrequency(e.target.value as PayFrequency)}
+                        value={payFrequency}
+                        label="Pay Frequency"
+                        disabled={isSaving}
+                      >
+                        {payFrequencyOptions.map((opt) => (
+                          <MenuItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <TextField
+                      fullWidth
+                      label="Gross pay (per paycheck)"
+                      onChange={(e) => setGrossSalary(e.target.value)}
+                      size="small"
+                      type="number"
+                      value={grossSalary}
+                      disabled={isSaving}
+                      slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }}
+                    />
+                  </Grid>
+                </Grid>
+
+                <Typography variant="body2" sx={{ fontWeight: 700, mt: 2, mb: 1 }}>
+                  Deductions
+                </Typography>
+
+                <Card sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, overflow: "hidden", mb: 2 }} elevation={0}>
+                  {DEDUCTION_TYPE_ORDER.map((type, i) => (
+                    <Box key={type}>
+                      {i > 0 && <Divider />}
+                      {renderDeductionSection(type)}
+                    </Box>
+                  ))}
+                </Card>
+
+                <Divider sx={{ my: 1.5 }} />
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 6 }}>
+                    <Typography variant="caption" color="text.secondary">Net per paycheck</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>{formatCurrency(calculatedValues.netPay)}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 6 }}>
+                    <Typography variant="caption" color="text.secondary">Net monthly</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 800, color: "#059669" }}>
+                      {formatCurrency(calculatedValues.estimatedMonthlyNet)}
+                    </Typography>
+                  </Grid>
+                </Grid>
+              </CardContent>
+            </Card>
+          )}
+
+          {showPaycheckCard ? (
+            <TextField
+              fullWidth
+              size="small"
+              label="Estimated monthly"
+              value={formatCurrency(calculatedValues.estimatedMonthlyNet)}
+              disabled
+              sx={{
+                "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2, bgcolor: "#f8fafc" },
+                "& input": { textAlign: "right" },
+              }}
+            />
+          ) : (
+            <TextField
+              fullWidth
+              size="small"
+              label={kind === "transfer" ? "Estimated monthly transfer" : "Estimated monthly"}
+              type="number"
+              value={estimatedMonthly}
+              onChange={(e) => setEstimatedMonthly(e.target.value)}
+              disabled={isSaving}
+              slotProps={{
+                htmlInput: { min: 0, step: 0.01 },
+                input: { startAdornment: <InputAdornment position="start">$</InputAdornment> },
+              }}
+              sx={{
+                "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2 },
+                "& input": { textAlign: "right" },
+              }}
+            />
+          )}
 
           <TextField
             fullWidth
@@ -269,7 +568,6 @@ export default function AddCategoryModal({
             disabled={isSaving}
             multiline
             minRows={2}
-            helperText="Optional — helps auto-categorize future transactions"
             sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
           />
 
@@ -283,7 +581,6 @@ export default function AddCategoryModal({
             onKeyDown={handleKeywordKeyDown}
             onBlur={commitKeywordInput}
             disabled={isSaving}
-            helperText="Optional — merchant names or terms to match against"
             sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
             slotProps={{
               input: keywords.length
@@ -291,12 +588,7 @@ export default function AddCategoryModal({
                     startAdornment: (
                       <Stack sx={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 0.5, mr: 0.5 }}>
                         {keywords.map((kw) => (
-                          <Chip
-                            key={kw}
-                            label={kw}
-                            size="small"
-                            onDelete={isSaving ? undefined : () => removeKeyword(kw)}
-                          />
+                          <Chip key={kw} label={kw} size="small" onDelete={isSaving ? undefined : () => removeKeyword(kw)} />
                         ))}
                       </Stack>
                     ),
@@ -311,12 +603,7 @@ export default function AddCategoryModal({
         <Button onClick={onClose} disabled={isSaving} sx={{ textTransform: "none", fontWeight: 700 }}>
           Cancel
         </Button>
-        <Button
-          type="submit"
-          variant="contained"
-          disabled={isSaving}
-          sx={{ height: 36, borderRadius: 2, textTransform: "none", fontWeight: 700, px: 3 }}
-        >
+        <Button type="submit" variant="contained" disabled={isSaving} sx={{ height: 36, borderRadius: 2, textTransform: "none", fontWeight: 700, px: 3 }}>
           {isSaving ? "Saving..." : isEditing ? "Save Changes" : "Add Category"}
         </Button>
       </DialogActions>

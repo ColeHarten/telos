@@ -48,46 +48,37 @@ export type Category = {
   id: string;
   name: string;
   kind: CategoryKind;
-  estimatedMonthly: number;
+  estimatedMonthly: number; // for income with paycheckDetails, this is always the computed net
   sortOrder: number;
   isDefault?: boolean;
   isArchived: boolean;
   createdAt?: unknown;
   updatedAt?: unknown;
 
-  // TODO
-  groupId?: string | null; // optional grouping of categories, e.g. "food", "transportation", etc.
-
-  // --- Rules engine fields (Phase 1) ---
+  groupId?: string | null;
   description?: string;
-  keywords?: string[];            // lowercase, normalized
-  plaidCategories?: string[];     // e.g. ["FOOD_AND_DRINK_COFFEE"]
-
-  // --- Transfer-type fields ---
-  // Only meaningful when kind === "transfer". Points at the Account this
-  // transfer category's money moves into. Required at the UI/validation
-  // layer whenever kind is "transfer" (see AddCategoryModal), but kept
-  // optional/nullable here since income/expense categories never set it.
+  keywords?: string[];
+  plaidCategories?: string[];
   transferAccountId?: string | null;
+
+  // --- Paycheck fields (only meaningful when kind === "income") ---
+  paycheckDetails?: PaycheckDetails | null;
 };
 
 export type PayFrequency = "weekly" | "biweekly" | "semimonthly" | "monthly";
 export type DeductionKind = "percentOfGross" | "flatAmount";
-export type DeductionWhen = "preTax" | "postTax";
+export type DeductionType = "tax" | "preTaxDeduction" | "postTaxDeduction";
 
 export interface Deduction {
   label: string;
   value: number;
   kind: DeductionKind;
-  when: DeductionWhen;
+  type: DeductionType;
 }
 
-export interface PaycheckProfile {
-  id: string;
-  name: string;
+export interface PaycheckDetails {
   payFrequency: PayFrequency;
-  grossSalary: number;
-  linkedIncomeCategoryId: string;
+  grossSalary: number; // per-paycheck gross, not monthly
   deductions: Deduction[];
 }
 
