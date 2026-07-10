@@ -1,6 +1,13 @@
 "use client";
 
 import { auth } from "@/lib/firebaseClient";
+import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
+import BoltIcon from '@mui/icons-material/Bolt';
+import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
+import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutlined";
+import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import SwapHorizOutlinedIcon from "@mui/icons-material/SwapHorizOutlined";
 import {
   Avatar,
   Box,
@@ -9,18 +16,11 @@ import {
   Divider,
   Drawer,
   List,
-  ListItemIcon,
   ListItemButton,
+  ListItemIcon,
   Toolbar,
   Typography
 } from "@mui/material";
-import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
-import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
-import SwapHorizOutlinedIcon from "@mui/icons-material/SwapHorizOutlined";
-import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutlined";
-import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
-import ChecklistIcon from '@mui/icons-material/Checklist';
-import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import { onAuthStateChanged, User } from "firebase/auth";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -34,7 +34,7 @@ const navItems = [
   { label: "Categories", href: "/categories", icon: SwapHorizOutlinedIcon },
   { label: "Budgets", href: "/budgets", icon: PieChartOutlineOutlinedIcon },
   { label: "Transactions", href: "/transactions", icon: ReceiptLongOutlinedIcon },
-  {label: "Automations", href: "/automations", icon: ChecklistIcon},
+  {label: "Automations", href: "/automations", icon: BoltIcon},
   { label: "Settings", href: "/settings", icon: SettingsOutlinedIcon },
 ];
 

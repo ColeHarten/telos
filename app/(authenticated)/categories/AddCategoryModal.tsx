@@ -1,8 +1,10 @@
 "use client";
 
-import type { Category, CategoryKind } from "@/lib/types/types";
+import type { Account, Category, CategoryKind } from "@/lib/types/types";
 import {
   Alert,
+  Autocomplete,
+  Box,
   Button,
   Chip,
   Dialog,
@@ -16,8 +18,19 @@ import {
   Select,
   Stack,
   TextField,
+  Typography,
 } from "@mui/material";
 import { useEffect, useState } from "react";
+
+const KIND_OPTIONS: { value: CategoryKind; label: string; color: string }[] = [
+  { value: "income", label: "Income", color: "#059669" },
+  { value: "expense", label: "Expense", color: "#dc2626" },
+  { value: "transfer", label: "Transfer", color: "#2563eb" },
+];
+
+function KindDot({ color }: { color: string }) {
+  return <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: color, flexShrink: 0 }} />;
+}
 
 interface AddCategoryModalProps {
   open: boolean;
@@ -28,9 +41,11 @@ interface AddCategoryModalProps {
     estimatedMonthly: number;
     description: string;
     keywords: string[];
+    transferAccountId: string | null;
   }) => Promise<void>;
   isSaving: boolean;
   editingCategory: Category | null;
+  accounts: Account[];
   error?: string | null;
 }
 
@@ -40,6 +55,7 @@ export default function AddCategoryModal({
   onSave,
   isSaving,
   editingCategory,
+  accounts,
   error,
 }: AddCategoryModalProps) {
   const [name, setName] = useState("");
@@ -48,8 +64,11 @@ export default function AddCategoryModal({
   const [description, setDescription] = useState("");
   const [keywordInput, setKeywordInput] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
+  const [transferAccountId, setTransferAccountId] = useState("");
+  const [destinationError, setDestinationError] = useState<string | null>(null);
 
   const isEditing = editingCategory !== null;
+  const activeAccounts = accounts.filter((a) => !a.isArchived);
 
   // Sync internal state whenever the modal opens or the target record changes
   useEffect(() => {
@@ -60,14 +79,17 @@ export default function AddCategoryModal({
         setEstimatedMonthly(String(editingCategory.estimatedMonthly ?? 0));
         setDescription(editingCategory.description ?? "");
         setKeywords(editingCategory.keywords ?? []);
+        setTransferAccountId(editingCategory.transferAccountId ?? "");
       } else {
         setName("");
         setKind("expense");
         setEstimatedMonthly("0");
         setDescription("");
         setKeywords([]);
+        setTransferAccountId("");
       }
       setKeywordInput("");
+      setDestinationError(null);
     }
   }, [open, editingCategory]);
 
@@ -94,6 +116,13 @@ export default function AddCategoryModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (kind === "transfer" && !transferAccountId) {
+      setDestinationError("Choose a destination account for this transfer.");
+      return;
+    }
+    setDestinationError(null);
+
     const parsedEstimatedMonthly = Number(estimatedMonthly || 0);
 
     // Catch any keyword left in the input box that the user didn't press Enter/comma for
@@ -109,6 +138,7 @@ export default function AddCategoryModal({
       estimatedMonthly: Number.isNaN(parsedEstimatedMonthly) ? 0 : parsedEstimatedMonthly,
       description: description.trim(),
       keywords: finalKeywords,
+      transferAccountId: kind === "transfer" ? transferAccountId : null,
     });
   };
 
@@ -136,36 +166,85 @@ export default function AddCategoryModal({
         <Stack spacing={2.5} sx={{ mt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
 
-          <TextField
-            fullWidth
-            size="small"
-            label="Category name"
-            placeholder="e.g., Groceries"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={isSaving}
-            required
-            sx={{ "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2 } }}
-          />
-
-          <FormControl fullWidth size="small" sx={{ "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2 } }}>
-            <InputLabel id="category-type-label">Type</InputLabel>
-            <Select
-              labelId="category-type-label"
-              label="Type"
-              value={kind}
-              onChange={(e) => setKind(e.target.value as CategoryKind)}
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+            <TextField
+              fullWidth
+              size="small"
+              label="Category name"
+              placeholder={kind === "transfer" ? "e.g., Transfer to Brokerage" : "e.g., Groceries"}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               disabled={isSaving}
-            >
-              <MenuItem value="income">Income</MenuItem>
-              <MenuItem value="expense">Expense</MenuItem>
-            </Select>
-          </FormControl>
+              required
+              sx={{ "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2 } }}
+            />
+
+            <FormControl fullWidth size="small" sx={{ "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2 } }}>
+              <InputLabel id="category-type-label">Type</InputLabel>
+              <Select
+                labelId="category-type-label"
+                label="Type"
+                value={kind}
+                onChange={(e) => setKind(e.target.value as CategoryKind)}
+                disabled={isSaving}
+                renderValue={(value) => {
+                  const opt = KIND_OPTIONS.find((o) => o.value === value)!;
+                  return (
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      <KindDot color={opt.color} />
+                      {opt.label}
+                    </Box>
+                  );
+                }}
+              >
+                {KIND_OPTIONS.map((opt) => (
+                  <MenuItem key={opt.value} value={opt.value} sx={{ display: "flex", gap: 1 }}>
+                    <KindDot color={opt.color} />
+                    {opt.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Stack>
+
+          {kind === "transfer" && (
+            <Box>
+              <Autocomplete
+                size="small"
+                options={activeAccounts}
+                getOptionLabel={(option) => option.name}
+                value={activeAccounts.find((a) => a.id === transferAccountId) ?? null}
+                onChange={(_, newValue) => {
+                  setTransferAccountId(newValue ? newValue.id : "");
+                  setDestinationError(null);
+                }}
+                disabled={isSaving}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Destination account"
+                    required
+                    error={Boolean(destinationError)}
+                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                  />
+                )}
+              />
+              {destinationError ? (
+                <Typography variant="caption" sx={{ color: "error.main", mt: 0.5, display: "block" }}>
+                  {destinationError}
+                </Typography>
+              ) : (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+                  Where this transfer's money ends up.
+                </Typography>
+              )}
+            </Box>
+          )}
 
           <TextField
             fullWidth
             size="small"
-            label="Estimated monthly"
+            label={kind === "transfer" ? "Estimated monthly transfer" : "Estimated monthly"}
             type="number"
             value={estimatedMonthly}
             onChange={(e) => setEstimatedMonthly(e.target.value)}

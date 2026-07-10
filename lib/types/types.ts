@@ -62,6 +62,13 @@ export type Category = {
   description?: string;
   keywords?: string[];            // lowercase, normalized
   plaidCategories?: string[];     // e.g. ["FOOD_AND_DRINK_COFFEE"]
+
+  // --- Transfer-type fields ---
+  // Only meaningful when kind === "transfer". Points at the Account this
+  // transfer category's money moves into. Required at the UI/validation
+  // layer whenever kind is "transfer" (see AddCategoryModal), but kept
+  // optional/nullable here since income/expense categories never set it.
+  transferAccountId?: string | null;
 };
 
 export type PayFrequency = "weekly" | "biweekly" | "semimonthly" | "monthly";
@@ -83,7 +90,6 @@ export interface PaycheckProfile {
   linkedIncomeCategoryId: string;
   deductions: Deduction[];
 }
-
 
 export type BudgetLine = {
   id: string;
