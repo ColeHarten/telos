@@ -21,29 +21,27 @@ function resolveDisplayName(merchantName: string | null, rawName: string): strin
  * This is a *soft* check — Firestore data isn't fully under our control (a
  * bad write, manual console edits), so rather than throwing and taking down
  * the whole transaction list over one bad doc, an inconsistent record is
- * logged and coerced to "unassigned".
+ * logged and coerced to unassigned (both fields undefined).
  */
 function normalizeAssignment(
   rawType: unknown,
   rawId: unknown,
   context: string
-): { assignmentType: CategoryKind | undefined; assignmentId: string | undefined } {
-  let assignmentType = (typeof rawType === "string" ? rawType : undefined) as CategoryKind | undefined;
-  const assignmentId = typeof rawId === "string" && rawId.length > 0 ? rawId : undefined;
+): { categoryKind: CategoryKind | undefined; categoryId: string | undefined } {
+  const categoryKind = (typeof rawType === "string" ? rawType : undefined) as CategoryKind | undefined;
+  const categoryId = typeof rawId === "string" && rawId.length > 0 ? rawId : undefined;
 
-  assignmentType = assignmentType ?? undefined;
-
-  const hasId = Boolean(assignmentId);
-  const isConsistent = (!assignmentType && !hasId) || (!!assignmentType && hasId);
+  const hasId = Boolean(categoryId);
+  const isConsistent = (!categoryKind && !hasId) || (!!categoryKind && hasId);
 
   if (!isConsistent) {
     console.warn(
-      `[useTransactions] Inconsistent assignment for ${context}: type="${assignmentType}", id="${assignmentId ?? "none"}". Falling back to "unassigned".`
+      `[useTransactions] Inconsistent assignment for ${context}: type="${categoryKind}", id="${categoryId ?? "none"}". Falling back to unassigned.`
     );
-    return { assignmentType: undefined, assignmentId: undefined };
+    return { categoryKind: undefined, categoryId: undefined };
   }
 
-  return { assignmentType, assignmentId };
+  return { categoryKind, categoryId };
 }
 
 /**
@@ -52,19 +50,19 @@ function normalizeAssignment(
  * point means the caller (our own UI code) has a bug, not that Firestore has
  * bad data, so it should fail loudly during development.
  */
-function assertValidAssignment(assignmentType: CategoryKind | undefined, assignmentId: string | undefined, originAccId: string): void {
-  if (!assignmentType) {
-    if (assignmentId) {
-      throw new Error(`Invalid assignment: type is "undefined" but assignmentId ("${assignmentId}") was provided.`);
+function assertValidAssignment(categoryKind: CategoryKind | undefined, categoryId: string | undefined, originAccId: string): void {
+  if (!categoryKind) {
+    if (categoryId) {
+      throw new Error(`Invalid assignment: type is "undefined" but categoryId ("${categoryId}") was provided.`);
     }
     return;
   }
 
-  if (!assignmentId) {
-    throw new Error(`Invalid assignment: type is "${assignmentType}" but no assignmentId was provided.`);
+  if (!categoryId) {
+    throw new Error(`Invalid assignment: type is "${categoryKind}" but no categoryId was provided.`);
   }
 
-  if (assignmentType === "transfer" && assignmentId === originAccId) {
+  if (categoryKind === "transfer" && categoryId === originAccId) {
     throw new Error(`Invalid assignment: cannot mark a transaction as a transfer to its own origin account ("${originAccId}").`);
   }
 }
@@ -81,15 +79,15 @@ function toTransaction(
     rawName?: string;
     pending?: boolean;
     category?: PersonalFinanceCategory | null;
-    assignmentType?: string;
-    assignmentId?: string | null;
+    categoryKind?: CategoryKind | undefined;
+    categoryId?: string | undefined;
   },
   accountName: string
 ): Transaction {
   const originAccId = data.accountId || "unlinked";
-  const { assignmentType, assignmentId } = normalizeAssignment(
-    data.assignmentType,
-    data.assignmentId,
+  const { categoryKind, categoryId } = normalizeAssignment(
+    data.categoryKind,
+    data.categoryId,
     `transaction ${id}`
   );
 
@@ -103,8 +101,8 @@ function toTransaction(
     pending: Boolean(data.pending),
     plaidCategoryPrimary: data.category?.primary ?? null,
     plaidCategoryDetailed: data.category?.detailed ?? null,
-    assignmentType,
-    assignmentId,
+    categoryKind,
+    categoryId,
   };
 }
 
@@ -145,10 +143,11 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
 
         const tx = toTransaction(docSnap.id, data, accountName);
 
-        // Soft warning only — an account_transfer pointing at an account we
-        // don't know about shouldn't block rendering the rest of the list.
-        if (tx.assignmentType === "transfer" && tx.assignmentId && !accountNameById.has(tx.assignmentId)) {
-          console.warn(`[useTransactions] Transaction ${tx.id} transfers to unknown account "${tx.assignmentId}".`);
+        // Soft warning only — a "transaction" (account transfer) assignment
+        // pointing at an account we don't know about shouldn't block
+        // rendering the rest of the list.
+        if (tx.categoryKind === "transfer" && tx.categoryId && !accountNameById.has(tx.categoryId)) {
+          console.warn(`[useTransactions] Transaction ${tx.id} transfers to unknown account "${tx.categoryId}".`);
         }
 
         flattenedTransactions.push(tx);
@@ -168,16 +167,18 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
   }, [fetchFromFirebase]);
 
   /**
-   * Assigns a transaction to a cashflow (income/expense) or to an account
-   * (account_transfer), or clears the assignment entirely ("unassigned").
+   * Assigns a transaction to a category (income/expense), or to an account
+   * transfer ("transaction" kind), or clears the assignment entirely by
+   * passing assignmentType/assignmentId as undefined.
+   *
    * Optimistically updates local state so the UI reflects the change
    * instantly; reverts via the previous snapshot if the write fails.
    *
-   * assignmentId is required unless assignmentType is "unassigned" — this is
+   * categoryId is required unless categoryKind is undefined — this is
    * enforced by assertValidAssignment before anything is written.
    */
   const updateTransactionAssignment = useCallback(
-    async (transactionId: string, assignmentType: CategoryKind | undefined, assignmentId?: string) => {
+    async (transactionId: string, categoryKind: CategoryKind | undefined, categoryId?: string) => {
       if (!user?.uid) return;
 
       const target = transactions.find((tx) => tx.id === transactionId);
@@ -188,7 +189,7 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
       }
 
       try {
-        assertValidAssignment(assignmentType, assignmentId, target.originAccId);
+        assertValidAssignment(categoryKind, categoryId, target.originAccId);
       } catch (err) {
         console.error("[useTransactions] Invalid assignment:", err);
         setTransactionsError(err instanceof Error ? err.message : "Invalid assignment.");
@@ -197,16 +198,18 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
 
       const previous = transactions;
       setTransactions((prev) =>
-        prev.map((tx) => (tx.id === transactionId ? { ...tx, assignmentType, assignmentId } : tx))
+        prev.map((tx) => (tx.id === transactionId ? { ...tx, categoryKind, categoryId } : tx))
       );
 
       try {
         const txRef = doc(db, "users", user.uid, "transactions", transactionId);
         await updateDoc(txRef, {
-          assignmentType,
           // Firestore rejects `undefined` field values — write `null` to
-          // explicitly clear the field when unassigning.
-          assignmentId: assignmentId ?? null,
+          // explicitly clear the fields when unassigning. The in-memory
+          // Transaction type keeps them as `undefined`; only the Firestore
+          // write layer needs the `null` translation.
+          categoryKind: categoryKind ?? null,
+          categoryId: categoryId ?? null,
           updatedAt: Date.now(),
         });
       } catch (err) {

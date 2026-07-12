@@ -336,5 +336,3 @@ The transaction is automatically assigned to "Daily Grind". If an explicit user 
 
 ## Notes
 I will probably want to compute the latent vector of each cashflow in the user's **browser** on creation/edit and then just store it as a string or something in the firestore document. Then, I will reference it on each transaction.
-
-## 

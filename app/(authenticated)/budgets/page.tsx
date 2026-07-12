@@ -141,12 +141,12 @@ export default function BudgetsPage() {
   const actualByCategoryId = useMemo(() => {
     const map = new Map<string, number>();
     for (const tx of monthTransactions) {
-      if (!tx.assignmentId) continue;
-      if (tx.assignmentType !== "income" && tx.assignmentType !== "expense") continue;
-      const category = categoriesById.get(tx.assignmentId);
+      if (!tx.categoryId) continue;
+      if (tx.categoryKind !== "income" && tx.categoryKind !== "expense") continue;
+      const category = categoriesById.get(tx.categoryId);
       if (!category) continue;
-      const contribution = tx.assignmentType === "income" ? Math.max(0, -tx.amount) : Math.max(0, tx.amount);
-      map.set(tx.assignmentId, (map.get(tx.assignmentId) ?? 0) + contribution);
+      const contribution = tx.categoryKind === "income" ? Math.max(0, -tx.amount) : Math.max(0, tx.amount);
+      map.set(tx.categoryId, (map.get(tx.categoryId) ?? 0) + contribution);
     }
     return map;
   }, [monthTransactions, categoriesById]);
@@ -154,8 +154,8 @@ export default function BudgetsPage() {
   const actualByAccountId = useMemo(() => {
     const map = new Map<string, number>();
     for (const tx of monthTransactions) {
-      if (tx.assignmentType !== "transfer" || !tx.assignmentId) continue;
-      map.set(tx.assignmentId, (map.get(tx.assignmentId) ?? 0) + Math.abs(tx.amount));
+      if (tx.categoryKind !== "transfer" || !tx.categoryId) continue;
+      map.set(tx.categoryId, (map.get(tx.categoryId) ?? 0) + Math.abs(tx.amount));
     }
     return map;
   }, [monthTransactions]);
@@ -444,7 +444,7 @@ export default function BudgetsPage() {
                   <Table sx={{ minWidth: 650 }}>
                     <TableHead>
                       <TableRow sx={{ "& th": { borderBottom: "1px solid", borderColor: "divider", py: 1.5, fontWeight: 700, color: "text.secondary" } }}>
-                        <TableCell>Category / Account</TableCell>
+                        <TableCell>{group.title == "Income" ? "Source" : group.title == "Expenses" ? "Category" : "Account"}</TableCell>
                         <TableCell align="right">Planned</TableCell>
                         <TableCell align="right">Actual</TableCell>
                         <TableCell align="center">Utilization</TableCell>

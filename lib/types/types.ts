@@ -115,13 +115,14 @@ export type Transaction = {
   plaidCategoryPrimary: string | null;
   plaidCategoryDetailed: string | null;
 
-  assignmentType: CategoryKind | undefined;
-  assignmentId: string | undefined;
+  categoryKind: CategoryKind | undefined;
+  categoryId: string | undefined;
 };
 
 export type Automation = {
-  id: string;            // normalized merchant key, doubles as doc id
+  id: string; // normalized merchant key, doubles as the Firestore doc id
   merchantKey: string;
-  cashflowId: string;
+  merchantLabel: string; // original, un-normalized merchant text — display only
+  categoryId: string;
   createdAt?: unknown;
 };

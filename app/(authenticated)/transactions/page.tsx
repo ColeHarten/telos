@@ -4,8 +4,10 @@ import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useAccounts } from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
 import { useCategories } from "@/lib/hooks/useCategories";
+import useAutomations from "@/lib/hooks/useAutomations";
 import useTransactions from "@/lib/hooks/useTransactions";
-import type { Category } from "@/lib/types/types";
+import type { Category, CategoryKind } from "@/lib/types/types";
+import AutomationPromptDialog from "./automationsPromptDialog";
 
 // Icons
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
@@ -210,6 +212,7 @@ export default function TransactionsPage() {
   } = useTransactions(user, authLoading, accounts);
 
   const { categories = [] } = useCategories(user, authLoading);
+  const { createAutomation } = useAutomations(user, authLoading);
 
   const [syncing, setSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
@@ -227,6 +230,15 @@ export default function TransactionsPage() {
   const [flowFilter, setFlowFilter] = useState<FlowFilter>("all");
   const [minAmount, setMinAmount] = useState("");
   const [maxAmount, setMaxAmount] = useState("");
+
+  // Pending automation prompt — set right after a user manually assigns a
+  // transaction's category, offering to turn that one-off choice into a
+  // standing merchant -> category automation (see useAutomations).
+  const [pendingAutomation, setPendingAutomation] = useState<{
+    merchantLabel: string;
+    categoryId: string;
+    categoryLabel: string;
+  } | null>(null);
 
   // Only offer active (non-archived) accounts in the account filter menu
   const selectableAccounts = useMemo(() => accounts.filter((account) => !account.isArchived), [accounts]);
@@ -343,6 +355,30 @@ export default function TransactionsPage() {
     } finally {
       setSyncing(false);
     }
+  }
+
+  /**
+   * Applies a manual category assignment, then — if it succeeded — offers to
+   * turn it into a standing automation (see AutomationPromptDialog below).
+   * tx.displayName is merchantName ?? rawName, the same derivation the Plaid
+   * sync job uses server-side (see ruleEngine.ts's applyRules), so the
+   * automation's normalized key will match future transactions from the
+   * same merchant.
+   */
+  async function handleCategoryChange(tx: (typeof transactions)[number], categoryId: string) {
+    // compute CategoryKind from the selected categoryId, it can be "income"|"expense"|"transfer"
+    const categoryKind = categories.find((c) => c.id === categoryId)?.kind;
+
+    await updateTransactionAssignment(tx.id, categoryKind, categoryId);
+
+    const category = categories.find((c) => c.id === categoryId);
+    if (!category) return;
+
+    setPendingAutomation({
+      merchantLabel: tx.displayName,
+      categoryId,
+      categoryLabel: category.name,
+    });
   }
 
   const isLoading = authLoading || transactionsLoading;
@@ -905,7 +941,7 @@ export default function TransactionsPage() {
                               {tx.displayName}
                             </Typography>
                             <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", fontSize: "0.75rem" }}>
-                              {tx.categoryPrimary || "General Entry"}
+                              {tx.plaidCategoryPrimary || "General Entry"}
                             </Typography>
                           </Box>
                         </Stack>
@@ -924,8 +960,8 @@ export default function TransactionsPage() {
                       <TableCell>
                         <Select
                           size="small"
-                          value={tx.assignmentId ?? ""}
-                          onChange={(event) => updateTransactionAssignment(tx.id, "cashflow", event.target.value)}
+                          value={tx.categoryId ?? ""}
+                          onChange={(event) => handleCategoryChange(tx, event.target.value)}
                           displayEmpty
                           sx={{
                             minWidth: 160,
@@ -935,7 +971,7 @@ export default function TransactionsPage() {
                             "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e2e8f0" },
                           }}
                         >
-                          {!tx.assignmentId && (
+                          {!tx.categoryId && (
                             <MenuItem value="" disabled sx={{ fontSize: "0.8rem" }}>
                               <em>Unassigned</em>
                             </MenuItem>
@@ -1067,6 +1103,18 @@ export default function TransactionsPage() {
           </Stack>
         </Paper>
       )}
+
+      <AutomationPromptDialog
+        open={pendingAutomation !== null}
+        merchantLabel={pendingAutomation?.merchantLabel ?? ""}
+        cashflowLabel={pendingAutomation?.categoryLabel ?? ""}
+        onDismiss={() => setPendingAutomation(null)}
+        onConfirm={async () => {
+          if (!pendingAutomation) return;
+          await createAutomation(pendingAutomation.merchantLabel, pendingAutomation.categoryId);
+          setPendingAutomation(null);
+        }}
+      />
 
       <Snackbar
         open={syncSuccess}

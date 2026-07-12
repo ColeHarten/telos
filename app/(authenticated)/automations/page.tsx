@@ -1,23 +1,15 @@
 "use client";
 
-// Boilerplate Automations page.
-// TODO: replace MOCK_AUTOMATIONS and the row-menu handlers with real data via
-// a useAutomations(user, authLoading) hook, following the same pattern as
-// useAccounts / useTransactions elsewhere in this app.
-
-import AttachMoneyRoundedIcon from "@mui/icons-material/AttachMoneyRounded";
-import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
-import ConfirmationNumberRoundedIcon from "@mui/icons-material/ConfirmationNumberRounded";
-import DirectionsCarFilledRoundedIcon from "@mui/icons-material/DirectionsCarFilledRounded";
-import EastRoundedIcon from "@mui/icons-material/EastRounded";
-import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
-import LocalCafeRoundedIcon from "@mui/icons-material/LocalCafeRounded";
-import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
-import MusicNoteRoundedIcon from "@mui/icons-material/MusicNoteRounded";
-import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
-import ShoppingBagRoundedIcon from "@mui/icons-material/ShoppingBagRounded";
-import VerifiedUserRoundedIcon from "@mui/icons-material/VerifiedUserRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import EastRoundedIcon from "@mui/icons-material/EastRounded";
+import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import SwapHorizRoundedIcon from "@mui/icons-material/SwapHorizRounded";
+import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
+import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
+import VerifiedUserRoundedIcon from "@mui/icons-material/VerifiedUserRounded";
 import {
   Avatar,
   Box,
@@ -28,183 +20,122 @@ import {
   Menu,
   MenuItem,
   Paper,
-  Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { useMemo, useState } from "react";
+import useAuth from "@/lib/hooks/useAuth";
+import useAutomations from "@/lib/hooks/useAutomations";
+import { useCategories } from "@/lib/hooks/useCategories";
+import type { Category, CategoryKind } from "@/lib/types/types";
 
-// ---- Types ----
+// ---------------------------------------------------------------------------
+// Display helpers
+// ---------------------------------------------------------------------------
 
-interface AutomationRule {
-  id: string;
-  sourceLabel: string;
-  sourceSublabel: string;
-  sourceIcon: React.ReactNode;
-  sourceIconBg: string;
-  sourceIconColor: string;
-  targetLabel: string;
-  targetIcon: React.ReactNode;
-  targetIconBg: string;
-  targetIconColor: string;
+function merchantInitial(label: string): string {
+  return label.trim().charAt(0).toUpperCase() || "?";
 }
 
-// ---- Mock data (replace with real automations from the backend) ----
+function categoryIcon(kind: CategoryKind | undefined) {
+  if (kind === "income") return <TrendingUpRoundedIcon sx={{ fontSize: "18px" }} />;
+  if (kind === "transfer") return <SwapHorizRoundedIcon sx={{ fontSize: "18px" }} />;
+  return <TrendingDownRoundedIcon sx={{ fontSize: "18px" }} />;
+}
 
-const MOCK_AUTOMATIONS: AutomationRule[] = [
-  {
-    id: "a1",
-    sourceLabel: "Starbucks",
-    sourceSublabel: "Merchant",
-    sourceIcon: <LocalCafeRoundedIcon sx={{ fontSize: 18 }} />,
-    sourceIconBg: "#1e6b47",
-    sourceIconColor: "#ffffff",
-    targetLabel: "Coffee",
-    targetIcon: <LocalCafeRoundedIcon sx={{ fontSize: 18 }} />,
-    targetIconBg: "#ede9fe",
-    targetIconColor: "#7c3aed",
-  },
-  {
-    id: "a2",
-    sourceLabel: "Amazon",
-    sourceSublabel: 'Merchant contains "Amazon"',
-    sourceIcon: (
-      <Typography sx={{ fontWeight: 700, fontSize: "1rem", color: "#ff9900" }}>a</Typography>
-    ),
-    sourceIconBg: "#111111",
-    sourceIconColor: "#ff9900",
-    targetLabel: "Shopping",
-    targetIcon: <ShoppingBagRoundedIcon sx={{ fontSize: 18 }} />,
-    targetIconBg: "#dcfce7",
-    targetIconColor: "#16a34a",
-  },
-  {
-    id: "a3",
-    sourceLabel: "Netflix",
-    sourceSublabel: "Merchant",
-    sourceIcon: (
-      <Typography sx={{ fontWeight: 800, fontSize: "1rem", color: "#ffffff" }}>N</Typography>
-    ),
-    sourceIconBg: "#e50914",
-    sourceIconColor: "#ffffff",
-    targetLabel: "Entertainment",
-    targetIcon: <ConfirmationNumberRoundedIcon sx={{ fontSize: 18 }} />,
-    targetIconBg: "#fee2e2",
-    targetIconColor: "#dc2626",
-  },
-  {
-    id: "a4",
-    sourceLabel: "Payroll",
-    sourceSublabel: 'Merchant contains "Payroll"',
-    sourceIcon: <HomeRoundedIcon sx={{ fontSize: 18 }} />,
-    sourceIconBg: "#e2e8f0",
-    sourceIconColor: "#475569",
-    targetLabel: "Salary",
-    targetIcon: <AttachMoneyRoundedIcon sx={{ fontSize: 18 }} />,
-    targetIconBg: "#dcfce7",
-    targetIconColor: "#16a34a",
-  },
-  {
-    id: "a5",
-    sourceLabel: "Electricity",
-    sourceSublabel: "Plaid category is Utilities",
-    sourceIcon: <AutoAwesomeRoundedIcon sx={{ fontSize: 18 }} />,
-    sourceIconBg: "#dbeafe",
-    sourceIconColor: "#2563eb",
-    targetLabel: "Utilities",
-    targetIcon: <HomeRoundedIcon sx={{ fontSize: 18 }} />,
-    targetIconBg: "#dbeafe",
-    targetIconColor: "#2563eb",
-  },
-  {
-    id: "a6",
-    sourceLabel: "Uber",
-    sourceSublabel: "Merchant",
-    sourceIcon: (
-      <Typography sx={{ fontWeight: 800, fontSize: "0.7rem", color: "#ffffff" }}>Uber</Typography>
-    ),
-    sourceIconBg: "#000000",
-    sourceIconColor: "#ffffff",
-    targetLabel: "Transport",
-    targetIcon: <DirectionsCarFilledRoundedIcon sx={{ fontSize: 18 }} />,
-    targetIconBg: "#fef3c7",
-    targetIconColor: "#d97706",
-  },
-  {
-    id: "a7",
-    sourceLabel: "Spotify",
-    sourceSublabel: "Merchant",
-    sourceIcon: <MusicNoteRoundedIcon sx={{ fontSize: 18 }} />,
-    sourceIconBg: "#1db954",
-    sourceIconColor: "#ffffff",
-    targetLabel: "Subscriptions",
-    targetIcon: <MusicNoteRoundedIcon sx={{ fontSize: 18 }} />,
-    targetIconBg: "#fce7f3",
-    targetIconColor: "#db2777",
-  },
-];
+function categoryColors(kind: CategoryKind | undefined) {
+  if (kind === "income") return { bg: "#dcfce7", fg: "#16a34a" };
+  if (kind === "transfer") return { bg: "#f5f3ff", fg: "#7c3aed" };
+  return { bg: "#fee2e2", fg: "#dc2626" };
+}
 
 export default function AutomationsPage() {
-  const [automations] = useState<AutomationRule[]>(MOCK_AUTOMATIONS);
-  const [searchQuery, setSearchQuery] = useState("");
+  const { user, authLoading } = useAuth();
+  const { automations, automationsLoading, deleteAutomation } = useAutomations(user, authLoading);
+  const { categories = [] } = useCategories(user, authLoading);
 
+  const categoryById = useMemo(() => {
+    const map = new Map<string, Category>();
+    for (const cat of categories) map.set(cat.id, cat);
+    return map;
+  }, [categories]);
+
+  const [searchQuery, setSearchQuery] = useState("");
   const [rowMenuAnchor, setRowMenuAnchor] = useState<HTMLElement | null>(null);
-  const [rowMenuRuleId, setRowMenuRuleId] = useState<string | null>(null);
+  const [rowMenuAutomationId, setRowMenuAutomationId] = useState<string | null>(null);
 
   const filteredAutomations = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return automations;
-    return automations.filter(
-      (rule) =>
-        rule.sourceLabel.toLowerCase().includes(query) ||
-        rule.sourceSublabel.toLowerCase().includes(query) ||
-        rule.targetLabel.toLowerCase().includes(query)
-    );
-  }, [automations, searchQuery]);
+    return automations.filter((automation) => {
+      const categoryName = categoryById.get(automation.categoryId)?.name ?? "";
+      return (
+        automation.merchantLabel.toLowerCase().includes(query) ||
+        categoryName.toLowerCase().includes(query)
+      );
+    });
+  }, [automations, searchQuery, categoryById]);
 
-  function handleOpenRowMenu(event: React.MouseEvent<HTMLElement>, ruleId: string) {
+  function handleOpenRowMenu(event: React.MouseEvent<HTMLElement>, automationId: string) {
     setRowMenuAnchor(event.currentTarget);
-    setRowMenuRuleId(ruleId);
+    setRowMenuAutomationId(automationId);
   }
 
   function handleCloseRowMenu() {
     setRowMenuAnchor(null);
-    setRowMenuRuleId(null);
+    setRowMenuAutomationId(null);
+  }
+
+  async function handleDelete() {
+    if (rowMenuAutomationId) {
+      await deleteAutomation(rowMenuAutomationId);
+    }
+    handleCloseRowMenu();
   }
 
   return (
-    <Box sx={{ p: 5, bgcolor: "#ffffff", minHeight: "100vh", fontFamily: "Inter, sans-serif" }}>
+    <Box sx={{ padding: "40px", backgroundColor: "#ffffff", minHeight: "100vh", fontFamily: "Inter, sans-serif" }}>
       {/* Header */}
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={2}
-        sx={{ alignItems: { xs: "stretch", sm: "flex-start" }, justifyContent: "space-between", mb: 4 }}
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", sm: "row" },
+          alignItems: { xs: "stretch", sm: "flex-start" },
+          justifyContent: "space-between",
+          gap: "16px",
+          marginBottom: "32px",
+        }}
       >
-        <Box>
-          <Typography sx={{ fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em", fontSize: "1.9rem" }}>
-            Automations
-          </Typography>
-        </Box>
+        <Typography sx={{ fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em", fontSize: "1.9rem" }}>
+          Automations
+        </Typography>
 
-        <Button
-          variant="contained"
-          disableElevation
-          startIcon={<AddRoundedIcon sx={{ fontSize: 18 }} />}
-          sx={{
-            bgcolor: "#6366f1",
-            textTransform: "none",
-            fontWeight: 600,
-            fontSize: "0.9rem",
-            borderRadius: 2.5,
-            px: 2.5,
-            py: 1.25,
-            whiteSpace: "nowrap",
-            "&:hover": { bgcolor: "#4f46e5" },
-          }}
-        >
-          New Automation
-        </Button>
-      </Stack>
+        <Tooltip title="Automations are created from the Transactions page — categorize a transaction and you'll be offered the option to automate it.">
+          <span>
+            <Button
+              variant="contained"
+              disableElevation
+              disabled
+              startIcon={<AddRoundedIcon sx={{ fontSize: "18px" }} />}
+              sx={{
+                backgroundColor: "#6366f1",
+                textTransform: "none",
+                fontWeight: 600,
+                fontSize: "0.9rem",
+                borderRadius: "20px",
+                paddingLeft: "20px",
+                paddingRight: "20px",
+                paddingTop: "10px",
+                paddingBottom: "10px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              New Automation
+            </Button>
+          </span>
+        </Tooltip>
+      </Box>
 
       {/* Info banner */}
       <Paper
@@ -212,64 +143,49 @@ export default function AutomationsPage() {
         sx={{
           display: "flex",
           alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 2,
-          px: 3,
-          py: 2.5,
-          borderRadius: 3,
-          bgcolor: "#f5f5fd",
+          gap: "16px",
+          padding: "20px 24px",
+          borderRadius: "24px",
+          backgroundColor: "#f5f5fd",
           borderColor: "#e9e8fb",
-          mb: 4,
+          marginBottom: "32px",
         }}
       >
-        <Stack direction="row" spacing={2} sx={{ alignItems: "flex-start" }}>
-          <Avatar sx={{ bgcolor: "#ede9fe", color: "#6366f1", width: 40, height: 40 }}>
-            <AutoAwesomeRoundedIcon sx={{ fontSize: 20 }} />
-          </Avatar>
-          <Box>
-            <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "0.95rem" }}>
-              Automatic categorization is on
-            </Typography>
-            <Typography sx={{ color: "#64748b", fontSize: "0.85rem", mt: 0.25 }}>
-              New transactions are categorized automatically using merchant information and transaction patterns.
-            </Typography>
-            <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", mt: 0.25 }}>
-              <Typography sx={{ color: "#64748b", fontSize: "0.85rem" }}>
-                Your automations always override automatic categorization.
-              </Typography>
-            </Stack>
-          </Box>
-        </Stack>
-        <Button
-          sx={{
-            color: "#6366f1",
-            textTransform: "none",
-            fontWeight: 600,
-            fontSize: "0.85rem",
-            flexShrink: 0,
-            alignSelf: "center",
-          }}
-        >
-          Learn more
-        </Button>
+        <Avatar sx={{ backgroundColor: "#ede9fe", color: "#6366f1", width: "40px", height: "40px" }}>
+          <AutoAwesomeRoundedIcon sx={{ fontSize: "20px" }} />
+        </Avatar>
+        <Box>
+          <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "0.95rem" }}>
+            Automatic categorization is on
+          </Typography>
+          <Typography sx={{ color: "#64748b", fontSize: "0.85rem", marginTop: "2px" }}>
+            New transactions are matched against your categories automatically. Automations you create below
+            always take priority over that automatic matching.
+          </Typography>
+        </Box>
       </Paper>
 
       {/* Section header */}
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={2}
-        sx={{ alignItems: { xs: "stretch", sm: "center" }, justifyContent: "space-between", mb: 2.5 }}
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", sm: "row" },
+          alignItems: { xs: "stretch", sm: "center" },
+          justifyContent: "space-between",
+          gap: "16px",
+          marginBottom: "20px",
+        }}
       >
-        <Stack direction="row" spacing={1.25} sx={{ alignItems: "center" }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "1.15rem" }}>
             Your Automations
           </Typography>
           <Chip
             size="small"
             label={automations.length}
-            sx={{ height: 24, fontSize: "0.8rem", fontWeight: 600, bgcolor: "#f1f5f9", color: "#475569" }}
+            sx={{ height: "24px", fontSize: "0.8rem", fontWeight: 600, backgroundColor: "#f1f5f9", color: "#475569" }}
           />
-        </Stack>
+        </Box>
 
         <TextField
           size="small"
@@ -281,84 +197,94 @@ export default function AutomationsPage() {
               sx: { fontSize: "0.9rem" },
               startAdornment: (
                 <InputAdornment position="start">
-                  <SearchRoundedIcon sx={{ color: "#94a3b8", fontSize: 18 }} />
+                  <SearchRoundedIcon sx={{ color: "#94a3b8", fontSize: "18px" }} />
                 </InputAdornment>
               ),
             },
           }}
           sx={{
-            minWidth: 280,
+            minWidth: "280px",
             "& .MuiOutlinedInput-root": {
-              borderRadius: 2.5,
+              borderRadius: "20px",
               fontSize: "0.9rem",
-              bgcolor: "#f8fafc",
+              backgroundColor: "#f8fafc",
               "& fieldset": { borderColor: "#e2e8f0" },
               "&:hover fieldset": { borderColor: "#cbd5e1" },
             },
           }}
         />
-      </Stack>
+      </Box>
 
       {/* Automation rows */}
-      <Stack spacing={1.5}>
-        {filteredAutomations.length === 0 ? (
-          <Paper variant="outlined" sx={{ p: 4, borderRadius: 3, borderColor: "#e2e8f0", textAlign: "center" }}>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        {automationsLoading ? (
+          <Paper variant="outlined" sx={{ padding: "32px", borderRadius: "24px", borderColor: "#e2e8f0", textAlign: "center" }}>
+            <Typography sx={{ color: "#94a3b8", fontSize: "0.9rem" }}>Loading automations…</Typography>
+          </Paper>
+        ) : filteredAutomations.length === 0 ? (
+          <Paper variant="outlined" sx={{ padding: "32px", borderRadius: "24px", borderColor: "#e2e8f0", textAlign: "center" }}>
             <Typography sx={{ color: "#94a3b8", fontSize: "0.9rem" }}>
-              No automations match your search.
+              {automations.length === 0
+                ? "No automations yet. Categorize a transaction to create one."
+                : "No automations match your search."}
             </Typography>
           </Paper>
         ) : (
-          filteredAutomations.map((rule) => (
-            <Paper
-              key={rule.id}
-              variant="outlined"
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                px: 3,
-                py: 2,
-                borderRadius: 3,
-                borderColor: "#e2e8f0",
-                "&:hover": { borderColor: "#cbd5e1" },
-              }}
-            >
-              <Stack direction="row" spacing={3} sx={{ alignItems: "center", flex: 1, minWidth: 0 }}>
-                <Avatar sx={{ width: 44, height: 44, bgcolor: rule.sourceIconBg, color: rule.sourceIconColor }}>
-                  {rule.sourceIcon}
-                </Avatar>
-                <Box sx={{ minWidth: 0 }}>
+          filteredAutomations.map((automation) => {
+            const category = categoryById.get(automation.categoryId);
+            const colors = categoryColors(category?.kind);
+
+            return (
+              <Paper
+                key={automation.id}
+                variant="outlined"
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "16px 24px",
+                  borderRadius: "24px",
+                  borderColor: "#e2e8f0",
+                  "&:hover": { borderColor: "#cbd5e1" },
+                }}
+              >
+                <Box sx={{ display: "flex", alignItems: "center", gap: "24px", flex: 1, minWidth: 0 }}>
+                  <Avatar sx={{ width: "44px", height: "44px", backgroundColor: "#f1f5f9", color: "#475569" }}>
+                    {merchantInitial(automation.merchantLabel)}
+                  </Avatar>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "0.95rem" }}>
+                      {automation.merchantLabel}
+                    </Typography>
+                    <Typography sx={{ color: "#94a3b8", fontSize: "0.82rem" }}>Merchant</Typography>
+                  </Box>
+                </Box>
+
+                <EastRoundedIcon
+                  sx={{ fontSize: "18px", color: "#cbd5e1", marginLeft: "24px", marginRight: "24px", flexShrink: 0 }}
+                />
+
+                <Box sx={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0 }}>
+                  <Avatar sx={{ width: "40px", height: "40px", backgroundColor: colors.bg, color: colors.fg }}>
+                    {categoryIcon(category?.kind)}
+                  </Avatar>
                   <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "0.95rem" }}>
-                    {rule.sourceLabel}
-                  </Typography>
-                  <Typography sx={{ color: "#94a3b8", fontSize: "0.82rem" }}>
-                    {rule.sourceSublabel}
+                    {category?.name ?? "Unknown category"}
                   </Typography>
                 </Box>
-              </Stack>
 
-              <EastRoundedIcon sx={{ fontSize: 18, color: "#cbd5e1", mx: 3, flexShrink: 0 }} />
-
-              <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", flex: 1, minWidth: 0 }}>
-                <Avatar sx={{ width: 40, height: 40, bgcolor: rule.targetIconBg, color: rule.targetIconColor }}>
-                  {rule.targetIcon}
-                </Avatar>
-                <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "0.95rem" }}>
-                  {rule.targetLabel}
-                </Typography>
-              </Stack>
-
-              <IconButton
-                size="small"
-                sx={{ color: "#94a3b8", flexShrink: 0 }}
-                onClick={(event) => handleOpenRowMenu(event, rule.id)}
-              >
-                <MoreVertRoundedIcon fontSize="small" />
-              </IconButton>
-            </Paper>
-          ))
+                <IconButton
+                  size="small"
+                  sx={{ color: "#94a3b8", flexShrink: 0 }}
+                  onClick={(event) => handleOpenRowMenu(event, automation.id)}
+                >
+                  <MoreVertRoundedIcon fontSize="small" />
+                </IconButton>
+              </Paper>
+            );
+          })
         )}
-      </Stack>
+      </Box>
 
       {/* Footer note */}
       <Paper
@@ -366,33 +292,36 @@ export default function AutomationsPage() {
         sx={{
           display: "flex",
           alignItems: "center",
-          gap: 2,
-          px: 3,
-          py: 2.5,
-          borderRadius: 3,
-          bgcolor: "#f8fafc",
+          gap: "16px",
+          padding: "20px 24px",
+          borderRadius: "24px",
+          backgroundColor: "#f8fafc",
           borderColor: "#e2e8f0",
-          mt: 3,
+          marginTop: "24px",
         }}
       >
-        <Avatar sx={{ bgcolor: "#e2e8f0", color: "#64748b", width: 36, height: 36 }}>
-          <VerifiedUserRoundedIcon sx={{ fontSize: 18 }} />
+        <Avatar sx={{ backgroundColor: "#e2e8f0", color: "#64748b", width: "36px", height: "36px" }}>
+          <VerifiedUserRoundedIcon sx={{ fontSize: "18px" }} />
         </Avatar>
         <Box>
           <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>
-            Manual automations always override automatic categorization.
+            Automations always override automatic categorization.
           </Typography>
           <Typography sx={{ color: "#64748b", fontSize: "0.85rem" }}>
-            More specific automations take precedence over general ones.
+            Recreating an automation for the same merchant overwrites the old one.
           </Typography>
         </Box>
       </Paper>
 
       {/* Row action menu */}
       <Menu anchorEl={rowMenuAnchor} open={Boolean(rowMenuAnchor)} onClose={handleCloseRowMenu}>
-        <MenuItem onClick={handleCloseRowMenu} sx={{ fontSize: "0.85rem" }}>Edit automation</MenuItem>
-        <MenuItem onClick={handleCloseRowMenu} sx={{ fontSize: "0.85rem" }}>Duplicate</MenuItem>
-        <MenuItem onClick={handleCloseRowMenu} sx={{ fontSize: "0.85rem", color: "error.main" }}>Delete</MenuItem>
+        <MenuItem
+          onClick={handleDelete}
+          sx={{ fontSize: "0.85rem", color: "error.main", display: "flex", gap: "8px" }}
+        >
+          <DeleteOutlineRoundedIcon fontSize="small" />
+          Delete automation
+        </MenuItem>
       </Menu>
     </Box>
   );
