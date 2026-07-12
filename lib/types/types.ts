@@ -102,7 +102,6 @@ export type AppSettings = {
   updatedAt?: unknown;
 };
 
-export type AssignmentType = "cashflow" | "account_transfer" | "unassigned";
 
 export type Transaction = {
   id: string;
@@ -113,10 +112,10 @@ export type Transaction = {
   date: string;
   pending: boolean;
 
-  categoryPrimary: string | null;
-  categoryDetailed: string | null;
+  plaidCategoryPrimary: string | null;
+  plaidCategoryDetailed: string | null;
 
-  assignmentType: AssignmentType;
+  assignmentType: CategoryKind | undefined;
   assignmentId: string | undefined;
 };
 

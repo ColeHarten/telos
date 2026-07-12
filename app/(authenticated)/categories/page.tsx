@@ -104,7 +104,7 @@ export default function CategoriesPage() {
       if (kindFilter !== "all" && c.kind !== kindFilter) return false;
       if (!query) return true;
       return c.name.toLowerCase().includes(query) || (c.description ?? "").toLowerCase().includes(query);
-    });
+    }).sort((a: Category, b: Category) => a.kind.localeCompare(b.kind));
   }, [showArchived, archivedCategories, activeCategories, kindFilter, searchQuery]);
 
   function handleOpenAddForm() {

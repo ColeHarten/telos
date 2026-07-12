@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { db } from "@/lib/firebaseClient";
 import { collection, query, getDocs, orderBy, doc, updateDoc } from "firebase/firestore";
 import type { PersonalFinanceCategory } from "plaid";
-import type { AuthUser, Account, Transaction, AssignmentType } from "../types/types";
+import type { AuthUser, Account, Transaction, CategoryKind } from "../types/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -27,20 +27,20 @@ function normalizeAssignment(
   rawType: unknown,
   rawId: unknown,
   context: string
-): { assignmentType: AssignmentType; assignmentId: string | undefined } {
-  let assignmentType = (typeof rawType === "string" ? rawType : undefined) as AssignmentType | undefined;
+): { assignmentType: CategoryKind | undefined; assignmentId: string | undefined } {
+  let assignmentType = (typeof rawType === "string" ? rawType : undefined) as CategoryKind | undefined;
   const assignmentId = typeof rawId === "string" && rawId.length > 0 ? rawId : undefined;
 
-  assignmentType = assignmentType ?? "unassigned";
+  assignmentType = assignmentType ?? undefined;
 
   const hasId = Boolean(assignmentId);
-  const isConsistent = (assignmentType === "unassigned" && !hasId) || (assignmentType !== "unassigned" && hasId);
+  const isConsistent = (!assignmentType && !hasId) || (!!assignmentType && hasId);
 
   if (!isConsistent) {
     console.warn(
       `[useTransactions] Inconsistent assignment for ${context}: type="${assignmentType}", id="${assignmentId ?? "none"}". Falling back to "unassigned".`
     );
-    return { assignmentType: "unassigned", assignmentId: undefined };
+    return { assignmentType: undefined, assignmentId: undefined };
   }
 
   return { assignmentType, assignmentId };
@@ -52,10 +52,10 @@ function normalizeAssignment(
  * point means the caller (our own UI code) has a bug, not that Firestore has
  * bad data, so it should fail loudly during development.
  */
-function assertValidAssignment(assignmentType: AssignmentType, assignmentId: string | undefined, originAccId: string): void {
-  if (assignmentType === "unassigned") {
+function assertValidAssignment(assignmentType: CategoryKind | undefined, assignmentId: string | undefined, originAccId: string): void {
+  if (!assignmentType) {
     if (assignmentId) {
-      throw new Error(`Invalid assignment: type is "unassigned" but assignmentId ("${assignmentId}") was provided.`);
+      throw new Error(`Invalid assignment: type is "undefined" but assignmentId ("${assignmentId}") was provided.`);
     }
     return;
   }
@@ -64,7 +64,7 @@ function assertValidAssignment(assignmentType: AssignmentType, assignmentId: str
     throw new Error(`Invalid assignment: type is "${assignmentType}" but no assignmentId was provided.`);
   }
 
-  if (assignmentType === "account_transfer" && assignmentId === originAccId) {
+  if (assignmentType === "transfer" && assignmentId === originAccId) {
     throw new Error(`Invalid assignment: cannot mark a transaction as a transfer to its own origin account ("${originAccId}").`);
   }
 }
@@ -101,8 +101,8 @@ function toTransaction(
     amount: data.amount ?? 0,
     date: data.date ?? "",
     pending: Boolean(data.pending),
-    categoryPrimary: data.category?.primary ?? null,
-    categoryDetailed: data.category?.detailed ?? null,
+    plaidCategoryPrimary: data.category?.primary ?? null,
+    plaidCategoryDetailed: data.category?.detailed ?? null,
     assignmentType,
     assignmentId,
   };
@@ -147,7 +147,7 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
 
         // Soft warning only — an account_transfer pointing at an account we
         // don't know about shouldn't block rendering the rest of the list.
-        if (tx.assignmentType === "account_transfer" && tx.assignmentId && !accountNameById.has(tx.assignmentId)) {
+        if (tx.assignmentType === "transfer" && tx.assignmentId && !accountNameById.has(tx.assignmentId)) {
           console.warn(`[useTransactions] Transaction ${tx.id} transfers to unknown account "${tx.assignmentId}".`);
         }
 
@@ -177,7 +177,7 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
    * enforced by assertValidAssignment before anything is written.
    */
   const updateTransactionAssignment = useCallback(
-    async (transactionId: string, assignmentType: AssignmentType, assignmentId?: string) => {
+    async (transactionId: string, assignmentType: CategoryKind | undefined, assignmentId?: string) => {
       if (!user?.uid) return;
 
       const target = transactions.find((tx) => tx.id === transactionId);

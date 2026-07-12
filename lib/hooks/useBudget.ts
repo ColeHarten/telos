@@ -13,13 +13,22 @@ import {
   setDoc,
   where,
 } from "firebase/firestore";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppSettings, AuthUser, BudgetLines } from "../types/types";
 
 function getCurrentMonthKey() {
   const today = new Date();
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
 }
+
+function parseAmount(value: string) {
+  const n = Number(value || 0);
+  return Number.isNaN(n) ? 0 : n;
+}
+
+const AUTOSAVE_DEBOUNCE_MS = 800;
+
+export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 export function useBudget(user: AuthUser | null, authLoading: boolean, initialMonthKey?: string) {
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>(
@@ -31,12 +40,21 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [budgetLoading, setBudgetLoading] = useState(false);
 
-  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [error, setError] = useState<string | null>(null);
 
   const [rangeBudgets, setRangeBudgets] = useState<Record<string, BudgetLines>>({});
   const [rangeLoading, setRangeLoading] = useState(false);
   const [rangeError, setRangeError] = useState<string | null>(null);
+
+  // Refs mirror the latest values so the debounce/flush logic never saves stale data.
+  const budgetLinesRef = useRef<BudgetLines>({});
+  const monthKeyRef = useRef(selectedMonthKey);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    monthKeyRef.current = selectedMonthKey;
+  }, [selectedMonthKey]);
 
   // Load the single selected month's budget doc, live.
   useEffect(() => {
@@ -45,6 +63,7 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
     if (!user) {
       setBudgetValues({});
       setBudgetLines({});
+      budgetLinesRef.current = {};
       setBudgetLoading(false);
       return;
     }
@@ -58,6 +77,7 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
         if (!snapshot.exists()) {
           setBudgetValues({});
           setBudgetLines({});
+          budgetLinesRef.current = {};
           setBudgetLoading(false);
           return;
         }
@@ -72,6 +92,7 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
 
         setBudgetValues(next);
         setBudgetLines(lines);
+        budgetLinesRef.current = lines;
         setBudgetLoading(false);
       },
       (err) => {
@@ -132,43 +153,65 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
     return () => unsubscribe();
   }, [authLoading, user]);
 
-  // NOTE: removed a dead effect here that reassigned setBudgetValues to its
-  // own current value on every [authLoading, user] change. It was a no-op
-  // (React bails out of re-rendering when a setState updater returns the
-  // same reference), so it did nothing but wasn't a bug — just noise.
-
   const saveBudget = useCallback(
     async (monthKey: string, lines: BudgetLines) => {
       if (!user) throw new Error("Not signed in");
-      setIsSaving(true);
-      try {
-        await setDoc(doc(db, "users", user.uid, "budgets", monthKey), {
-          monthKey,
-          currency: "USD",
-          lines,
-          updatedAt: serverTimestamp(),
-        });
-      } finally {
-        setIsSaving(false);
-      }
+      await setDoc(doc(db, "users", user.uid, "budgets", monthKey), {
+        monthKey,
+        currency: "USD",
+        lines,
+        updatedAt: serverTimestamp(),
+      });
     },
     [user]
   );
 
-  const updateSettings = useCallback(
-    async (next: Partial<AppSettings>) => {
-      if (!user) throw new Error("Not signed in");
-      await setDoc(
-        doc(db, "users", user.uid, "settings", "app"),
-        {
-          ...next,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true } as any
-      );
-    },
-    [user]
-  );
+  // Writes whatever is currently in budgetLinesRef, immediately, and cancels any pending debounce.
+  const flushSave = useCallback(async () => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (!user) return;
+
+    setSaveStatus("saving");
+    try {
+      await saveBudget(monthKeyRef.current, budgetLinesRef.current);
+      setSaveStatus("saved");
+    } catch (err) {
+      console.error(err);
+      setSaveStatus("error");
+    }
+  }, [user, saveBudget]);
+
+  // Debounces writes while the user is actively editing.
+  const scheduleSave = useCallback(() => {
+    setSaveStatus("saving");
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      flushSave();
+    }, AUTOSAVE_DEBOUNCE_MS);
+  }, [flushSave]);
+
+  // Flush any pending save before switching months, on unmount, or on tab close.
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) flushSave();
+    };
+  }, [selectedMonthKey, flushSave]);
+
+  useEffect(() => {
+    setSaveStatus("idle");
+  }, [selectedMonthKey]);
+
+  useEffect(() => {
+    function handleBeforeUnload() {
+      if (saveTimerRef.current) flushSave();
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [flushSave]);
 
   const ensureUserProfile = useCallback(async () => {
     if (!user) throw new Error("Not signed in");
@@ -185,44 +228,37 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
     );
   }, [user]);
 
-  const copyPreviousMonth = useCallback(
-    async (monthKey: string) => {
+  const updateSettings = useCallback(
+    async (next: Partial<AppSettings>) => {
       if (!user) throw new Error("Not signed in");
-
-      const [year, month] = monthKey.split("-").map(Number);
-      const previousMonthDate = new Date(year, month - 2, 1);
-      const previousMonthKey = `${previousMonthDate.getFullYear()}-${String(
-        previousMonthDate.getMonth() + 1
-      ).padStart(2, "0")}`;
-
-      const previousBudgetSnapshot = await getDoc(
-        doc(db, "users", user.uid, "budgets", previousMonthKey)
+      await setDoc(
+        doc(db, "users", user.uid, "settings", "app"),
+        { ...next, updatedAt: serverTimestamp() },
+        { merge: true } as any
       );
-
-      if (!previousBudgetSnapshot.exists()) {
-        // No previous budget to copy from, so just clear the current budget values and lines
-        setBudgetValues({});
-        setBudgetLines({});
-        return;
-      }
-
-      const previousBudget = previousBudgetSnapshot.data();
-      const previousLines = (previousBudget.lines ?? {}) as BudgetLines;
-
-      const copiedValues: Record<string, string> = {};
-      for (const [lineId, line] of Object.entries(previousLines)) {
-        copiedValues[lineId] = String(line.planned ?? 0);
-      }
-
-      setBudgetValues(copiedValues);
-      setBudgetLines(previousLines);
     },
     [user]
   );
 
-  const setBudgetValue = useCallback((lineId: string, nextValue: string) => {
-    setBudgetValues((cur) => ({ ...cur, [lineId]: nextValue }));
-  }, []);
+  // The only way budget values change: updates local state immediately (optimistic),
+  // and schedules a debounced whole-document write.
+  const setBudgetValue = useCallback(
+    (lineId: string, nextValue: string, lineType: BudgetLines[string]["lineType"], categoryId: string) => {
+      setBudgetValues((cur) => ({ ...cur, [lineId]: nextValue }));
+
+      setBudgetLines((cur) => {
+        const next = {
+          ...cur,
+          [lineId]: { id: lineId, lineType, categoryId, planned: parseAmount(nextValue) },
+        };
+        budgetLinesRef.current = next;
+        return next;
+      });
+
+      scheduleSave();
+    },
+    [scheduleSave]
+  );
 
   const loadBudgetRange = useCallback(
     async (startMonthKey: string, endMonthKey: string) => {
@@ -271,14 +307,13 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
     budgetValues,
     budgetLines,
     setBudgetValue,
-    isSaving,
+    saveStatus,
+    flushSave,
     budgetLoading,
     error,
-    saveBudget,
     settings,
     updateSettings,
     ensureUserProfile,
-    copyPreviousMonth,
     rangeBudgets,
     rangeLoading,
     rangeError,

@@ -8,31 +8,11 @@ import useCategories from "@/lib/hooks/useCategories";
 import useTransactions from "@/lib/hooks/useTransactions";
 import { formatCurrency } from "@/lib/utils";
 
-// Icons
-import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
-import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
-import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
-import CurrencyBitcoinRoundedIcon from "@mui/icons-material/CurrencyBitcoinRounded";
-import DirectionsCarRoundedIcon from "@mui/icons-material/DirectionsCarRounded";
-import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
-import LabelRoundedIcon from "@mui/icons-material/LabelRounded";
-import MusicNoteRoundedIcon from "@mui/icons-material/MusicNoteRounded";
-import NorthEastRoundedIcon from "@mui/icons-material/NorthEastRounded";
-import RequestQuoteRoundedIcon from "@mui/icons-material/RequestQuoteRounded";
-import RestaurantRoundedIcon from "@mui/icons-material/RestaurantRounded";
-import ShoppingCartRoundedIcon from "@mui/icons-material/ShoppingCartRounded";
-import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded";
-import SouthRoundedIcon from "@mui/icons-material/SouthRounded";
-import StorefrontOutlinedIcon from "@mui/icons-material/StorefrontOutlined";
-import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
-import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
-import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
-
-import { Avatar, Box, Card, CardContent, Chip, LinearProgress, Typography } from "@mui/material";
+import { Box, Card, CardContent, Chip, LinearProgress, Typography } from "@mui/material";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Line, LineChart, ResponsiveContainer, XAxis } from "recharts";
-import type { Account, BudgetLine, Category, Transaction } from "@/lib/types/types";
+import type { Account, BudgetLine, Transaction } from "@/lib/types/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -50,14 +30,6 @@ function formatShortMonthLabel(monthKey: string) {
 function formatLongDate(dateStr: string) {
   try {
     return new Date(`${dateStr}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  } catch {
-    return dateStr;
-  }
-}
-
-function formatShortDate(dateStr: string) {
-  try {
-    return new Date(`${dateStr}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   } catch {
     return dateStr;
   }
@@ -83,77 +55,23 @@ function formatRelativeSync(account: Account): string | null {
   return `${days}d ago`;
 }
 
-// Deterministic string hash -> palette index, used for cashflows/accounts
-// that don't match a keyword rule below.
-function hashToIndex(input: string, size: number) {
-  let hash = 0;
-  for (let i = 0; i < input.length; i += 1) hash = (hash * 31 + input.charCodeAt(i)) % 997;
-  return hash % size;
-}
-
-const FALLBACK_PALETTE = [
-  { bg: "#f5f3ff", color: "#7c3aed" },
-  { bg: "#eff6ff", color: "#2563eb" },
-  { bg: "#fff7ed", color: "#ea580c" },
-  { bg: "#f0fdf4", color: "#16a34a" },
-  { bg: "#fef2f2", color: "#dc2626" },
-];
-
-const CASHFLOW_ICON_RULES: { match: RegExp; icon: ReactNode; bg: string; color: string }[] = [
-  { match: /din|restaurant|takeout|food/i, icon: <RestaurantRoundedIcon sx={{ fontSize: 18 }} />, bg: "#f5f3ff", color: "#7c3aed" },
-  { match: /hous|rent|mortgage|utilit/i, icon: <HomeRoundedIcon sx={{ fontSize: 18 }} />, bg: "#eff6ff", color: "#2563eb" },
-  { match: /grocer|supermarket/i, icon: <ShoppingCartRoundedIcon sx={{ fontSize: 18 }} />, bg: "#fff7ed", color: "#ea580c" },
-  { match: /transport|gas|car|uber|lyft|parking|fuel/i, icon: <DirectionsCarRoundedIcon sx={{ fontSize: 18 }} />, bg: "#f0fdf4", color: "#16a34a" },
-  { match: /entertain|movie|stream|music|netflix|spotify/i, icon: <MusicNoteRoundedIcon sx={{ fontSize: 18 }} />, bg: "#fef2f2", color: "#dc2626" },
-];
-
-function getCategoryVisual(category: Category) {
-  const rule = CASHFLOW_ICON_RULES.find((r) => r.match.test(category.name));
-  if (rule) return rule;
-  const palette = FALLBACK_PALETTE[hashToIndex(category.id, FALLBACK_PALETTE.length)];
-  return { icon: <LabelRoundedIcon sx={{ fontSize: 18 }} />, ...palette };
-}
-
-function getAccountVisual(account: Account) {
-  switch (account.accountType) {
-    case "cash":
-      return { icon: <AccountBalanceRoundedIcon sx={{ fontSize: 17 }} />, bg: "#eff6ff", color: "#2563eb" };
-    case "credit_card":
-      return { icon: <CreditCardRoundedIcon sx={{ fontSize: 17 }} />, bg: "#fef2f2", color: "#dc2626" };
-    case "investment":
-    case "retirement":
-      return { icon: <ShowChartRoundedIcon sx={{ fontSize: 17 }} />, bg: "#f0fdf4", color: "#16a34a" };
-    case "loan":
-      return { icon: <RequestQuoteRoundedIcon sx={{ fontSize: 17 }} />, bg: "#fff7ed", color: "#ea580c" };
-    case "property":
-      return { icon: <HomeRoundedIcon sx={{ fontSize: 17 }} />, bg: "#fff7ed", color: "#ea580c" };
-    case "crypto":
-      return { icon: <CurrencyBitcoinRoundedIcon sx={{ fontSize: 17 }} />, bg: "#f5f3ff", color: "#7c3aed" };
-    default:
-      return { icon: <AccountBalanceRoundedIcon sx={{ fontSize: 17 }} />, bg: "#f1f5f9", color: "#64748b" };
-  }
-}
-
 function accountTypeLabel(accountType: string) {
   return accountType.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
-// Pure percent-of-budget bucketing — this is what actually drives the
-// "vs. pace" column (not a date-elapsed pacing calc).
-function getBudgetStatus(pct: number, hasPlan: boolean) {
-  if (!hasPlan) return { label: "No budget", bg: "#f1f5f9", color: "#64748b", icon: null };
-  if (pct > 1) return { label: "Over budget", bg: "#fef2f2", color: "#dc2626", icon: <WarningAmberRoundedIcon sx={{ fontSize: 13 }} /> };
-  if (pct >= 0.9) return { label: "Ahead", bg: "#fef3c7", color: "#d97706", icon: <NorthEastRoundedIcon sx={{ fontSize: 13 }} /> };
-  if (pct >= 0.5) return { label: "On track", bg: "#f0fdf4", color: "#16a34a", icon: null };
-  return { label: "Behind", bg: "#f1f5f9", color: "#64748b", icon: <SouthRoundedIcon sx={{ fontSize: 13 }} /> };
-}
-
 // ---------------------------------------------------------------------------
-// Page
+// Design tokens
 // ---------------------------------------------------------------------------
 
-const CARD_SX = { borderRadius: "16px", borderColor: "#e2e8f0", bgcolor: "#fff", boxShadow: "0 1px 2px 0 rgba(0,0,0,0.04)" } as const;
-const VISIBLE_BUDGET_ROWS = 5;
+const INK = "#0f172a";
+const SUB = "#64748b";
+const MUTED = "#94a3b8";
+const BORDER = "#e7eaef";
+const POSITIVE = "#16a34a";
+const NEGATIVE = "#dc2626";
+const ACCENT = "#2563eb";
+
+const CARD_SX = { borderRadius: "14px", borderColor: BORDER, bgcolor: "#fff", boxShadow: "none" } as const;
 
 export default function DashboardPage() {
   const { user, authLoading } = useAuth();
@@ -163,7 +81,6 @@ export default function DashboardPage() {
   const { transactions = [], transactionsLoading } = useTransactions(user, authLoading, accounts);
 
   const [monthKey, setMonthKey] = useState<string>(() => getCurrentMonthKey());
-  const [showAllBudgetRows, setShowAllBudgetRows] = useState(false);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -197,7 +114,7 @@ export default function DashboardPage() {
   const plannedByCategoryId = useMemo(() => {
     const map = new Map<string, number>();
     for (const line of budgetLines) {
-      if(line.lineType === "expense" || line.lineType === "income") {
+      if (line.lineType === "expense" || line.lineType === "income") {
         map.set(line.categoryId, (map.get(line.categoryId) ?? 0) + Number(line.planned ?? 0));
       }
     }
@@ -210,56 +127,50 @@ export default function DashboardPage() {
     [transactions, monthKey]
   );
 
+  // assignmentType is a CategoryKind directly ("income" | "expense" | "transfer");
+  // "unassigned" is represented by assignmentType being undefined, not a string.
   const actualByCategoryId = useMemo(() => {
     const map = new Map<string, number>();
     for (const tx of monthTransactions) {
-      if (tx.assignmentType !== "cashflow" || !tx.assignmentId) continue;
-      const cashflow = categoriesById.get(tx.assignmentId);
-      if (!cashflow) continue;
-      const contribution = cashflow.kind === "income" ? Math.max(0, -tx.amount) : Math.max(0, tx.amount);
+      if (!tx.assignmentId) continue;
+      if (tx.assignmentType !== "income" && tx.assignmentType !== "expense") continue;
+      const category = categoriesById.get(tx.assignmentId);
+      if (!category) continue;
+      const contribution = tx.assignmentType === "income" ? Math.max(0, -tx.amount) : Math.max(0, tx.amount);
       map.set(tx.assignmentId, (map.get(tx.assignmentId) ?? 0) + contribution);
     }
     return map;
   }, [monthTransactions, categoriesById]);
 
-  // Budget vs Actual rows, ordered by the user's own cashflow sort order --------
-  const budgetRows = useMemo(() => {
-    return activeCategories
-      .filter((c) => c.kind === "expense")
-      .map((category) => {
-        const planned = plannedByCategoryId.get(category.id) ?? 0;
-        const actual = actualByCategoryId.get(category.id) ?? 0;
-        const pct = planned > 0 ? actual / planned : actual > 0 ? Infinity : 0;
-        return { category: category, planned, actual, pct };
-      })
-      .filter((row) => row.planned > 0 || row.actual > 0)
-      .sort((a, b) => a.category.sortOrder - b.category.sortOrder);
-  }, [activeCategories, plannedByCategoryId, actualByCategoryId]);
+  // Budget snapshot — totals only. The full category-by-category breakdown
+  // lives on the Budgets page; this card intentionally doesn't repeat it.
+  const expenseCategoryIds = useMemo(
+    () => activeCategories.filter((c) => c.kind === "expense").map((c) => c.id),
+    [activeCategories]
+  );
 
   const heroTotals = useMemo(() => {
-    const planned = budgetRows.reduce((sum, r) => sum + r.planned, 0);
-    const actual = budgetRows.reduce((sum, r) => sum + r.actual, 0);
-    return { planned, actual, pct: planned > 0 ? Math.min(1, actual / planned) : 0 };
-  }, [budgetRows]);
+    const planned = expenseCategoryIds.reduce((sum, id) => sum + (plannedByCategoryId.get(id) ?? 0), 0);
+    const actual = expenseCategoryIds.reduce((sum, id) => sum + (actualByCategoryId.get(id) ?? 0), 0);
+    return { planned, actual, pct: planned > 0 ? Math.min(1, actual / planned) : actual > 0 ? 1 : 0 };
+  }, [expenseCategoryIds, plannedByCategoryId, actualByCategoryId]);
 
-  const visibleRows = showAllBudgetRows ? budgetRows : budgetRows.slice(0, VISIBLE_BUDGET_ROWS);
-  const hiddenCount = budgetRows.length - visibleRows.length;
-
-  // Income vs Expected ------------------------------------------------------------
-  const incomeCashflowIds = useMemo(
-    () => new Set(activeCategories.filter((c) => c.kind === "income").map((c) => c.id)),
+  const incomeCategoryIds = useMemo(
+    () => activeCategories.filter((c) => c.kind === "income").map((c) => c.id),
     [activeCategories]
   );
 
   const incomeExpected = useMemo(
-    () => [...incomeCashflowIds].reduce((sum, id) => sum + (plannedByCategoryId.get(id) ?? 0), 0),
-    [incomeCashflowIds, plannedByCategoryId]
+    () => incomeCategoryIds.reduce((sum, id) => sum + (plannedByCategoryId.get(id) ?? 0), 0),
+    [incomeCategoryIds, plannedByCategoryId]
   );
 
   const incomeActual = useMemo(
-    () => [...incomeCashflowIds].reduce((sum, id) => sum + (actualByCategoryId.get(id) ?? 0), 0),
-    [incomeCashflowIds, actualByCategoryId]
+    () => incomeCategoryIds.reduce((sum, id) => sum + (actualByCategoryId.get(id) ?? 0), 0),
+    [incomeCategoryIds, actualByCategoryId]
   );
+
+  const netThisMonth = incomeActual - heroTotals.actual;
 
   // Cash flow trend (actual, last 6 months) ----------------------------------------
   const cashFlowTrend = useMemo(() => {
@@ -283,17 +194,18 @@ export default function DashboardPage() {
 
   const currentMonthCashFlow = cashFlowTrend[cashFlowTrend.length - 1] ?? { inflow: 0, outflow: 0, net: 0 };
 
-  // Needs review ---------------------------------------------------------------------
+  // Needs review — "unassigned" means assignmentType is undefined, not the
+  // string "unassigned" (there is no such CategoryKind value).
   const needsReviewTransactions = useMemo(
     () =>
       transactions
-        .filter((tx) => tx.assignmentType === "unassigned")
+        .filter((tx) => !tx.assignmentType)
         .sort((a, b) => (a.date < b.date ? 1 : -1))
         .slice(0, 5),
     [transactions]
   ) as Transaction[];
   const needsReviewTotal = useMemo(
-    () => transactions.filter((tx) => tx.assignmentType === "unassigned").length,
+    () => transactions.filter((tx) => !tx.assignmentType).length,
     [transactions]
   );
 
@@ -311,7 +223,7 @@ export default function DashboardPage() {
     <Box sx={{ display: "flex", flexDirection: "column", gap: "20px", bgcolor: "#f8fafc", minHeight: "100vh", fontFamily: "Inter, sans-serif", p: 4 }}>
       {/* Header */}
       <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", rowGap: "12px" }}>
-        <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: "-0.03em", color: "#0f172a", fontSize: "1.75rem" }}>
+        <Typography variant="h4" sx={{ fontWeight: 600, letterSpacing: "-0.02em", color: INK, fontSize: "1.6rem" }}>
           Dashboard
         </Typography>
         <MonthPickerControl monthKey={monthKey} onChange={setMonthKey} showStepButtons />
@@ -327,40 +239,40 @@ export default function DashboardPage() {
         <>
           {/* Net worth */}
           <Card variant="outlined" sx={CARD_SX}>
-            <CardContent sx={{ p: "20px" }}>
-              <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, alignItems: { md: "center" }, gap: "24px" }}>
-                <Box>
-                  <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Net Worth</Typography>
-                  <Typography sx={{ fontWeight: 700, fontSize: "1.9rem", color: "#0f172a", letterSpacing: "-0.02em" }}>
-                    {formatCurrency(netWorth.total)}
+            <CardContent sx={{ p: "24px" }}>
+              <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, alignItems: { md: "center" }, gap: "28px" }}>
+                <Box sx={{ minWidth: 200 }}>
+                  <Typography variant="body2" sx={{ color: SUB, fontWeight: 500, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    Net Worth
                   </Typography>
-                  <Typography variant="caption" sx={{ color: "#94a3b8" }}>
-                    Assets {formatCurrency(netWorth.assets)} &nbsp;–&nbsp; Liabilities {formatCurrency(netWorth.debt)}
+                  <Typography sx={{ fontWeight: 600, fontSize: "2rem", color: INK, letterSpacing: "-0.02em", mt: 0.5 }}>
+                    {formatCurrency(netWorth.total)}
                   </Typography>
                 </Box>
 
-                <Box sx={{ display: { xs: "none", md: "block" }, width: "1px", alignSelf: "stretch", bgcolor: "#e2e8f0" }} />
+                <Box sx={{ display: { xs: "none", md: "block" }, width: "1px", alignSelf: "stretch", bgcolor: BORDER }} />
 
-                <Box sx={{ display: "flex", flexDirection: "row", gap: "32px", flexWrap: "wrap", rowGap: "16px" }}>
-                  <InlineStat label="Cash" value={formatCurrency(netWorth.cash)} icon={<AccountBalanceRoundedIcon sx={{ fontSize: 16 }} />} bg="#f0fdf4" color="#16a34a" />
-                  <InlineStat label="Investments" value={formatCurrency(netWorth.investments)} icon={<TrendingUpRoundedIcon sx={{ fontSize: 16 }} />} bg="#eff6ff" color="#2563eb" />
-                  <InlineStat label="Debt" value={formatCurrency(-netWorth.debt)} icon={<TrendingDownRoundedIcon sx={{ fontSize: 16 }} />} bg="#fef2f2" color="#dc2626" valueColor="#dc2626" />
+                <Box sx={{ display: "flex", flexDirection: "row", gap: "36px", flexWrap: "wrap", rowGap: "16px" }}>
+                  <InlineStat label="Cash" value={formatCurrency(netWorth.cash)} />
+                  <InlineStat label="Investments" value={formatCurrency(netWorth.investments)} />
+                  <InlineStat label="Debt" value={formatCurrency(-netWorth.debt)} valueColor={NEGATIVE} />
                 </Box>
               </Box>
             </CardContent>
           </Card>
 
-          {/* Budget vs Actual — hero */}
+          {/* Budget snapshot — totals only. Category-by-category detail lives
+              on /budgets; this card links there instead of repeating it. */}
           <Card variant="outlined" sx={CARD_SX}>
             <CardContent sx={{ p: "24px" }}>
               <Box sx={{ display: "flex", flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", rowGap: "8px" }}>
-                <Typography sx={{ fontWeight: 700, fontSize: "1.2rem", color: "#0f172a", letterSpacing: "-0.02em" }}>
+                <Typography sx={{ fontWeight: 600, fontSize: "1.1rem", color: INK, letterSpacing: "-0.01em" }}>
                   {formatMonthLabel(monthKey)} Budget
                 </Typography>
-                <Typography variant="body2" sx={{ color: "#64748b" }}>
+                <Typography variant="body2" sx={{ color: SUB }}>
                   {formatCurrency(heroTotals.actual)} of {formatCurrency(heroTotals.planned)} spent
                   {" · "}
-                  <Box component="span" sx={{ fontWeight: 700, color: "#0f172a" }}>{Math.round(heroTotals.pct * 100)}%</Box>
+                  <Box component="span" sx={{ fontWeight: 600, color: INK }}>{Math.round(heroTotals.pct * 100)}%</Box>
                 </Typography>
               </Box>
 
@@ -368,87 +280,54 @@ export default function DashboardPage() {
                 variant="determinate"
                 value={Math.round(heroTotals.pct * 100)}
                 sx={{
-                  mt: 1.5, mb: 3, height: 8, borderRadius: 4, bgcolor: "#f1f5f9",
-                  "& .MuiLinearProgress-bar": { borderRadius: 4, bgcolor: heroTotals.pct > 1 ? "#dc2626" : "#2563eb" },
+                  mt: 1.5, mb: 3, height: 6, borderRadius: 3, bgcolor: "#f1f5f9",
+                  "& .MuiLinearProgress-bar": { borderRadius: 3, bgcolor: heroTotals.pct >= 1 ? NEGATIVE : ACCENT },
                 }}
               />
 
-              {budgetRows.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">No budgeted expenses for this month yet.</Typography>
-              ) : (
-                <>
-                  {/* Column header row */}
-                  <Box
-                    sx={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 160px 90px 90px 90px 120px",
-                      gap: "12px",
-                      pb: 1.5,
-                    }}
-                  >
-                    {["CATEGORY", "", "SPENT", "BUDGET", "% OF BUDGET", "VS. PACE"].map((label, i) => (
-                      <Typography key={i} variant="caption" sx={{ color: "#94a3b8", fontWeight: 700, letterSpacing: "0.04em", textAlign: i >= 2 ? "right" : "left" }}>
-                        {label}
-                      </Typography>
-                    ))}
-                  </Box>
-
-                  <Box sx={{ display: "flex", flexDirection: "column" }}>
-                    {visibleRows.map((row) => (
-                      <BudgetRow key={row.category.id} row={row} />
-                    ))}
-                  </Box>
-                </>
-              )}
-
-              <Box sx={{ display: "flex", flexDirection: "row", justifyContent: "space-between", alignItems: "center", mt: 2 }}>
-                {hiddenCount > 0 ? (
-                  <Link href="/budgets" style={{ textDecoration: "none" }}>
-                    <Typography variant="body2" sx={{ color: "#2563eb", fontWeight: 600, cursor: "pointer" }} onClick={(e) => { e.preventDefault(); setShowAllBudgetRows((v) => !v); }}>
-                      {showAllBudgetRows ? "Show less" : `+ ${hiddenCount} more categories`}
-                    </Typography>
-                  </Link>
-                ) : (
-                  <Box />
-                )}
-                <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "4px" }}>
-                  <Typography component={Link} href="/budgets" variant="body2" sx={{ color: "#2563eb", fontWeight: 600, textDecoration: "none" }}>
-                    View full budget
-                  </Typography>
-                  <ArrowForwardRoundedIcon sx={{ fontSize: 15, color: "#2563eb" }} />
-                </Box>
+              <Box sx={{ display: "flex", flexDirection: "row", gap: "36px", flexWrap: "wrap", rowGap: "16px" }}>
+                <InlineStat label="Income (Actual / Expected)" value={`${formatCurrency(incomeActual)} / ${formatCurrency(incomeExpected)}`} />
+                <InlineStat label="Net This Month" value={`${netThisMonth >= 0 ? "+" : ""}${formatCurrency(netThisMonth)}`} valueColor={netThisMonth >= 0 ? POSITIVE : NEGATIVE} />
               </Box>
+
+              <FooterLink href="/budgets" label="View full budget" />
             </CardContent>
           </Card>
 
-          {/* Cash Flow / Income vs Expected / Needs Review */}
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr", lg: "repeat(3, minmax(0, 1fr))" }, gap: "16px", alignItems: "stretch" }}>
+          {/* Cash Flow / Needs Review */}
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: "16px", alignItems: "stretch" }}>
             <Card variant="outlined" sx={CARD_SX}>
               <CardContent sx={{ p: "20px" }}>
-                <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "1rem" }}>Cash Flow (This Month)</Typography>
+                <Typography sx={{ fontWeight: 600, color: INK, fontSize: "0.95rem" }}>Cash Flow (This Month)</Typography>
                 <Box sx={{ display: "flex", flexDirection: "row", gap: "24px", mt: 2 }}>
                   <Box>
-                    <Typography variant="caption" sx={{ color: "#64748b", fontWeight: 600 }}>Income</Typography>
-                    <Typography sx={{ fontWeight: 700, fontSize: "1.15rem", color: "#16a34a" }}>{formatCurrency(currentMonthCashFlow.inflow)}</Typography>
+                    <Typography variant="caption" sx={{ color: SUB, fontWeight: 500 }}>Income</Typography>
+                    <Typography sx={{ fontWeight: 600, fontSize: "1.1rem", color: POSITIVE }}>{formatCurrency(currentMonthCashFlow.inflow)}</Typography>
                   </Box>
                   <Box>
-                    <Typography variant="caption" sx={{ color: "#64748b", fontWeight: 600 }}>Expenses</Typography>
-                    <Typography sx={{ fontWeight: 700, fontSize: "1.15rem", color: "#dc2626" }}>{formatCurrency(currentMonthCashFlow.outflow)}</Typography>
+                    <Typography variant="caption" sx={{ color: SUB, fontWeight: 500 }}>Expenses</Typography>
+                    <Typography sx={{ fontWeight: 600, fontSize: "1.1rem", color: NEGATIVE }}>{formatCurrency(currentMonthCashFlow.outflow)}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" sx={{ color: SUB, fontWeight: 500 }}>Net</Typography>
+                    <Typography sx={{ fontWeight: 600, fontSize: "1.1rem", color: currentMonthCashFlow.net >= 0 ? POSITIVE : NEGATIVE }}>
+                      {currentMonthCashFlow.net >= 0 ? "+" : ""}{formatCurrency(currentMonthCashFlow.net)}
+                    </Typography>
                   </Box>
                 </Box>
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="caption" sx={{ color: "#64748b", fontWeight: 600 }}>Net Cash Flow</Typography>
-                  <Typography sx={{ fontWeight: 700, fontSize: "1.3rem", color: currentMonthCashFlow.net >= 0 ? "#16a34a" : "#dc2626" }}>
-                    {currentMonthCashFlow.net >= 0 ? "+" : ""}{formatCurrency(currentMonthCashFlow.net)}
-                  </Typography>
-                </Box>
-                <Box sx={{ width: "100%", minWidth: 0, height: 70, mt: 1 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={cashFlowTrend} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
-                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-                      <Line type="monotone" dataKey="net" stroke="#2563eb" strokeWidth={2} dot={{ r: 3, fill: "#2563eb", strokeWidth: 0 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
+
+                {/* minWidth/minHeight on ResponsiveContainer + guarded against an
+                    empty dataset + flexShrink:0 on the wrapper so it can never
+                    collapse to 0 inside its flow (source of the -1/-1 warning). */}
+                <Box sx={{ width: "100%", minWidth: 0, height: 70, mt: 2, flexShrink: 0 }}>
+                  {cashFlowTrend.length > 0 && (
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                      <LineChart data={cashFlowTrend} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+                        <XAxis dataKey="label" tick={{ fontSize: 10, fill: MUTED }} axisLine={false} tickLine={false} />
+                        <Line type="monotone" dataKey="net" stroke={ACCENT} strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
                 </Box>
                 <FooterLink href="/transactions" label="View cash flow report" />
               </CardContent>
@@ -456,50 +335,28 @@ export default function DashboardPage() {
 
             <Card variant="outlined" sx={CARD_SX}>
               <CardContent sx={{ p: "20px" }}>
-                <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "1rem" }}>Income vs Expected</Typography>
-                <Box sx={{ display: "flex", flexDirection: "row", gap: "24px", mt: 2 }}>
-                  <Box>
-                    <Typography variant="caption" sx={{ color: "#64748b", fontWeight: 600 }}>Expected</Typography>
-                    <Typography sx={{ fontWeight: 700, fontSize: "1.15rem", color: "#0f172a" }}>{formatCurrency(incomeExpected)}</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" sx={{ color: "#64748b", fontWeight: 600 }}>Actual</Typography>
-                    <Typography sx={{ fontWeight: 700, fontSize: "1.15rem", color: "#16a34a" }}>{formatCurrency(incomeActual)}</Typography>
-                  </Box>
-                </Box>
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="caption" sx={{ color: "#64748b", fontWeight: 600 }}>Difference</Typography>
-                  <Typography sx={{ fontWeight: 700, fontSize: "1.3rem", color: incomeActual - incomeExpected >= 0 ? "#16a34a" : "#dc2626" }}>
-                    {incomeActual - incomeExpected >= 0 ? "+" : ""}{formatCurrency(incomeActual - incomeExpected)}
-                  </Typography>
-                </Box>
-                <FooterLink href="/budgets" label="View details" />
-              </CardContent>
-            </Card>
-
-            <Card variant="outlined" sx={CARD_SX}>
-              <CardContent sx={{ p: "20px" }}>
                 <Box sx={{ display: "flex", flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "1rem" }}>Needs Review</Typography>
+                  <Typography sx={{ fontWeight: 600, color: INK, fontSize: "0.95rem" }}>Needs Review</Typography>
                   {needsReviewTotal > 0 && (
-                    <Chip size="small" label={needsReviewTotal} sx={{ height: 20, fontSize: "0.7rem", fontWeight: 700, borderRadius: "6px", bgcolor: "#fef2f2", color: "#dc2626" }} />
+                    <Chip size="small" label={needsReviewTotal} sx={{ height: 20, fontSize: "0.7rem", fontWeight: 600, borderRadius: "6px", bgcolor: "#fef2f2", color: NEGATIVE }} />
                   )}
                 </Box>
-                <Box sx={{ display: "flex", flexDirection: "column", gap: "12px", mt: 2 }}>
+                <Box sx={{ display: "flex", flexDirection: "column", mt: 2 }}>
                   {needsReviewTransactions.length === 0 ? (
                     <Typography variant="body2" color="text.secondary">Everything is categorized.</Typography>
                   ) : (
-                    needsReviewTransactions.map((tx) => (
-                      <Box key={tx.id} sx={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                        <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "10px", minWidth: 0 }}>
-                          <Avatar sx={{ width: 26, height: 26, bgcolor: "#f1f5f9", color: "#64748b" }}>
-                            <StorefrontOutlinedIcon sx={{ fontSize: 14 }} />
-                          </Avatar>
-                          <Typography variant="body2" sx={{ color: "#334155", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {tx.displayName}
-                          </Typography>
-                        </Box>
-                        <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a", whiteSpace: "nowrap", ml: 1 }}>
+                    needsReviewTransactions.map((tx, i) => (
+                      <Box
+                        key={tx.id}
+                        sx={{
+                          display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+                          py: "10px", borderTop: i === 0 ? "none" : `1px solid ${BORDER}`,
+                        }}
+                      >
+                        <Typography variant="body2" sx={{ color: "#334155", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", pr: 1 }}>
+                          {tx.displayName}
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: INK, whiteSpace: "nowrap" }}>
                           {formatCurrency(Math.abs(tx.amount))}
                         </Typography>
                       </Box>
@@ -509,7 +366,6 @@ export default function DashboardPage() {
                 <FooterLink href="/transactions" label="View all" />
               </CardContent>
             </Card>
-
           </Box>
 
           {/* Recent Transactions + Accounts */}
@@ -517,33 +373,26 @@ export default function DashboardPage() {
             <Card variant="outlined" sx={CARD_SX}>
               <CardContent sx={{ p: "20px" }}>
                 <Box sx={{ display: "flex", flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "1rem" }}>Recent Transactions</Typography>
-                  <Typography component={Link} href="/transactions" variant="body2" sx={{ color: "#2563eb", fontWeight: 600, textDecoration: "none" }}>
-                    View all
-                  </Typography>
+                  <Typography sx={{ fontWeight: 600, color: INK, fontSize: "0.95rem" }}>Recent Transactions</Typography>
+                  <FooterLink href="/transactions" label="View all" compact />
                 </Box>
                 <Box sx={{ mt: 1 }}>
                   {recentTransactions.length === 0 ? (
                     <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>No transactions yet.</Typography>
                   ) : (
-                    recentTransactions.map((tx) => (
+                    recentTransactions.map((tx, i) => (
                       <Box
                         key={tx.id}
-                        sx={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", py: "12px", borderBottom: "1px solid #f1f5f9", "&:last-child": { borderBottom: "none" } }}
+                        sx={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", py: "12px", borderTop: i === 0 ? "none" : `1px solid ${BORDER}` }}
                       >
-                        <Typography variant="caption" sx={{ color: "#94a3b8", width: 78, flexShrink: 0 }}>{formatLongDate(tx.date)}</Typography>
-                        <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "10px", flex: 1, minWidth: 0 }}>
-                          <Avatar sx={{ width: 30, height: 30, bgcolor: "#f1f5f9", color: "#64748b" }}>
-                            <StorefrontOutlinedIcon sx={{ fontSize: 16 }} />
-                          </Avatar>
-                          <Box sx={{ minWidth: 0 }}>
-                            <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {tx.displayName}
-                            </Typography>
-                            <Typography variant="caption" sx={{ color: "#94a3b8" }}>{tx.categoryPrimary ?? tx.originAccName}</Typography>
-                          </Box>
+                        <Typography variant="caption" sx={{ color: MUTED, width: 76, flexShrink: 0 }}>{formatLongDate(tx.date)}</Typography>
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 500, color: INK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {tx.displayName}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: MUTED }}>{tx.plaidCategoryPrimary ?? tx.originAccName}</Typography>
                         </Box>
-                        <Typography variant="body2" sx={{ fontWeight: 700, whiteSpace: "nowrap", ml: 1, color: tx.amount > 0 ? "#dc2626" : "#16a34a" }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: "nowrap", ml: 1, color: tx.amount > 0 ? NEGATIVE : POSITIVE }}>
                           {tx.amount > 0 ? `-${formatCurrency(tx.amount)}` : `+${formatCurrency(Math.abs(tx.amount))}`}
                         </Typography>
                       </Box>
@@ -556,35 +405,29 @@ export default function DashboardPage() {
             <Card variant="outlined" sx={CARD_SX}>
               <CardContent sx={{ p: "20px" }}>
                 <Box sx={{ display: "flex", flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "1rem" }}>Accounts</Typography>
-                  <Typography component={Link} href="/accounts" variant="body2" sx={{ color: "#2563eb", fontWeight: 600, textDecoration: "none" }}>
-                    Add account
-                  </Typography>
+                  <Typography sx={{ fontWeight: 600, color: INK, fontSize: "0.95rem" }}>Accounts</Typography>
+                  <FooterLink href="/accounts" label="Add account" compact />
                 </Box>
                 <Box sx={{ mt: 1 }}>
                   {activeAccounts.length === 0 ? (
                     <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>No accounts linked yet.</Typography>
                   ) : (
-                    activeAccounts.map((account) => {
-                      const visual = getAccountVisual(account);
+                    activeAccounts.map((account, i) => {
                       const syncLabel = formatRelativeSync(account);
                       return (
                         <Box
                           key={account.id}
-                          sx={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", py: "12px", borderBottom: "1px solid #f1f5f9", "&:last-child": { borderBottom: "none" } }}
+                          sx={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", py: "12px", borderTop: i === 0 ? "none" : `1px solid ${BORDER}` }}
                         >
-                          <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "10px", minWidth: 0 }}>
-                            <Avatar sx={{ width: 30, height: 30, bgcolor: visual.bg, color: visual.color }}>{visual.icon}</Avatar>
-                            <Box sx={{ minWidth: 0 }}>
-                              <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a" }}>{account.name}</Typography>
-                              <Typography variant="caption" sx={{ color: "#94a3b8" }}>{accountTypeLabel(account.accountType)}</Typography>
-                            </Box>
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 500, color: INK }}>{account.name}</Typography>
+                            <Typography variant="caption" sx={{ color: MUTED }}>{accountTypeLabel(account.accountType)}</Typography>
                           </Box>
                           <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "12px" }}>
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: account.normalBalance === "liability" ? "#dc2626" : "#0f172a" }}>
+                            <Typography variant="body2" sx={{ fontWeight: 600, color: account.normalBalance === "liability" ? NEGATIVE : INK }}>
                               {account.normalBalance === "liability" ? "-" : ""}{formatCurrency(Math.abs(account.currentBalance ?? 0))}
                             </Typography>
-                            {syncLabel && <Typography variant="caption" sx={{ color: "#94a3b8", whiteSpace: "nowrap" }}>{syncLabel}</Typography>}
+                            {syncLabel && <Typography variant="caption" sx={{ color: MUTED, whiteSpace: "nowrap" }}>{syncLabel}</Typography>}
                           </Box>
                         </Box>
                       );
@@ -610,91 +453,29 @@ export default function DashboardPage() {
 // ---------------------------------------------------------------------------
 
 function InlineStat({
-  label, value, icon, bg, color, valueColor,
-}: { label: string; value: string; icon: ReactNode; bg: string; color: string; valueColor?: string }) {
+  label, value, valueColor,
+}: { label: string; value: string; valueColor?: string }) {
   return (
-    <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "10px" }}>
-      <Box sx={{ width: 30, height: 30, borderRadius: "50%", bgcolor: bg, color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        {icon}
-      </Box>
-      <Box>
-        <Typography variant="caption" sx={{ color: "#64748b", fontWeight: 600, display: "block" }}>{label}</Typography>
-        <Typography sx={{ fontWeight: 700, fontSize: "0.95rem", color: valueColor ?? "#0f172a" }}>{value}</Typography>
-      </Box>
+    <Box>
+      <Typography variant="caption" sx={{ color: SUB, fontWeight: 500, display: "block" }}>{label}</Typography>
+      <Typography sx={{ fontWeight: 600, fontSize: "1rem", color: valueColor ?? INK, mt: 0.25 }}>{value}</Typography>
     </Box>
   );
 }
 
-function FooterLink({ href, label }: { href: string; label: string }) {
+function FooterLink({ href, label, compact }: { href: string; label: string; compact?: boolean }) {
   return (
-    <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "4px", mt: 2 }}>
-      <Typography component={Link} href={href} variant="body2" sx={{ color: "#2563eb", fontWeight: 600, textDecoration: "none" }}>
-        {label}
-      </Typography>
-      <ArrowForwardRoundedIcon sx={{ fontSize: 14, color: "#2563eb" }} />
-    </Box>
-  );
-}
-
-type BudgetStatus = {
-  label: string;
-  bg: string;
-  color: string;
-  icon: ReactElement | null;
-};
-
-function BudgetRow({ row }: { row: { category: Category; planned: number; actual: number; pct: number } }) {
-  const visual = getCategoryVisual(row.category);
-  const hasPlan = row.planned > 0;
-  const status = getBudgetStatus(row.pct, hasPlan) as BudgetStatus;
-  const barPct = hasPlan ? Math.min(1, row.actual / row.planned) : row.actual > 0 ? 1 : 0;
-  const barColor = row.pct > 1 ? "#dc2626" : row.pct >= 0.9 ? "#d97706" : "#2563eb";
-  const pctColor = hasPlan && row.pct >= 0.9 ? "#dc2626" : "#16a34a";
-
-  return (
-    <Box
+    <Typography
+      component={Link}
+      href={href}
+      variant="body2"
       sx={{
-        display: "grid",
-        gridTemplateColumns: "1fr 160px 90px 90px 90px 120px",
-        gap: "12px",
-        alignItems: "center",
-        py: "14px",
-        borderBottom: "1px solid #f1f5f9",
-        "&:last-child": { borderBottom: "none" },
+        color: ACCENT, fontWeight: 500, textDecoration: "none",
+        display: "inline-block", mt: compact ? 0 : 2.5,
+        "&:hover": { textDecoration: "underline" },
       }}
     >
-      <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "12px", minWidth: 0 }}>
-        <Avatar sx={{ width: 36, height: 36, bgcolor: visual.bg, color: visual.color }}>{visual.icon}</Avatar>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a" }}>{row.category.name}</Typography>
-          {row.category.description && (
-            <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {row.category.description}
-            </Typography>
-          )}
-        </Box>
-      </Box>
-
-      <LinearProgress
-        variant="determinate"
-        value={Math.round(barPct * 100)}
-        sx={{ height: 6, borderRadius: 3, bgcolor: "#f1f5f9", "& .MuiLinearProgress-bar": { borderRadius: 3, bgcolor: barColor } }}
-      />
-
-      <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a", textAlign: "right" }}>{formatCurrency(row.actual)}</Typography>
-      <Typography variant="body2" sx={{ color: "#64748b", textAlign: "right" }}>{formatCurrency(row.planned)}</Typography>
-      <Typography variant="body2" sx={{ fontWeight: 700, color: pctColor, textAlign: "right" }}>
-        {hasPlan ? `${Math.round(Math.min(row.pct, 9.99) * 100)}%` : "—"}
-      </Typography>
-
-      <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-        <Chip
-          size="small"
-          icon={status.icon ?? undefined}
-          label={status.label}
-          sx={{ height: 22, fontSize: "0.7rem", fontWeight: 700, borderRadius: "6px", bgcolor: status.bg, color: status.color }}
-        />
-      </Box>
-    </Box>
+      {label}
+    </Typography>
   );
 }
