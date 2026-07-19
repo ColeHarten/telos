@@ -127,17 +127,17 @@ export default function DashboardPage() {
     [transactions, monthKey]
   );
 
-  // assignmentType is a CategoryKind directly ("income" | "expense" | "transfer");
-  // "unassigned" is represented by assignmentType being undefined, not a string.
+  // categoryKind is a CategoryKind directly ("income" | "expense" | "transfer");
+  // "uncategorized" is represented by categoryKind being undefined, not a string.
   const actualByCategoryId = useMemo(() => {
     const map = new Map<string, number>();
     for (const tx of monthTransactions) {
-      if (!tx.assignmentId) continue;
-      if (tx.assignmentType !== "income" && tx.assignmentType !== "expense") continue;
-      const category = categoriesById.get(tx.assignmentId);
+      if (!tx.categoryId) continue;
+      if (tx.categoryKind !== "income" && tx.categoryKind !== "expense") continue;
+      const category = categoriesById.get(tx.categoryId);
       if (!category) continue;
-      const contribution = tx.assignmentType === "income" ? Math.max(0, -tx.amount) : Math.max(0, tx.amount);
-      map.set(tx.assignmentId, (map.get(tx.assignmentId) ?? 0) + contribution);
+      const contribution = tx.categoryKind === "income" ? Math.max(0, -tx.amount) : Math.max(0, tx.amount);
+      map.set(tx.categoryId, (map.get(tx.categoryId) ?? 0) + contribution);
     }
     return map;
   }, [monthTransactions, categoriesById]);
@@ -194,18 +194,18 @@ export default function DashboardPage() {
 
   const currentMonthCashFlow = cashFlowTrend[cashFlowTrend.length - 1] ?? { inflow: 0, outflow: 0, net: 0 };
 
-  // Needs review — "unassigned" means assignmentType is undefined, not the
-  // string "unassigned" (there is no such CategoryKind value).
+  // Needs review — "uncategorized" means categoryKind is undefined, not the
+  // string "uncategorized" (there is no such CategoryKind value).
   const needsReviewTransactions = useMemo(
     () =>
       transactions
-        .filter((tx) => !tx.assignmentType)
+        .filter((tx) => !tx.categoryKind)
         .sort((a, b) => (a.date < b.date ? 1 : -1))
         .slice(0, 5),
     [transactions]
   ) as Transaction[];
   const needsReviewTotal = useMemo(
-    () => transactions.filter((tx) => !tx.assignmentType).length,
+    () => transactions.filter((tx) => !tx.categoryKind).length,
     [transactions]
   );
 

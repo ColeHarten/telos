@@ -57,7 +57,6 @@ export type Category = {
 
   groupId?: string | null;
   description?: string;
-  keywords?: string[];
   plaidCategories?: string[];
   transferAccountId?: string | null;
 

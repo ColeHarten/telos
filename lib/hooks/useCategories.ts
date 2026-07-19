@@ -48,7 +48,6 @@ export function useCategories(user: AuthUser | null, authLoading: boolean) {
             isArchived: Boolean(data.isArchived ?? false),
             groupId: data.groupId ?? null,
             description: data.description ?? "",
-            keywords: data.keywords ?? [],
             plaidCategories: data.plaidCategories ?? [],
             transferAccountId: data.transferAccountId ?? null,
             paycheckDetails: data.paycheckDetails ?? null,

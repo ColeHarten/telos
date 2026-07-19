@@ -69,6 +69,14 @@ function assertValidAssignment(categoryKind: CategoryKind | undefined, categoryI
 
 // Inline shape of a transaction doc's raw fields — intentionally not a named
 // type, since it's only ever used at this one read site.
+//
+// NOTE: this no longer takes an accountName. Resolving the display name for
+// an account is a cheap, purely local join against `accounts`, and doing it
+// here (at fetch time) meant every re-fetch was implicitly coupled to
+// whatever `accounts` looked like at that moment. Instead we store the raw
+// originAccId and resolve the display name separately, in-memory, via
+// `accountNameById` below — so an accounts update never has to trigger a
+// Firestore re-fetch of transactions.
 function toTransaction(
   id: string,
   data: {
@@ -81,9 +89,8 @@ function toTransaction(
     category?: PersonalFinanceCategory | null;
     categoryKind?: CategoryKind | undefined;
     categoryId?: string | undefined;
-  },
-  accountName: string
-): Transaction {
+  }
+): Omit<Transaction, "originAccName"> {
   const originAccId = data.accountId || "unlinked";
   const { categoryKind, categoryId } = normalizeAssignment(
     data.categoryKind,
@@ -94,7 +101,6 @@ function toTransaction(
   return {
     id,
     originAccId,
-    originAccName: accountName,
     displayName: resolveDisplayName(data.merchantName ?? null, data.rawName ?? ""),
     amount: data.amount ?? 0,
     date: data.date ?? "",
@@ -111,7 +117,7 @@ function toTransaction(
 // ---------------------------------------------------------------------------
 
 export default function useTransactions(user: AuthUser | null, authLoading: boolean, accounts: Account[]) {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [rawTransactions, setRawTransactions] = useState<Omit<Transaction, "originAccName">[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
 
@@ -123,6 +129,12 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
     return map;
   }, [accounts]);
 
+  // Fetch is intentionally decoupled from `accounts` — it depends only on
+  // who's signed in. Account name resolution happens below, in-memory, so an
+  // accounts snapshot update never forces a Firestore re-fetch of every
+  // transaction (which was causing the dashboard's loading-flicker: any
+  // balance/account write re-triggered this effect via a fresh
+  // `accountNameById` reference).
   const fetchFromFirebase = useCallback(async () => {
     if (authLoading || !user?.uid) return;
 
@@ -134,42 +146,43 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
       const q = query(txCollectionRef, orderBy("date", "desc"));
       const snapshot = await getDocs(q);
 
-      const flattenedTransactions: Transaction[] = [];
+      const flattenedTransactions = snapshot.docs.map((docSnap) =>
+        toTransaction(docSnap.id, docSnap.data() as Parameters<typeof toTransaction>[1])
+      );
 
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data() as Parameters<typeof toTransaction>[1];
-        const accountId = data.accountId || "unlinked";
-        const accountName = accountNameById.get(accountId) ?? "Unlinked Account";
-
-        const tx = toTransaction(docSnap.id, data, accountName);
-
-        // Soft warning only — a "transaction" (account transfer) assignment
-        // pointing at an account we don't know about shouldn't block
-        // rendering the rest of the list.
-        if (tx.categoryKind === "transfer" && tx.categoryId && !accountNameById.has(tx.categoryId)) {
-          console.warn(`[useTransactions] Transaction ${tx.id} transfers to unknown account "${tx.categoryId}".`);
-        }
-
-        flattenedTransactions.push(tx);
-      });
-
-      setTransactions(flattenedTransactions);
+      setRawTransactions(flattenedTransactions);
     } catch (err) {
       console.error("Firebase read error:", err);
       setTransactionsError("Failed to fetch transaction logs.");
     } finally {
       setTransactionsLoading(false);
     }
-  }, [user, authLoading, accountNameById]);
+  }, [user, authLoading]);
 
   useEffect(() => {
     fetchFromFirebase();
   }, [fetchFromFirebase]);
 
+  // Cheap in-memory join — recomputes whenever the raw transactions or the
+  // account-name map change, without touching Firestore or loading state.
+  const transactions = useMemo<Transaction[]>(() => {
+    return rawTransactions.map((tx) => {
+      const originAccName = accountNameById.get(tx.originAccId) ?? "Unlinked Account";
+
+      // Soft warning only — a transfer assignment pointing at an account we
+      // don't know about shouldn't block rendering the rest of the list.
+      if (tx.categoryKind === "transfer" && tx.categoryId && !accountNameById.has(tx.categoryId)) {
+        console.warn(`[useTransactions] Transaction ${tx.id} transfers to unknown account "${tx.categoryId}".`);
+      }
+
+      return { ...tx, originAccName };
+    });
+  }, [rawTransactions, accountNameById]);
+
   /**
    * Assigns a transaction to a category (income/expense), or to an account
-   * transfer ("transaction" kind), or clears the assignment entirely by
-   * passing assignmentType/assignmentId as undefined.
+   * transfer ("transfer" kind), or clears the assignment entirely by
+   * passing categoryKind/categoryId as undefined.
    *
    * Optimistically updates local state so the UI reflects the change
    * instantly; reverts via the previous snapshot if the write fails.
@@ -181,7 +194,7 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
     async (transactionId: string, categoryKind: CategoryKind | undefined, categoryId?: string) => {
       if (!user?.uid) return;
 
-      const target = transactions.find((tx) => tx.id === transactionId);
+      const target = rawTransactions.find((tx) => tx.id === transactionId);
       if (!target) {
         console.error(`[useTransactions] updateTransactionAssignment: no transaction found with id "${transactionId}".`);
         setTransactionsError("Could not find that transaction.");
@@ -196,8 +209,8 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
         return;
       }
 
-      const previous = transactions;
-      setTransactions((prev) =>
+      const previous = rawTransactions;
+      setRawTransactions((prev) =>
         prev.map((tx) => (tx.id === transactionId ? { ...tx, categoryKind, categoryId } : tx))
       );
 
@@ -215,10 +228,10 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
       } catch (err) {
         console.error("Failed to update assignment:", err);
         setTransactionsError("Failed to update assignment.");
-        setTransactions(previous); // revert optimistic update
+        setRawTransactions(previous); // revert optimistic update
       }
     },
-    [user, transactions]
+    [user, rawTransactions]
   );
 
   return {
