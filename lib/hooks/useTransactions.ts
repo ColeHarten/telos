@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { db } from "@/lib/firebaseClient";
-import { collection, query, getDocs, orderBy, doc, updateDoc } from "firebase/firestore";
+import { collection, query, getDocs, orderBy, doc, updateDoc, setDoc, increment, serverTimestamp } from "firebase/firestore";
 import type { PersonalFinanceCategory } from "plaid";
 import type { AuthUser, Account, Transaction, CategoryKind } from "../types/types";
 
@@ -16,7 +16,7 @@ function resolveDisplayName(merchantName: string | null, rawName: string): strin
 
 /**
  * Reconciles the raw assignment fields read from Firestore into a valid
- * (assignmentType, assignmentId) pair.
+ * (categoryKind, categoryId) pair.
  *
  * This is a *soft* check — Firestore data isn't fully under our control (a
  * bad write, manual console edits), so rather than throwing and taking down
@@ -180,6 +180,33 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
   }, [rawTransactions, accountNameById]);
 
   /**
+   * Records a Tier 2 learning signal: one vote that this Plaid `detailed`
+   * category code maps to this categoryId, per the corrections the user has
+   * already made. Best-effort and fire-and-forget — a failed stats write
+   * should never block or roll back the user's actual categorization, so
+   * errors are only logged, never surfaced to transactionsError.
+   */
+  const recordCategorySignal = useCallback(
+    async (plaidDetailedCode: string, categoryId: string) => {
+      if (!user?.uid) return;
+      try {
+        const statsRef = doc(db, "users", user.uid, "categoryPlaidStats", plaidDetailedCode);
+        await setDoc(
+          statsRef,
+          {
+            [`counts.${categoryId}`]: increment(1),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } catch (err) {
+        console.error("[useTransactions] Failed to record category signal:", err);
+      }
+    },
+    [user]
+  );
+
+  /**
    * Assigns a transaction to a category (income/expense), or to an account
    * transfer ("transfer" kind), or clears the assignment entirely by
    * passing categoryKind/categoryId as undefined.
@@ -189,6 +216,11 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
    *
    * categoryId is required unless categoryKind is undefined — this is
    * enforced by assertValidAssignment before anything is written.
+   *
+   * On a successful write that's a genuine manual correction (a real
+   * category, actually different from before, on a transaction that has a
+   * Plaid detailed code), also fires a Tier 2 learning signal — see
+   * recordCategorySignal.
    */
   const updateTransactionAssignment = useCallback(
     async (transactionId: string, categoryKind: CategoryKind | undefined, categoryId?: string) => {
@@ -229,9 +261,24 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
         console.error("Failed to update assignment:", err);
         setTransactionsError("Failed to update assignment.");
         setRawTransactions(previous); // revert optimistic update
+        return;
+      }
+
+      // Record a Tier 2 learning signal — only for genuine corrections: a
+      // real category (not a clear), a transaction that actually has a
+      // Plaid detailed code to learn from, and an assignment that's
+      // different from what it was before (so re-saving the same category
+      // twice doesn't inflate its count). Fire-and-forget: not awaited, and
+      // never rolls back the categorization above if it fails.
+      const isRealAssignment = Boolean(categoryKind) && Boolean(categoryId);
+      const isActuallyDifferent =
+        target.categoryKind !== categoryKind || target.categoryId !== categoryId;
+
+      if (isRealAssignment && isActuallyDifferent && target.plaidCategoryDetailed) {
+        recordCategorySignal(target.plaidCategoryDetailed, categoryId!);
       }
     },
-    [user, rawTransactions]
+    [user, rawTransactions, recordCategorySignal]
   );
 
   return {

@@ -10,7 +10,6 @@ type AddCategoryPayload = {
   kind: CategoryKind;
   estimatedMonthly: number;
   description?: string;
-  keywords?: string[];
   transferAccountId?: string | null;
   paycheckDetails?: PaycheckDetails | null;
 };
@@ -80,7 +79,6 @@ export function useCategories(user: AuthUser | null, authLoading: boolean) {
         kind: payload.kind,
         estimatedMonthly: payload.estimatedMonthly,
         description: payload.description ?? "",
-        keywords: payload.keywords ?? [],
         transferAccountId: payload.kind === "transfer" ? payload.transferAccountId ?? null : null,
         paycheckDetails: payload.kind === "income" ? payload.paycheckDetails ?? null : null,
         sortOrder: Date.now(),

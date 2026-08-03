@@ -8,6 +8,7 @@ import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutl
 import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import SwapHorizOutlinedIcon from "@mui/icons-material/SwapHorizOutlined";
+import TelosLogo from "@/components/telos-logo";
 import {
   Avatar,
   Box,
@@ -109,17 +110,31 @@ export default function AuthenticatedLayout({
           }}
         >
           <Box>
-            <Typography
-              variant="h6"
+            <Box
               sx={{
-                px: 1.75,
-                py: 1.25,
-                fontWeight: 700,
-                letterSpacing: "-0.02em",
+                display: "flex",
+                alignItems: "center",
+                gap: 1.25, // Space between logo and text
+                padding: 1.25, // Padding around the logo and text
               }}
             >
-              Budgeting
-            </Typography>
+              <TelosLogo size={30} />
+
+              <Typography
+                variant="h3"
+                sx={{
+                  fontFamily: "sans-serif",
+                  fontWeight: 700,
+                  fontSize: "1.9rem",
+                  letterSpacing: "-0.04em",
+                  lineHeight: 1,
+                  color: "text.primary",
+                  userSelect: "none",
+                }}
+              >
+                Telos
+              </Typography>
+            </Box>
 
             <Divider sx={{ mb: 1 }} />
 

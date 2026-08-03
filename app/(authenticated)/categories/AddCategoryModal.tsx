@@ -89,7 +89,6 @@ interface AddCategoryModalProps {
     kind: CategoryKind;
     estimatedMonthly: number;
     description: string;
-    keywords: string[];
     transferAccountId: string | null;
     paycheckDetails: PaycheckDetails | null;
   }) => Promise<void>;
@@ -112,8 +111,6 @@ export default function AddCategoryModal({
   const [kind, setKind] = useState<CategoryKind>("expense");
   const [estimatedMonthly, setEstimatedMonthly] = useState("0");
   const [description, setDescription] = useState("");
-  const [keywordInput, setKeywordInput] = useState("");
-  const [keywords, setKeywords] = useState<string[]>([]);
   const [transferAccountId, setTransferAccountId] = useState("");
   const [destinationError, setDestinationError] = useState<string | null>(null);
 
@@ -134,7 +131,6 @@ export default function AddCategoryModal({
       setKind(editingCategory.kind);
       setEstimatedMonthly(String(editingCategory.estimatedMonthly ?? 0));
       setDescription(editingCategory.description ?? "");
-      setKeywords(editingCategory.keywords ?? []);
       setTransferAccountId(editingCategory.transferAccountId ?? "");
 
       if (editingCategory.paycheckDetails) {
@@ -153,14 +149,12 @@ export default function AddCategoryModal({
       setKind("expense");
       setEstimatedMonthly("0");
       setDescription("");
-      setKeywords([]);
       setTransferAccountId("");
       setUsePaycheckProfile(false);
       setPayFrequency("biweekly");
       setGrossSalary("0");
       setDeductions([]);
     }
-    setKeywordInput("");
     setDestinationError(null);
   }, [open, editingCategory]);
 
@@ -286,27 +280,6 @@ export default function AddCategoryModal({
     );
   }
 
-  const commitKeywordInput = () => {
-    const trimmed = keywordInput.trim().toLowerCase();
-    if (trimmed && !keywords.includes(trimmed)) {
-      setKeywords((prev) => [...prev, trimmed]);
-    }
-    setKeywordInput("");
-  };
-
-  const handleKeywordKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" || e.key === ",") {
-      e.preventDefault();
-      commitKeywordInput();
-    } else if (e.key === "Backspace" && keywordInput === "" && keywords.length > 0) {
-      setKeywords((prev) => prev.slice(0, -1));
-    }
-  };
-
-  const removeKeyword = (kw: string) => {
-    setKeywords((prev) => prev.filter((k) => k !== kw));
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -315,9 +288,6 @@ export default function AddCategoryModal({
       return;
     }
     setDestinationError(null);
-
-    const trimmedPending = keywordInput.trim().toLowerCase();
-    const finalKeywords = trimmedPending && !keywords.includes(trimmedPending) ? [...keywords, trimmedPending] : keywords;
 
     const isPaycheckSynced = kind === "income" && usePaycheckProfile;
 
@@ -346,7 +316,6 @@ export default function AddCategoryModal({
       kind,
       estimatedMonthly: finalEstimatedMonthly,
       description: description.trim(),
-      keywords: finalKeywords,
       transferAccountId: kind === "transfer" ? transferAccountId : null,
       paycheckDetails,
     });
@@ -569,32 +538,6 @@ export default function AddCategoryModal({
             multiline
             minRows={2}
             sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
-          />
-
-          <TextField
-            fullWidth
-            size="small"
-            label="Keywords"
-            placeholder="e.g., starbucks, peets, cafe (press Enter to add)"
-            value={keywordInput}
-            onChange={(e) => setKeywordInput(e.target.value)}
-            onKeyDown={handleKeywordKeyDown}
-            onBlur={commitKeywordInput}
-            disabled={isSaving}
-            sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
-            slotProps={{
-              input: keywords.length
-                ? {
-                    startAdornment: (
-                      <Stack sx={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 0.5, mr: 0.5 }}>
-                        {keywords.map((kw) => (
-                          <Chip key={kw} label={kw} size="small" onDelete={isSaving ? undefined : () => removeKeyword(kw)} />
-                        ))}
-                      </Stack>
-                    ),
-                  }
-                : undefined,
-            }}
           />
         </Stack>
       </DialogContent>

@@ -125,3 +125,14 @@ export type Automation = {
   categoryId: string;
   createdAt?: unknown;
 };
+
+// Aggregated Tier 2 learning signal. One doc per Plaid `detailed` category
+// code, scoped to a user (users/{uid}/categoryPlaidStats/{plaidDetailedCode}).
+// `counts` maps categoryId -> number of manual corrections that landed on
+// that category for this Plaid code. Read once per sync run in
+// buildRulesContext, incremented once per manual correction in
+// useTransactions.ts.
+export type CategoryPlaidStats = {
+  counts: Record<string, number>;
+  updatedAt?: unknown;
+};

@@ -25,14 +25,17 @@ interface PlaidItemDoc {
 /**
  * Shape of a transaction document as stored in Firestore.
  *
- * assignmentType/assignmentId replace the old cashflowId field. The read
- * side (useTransactions.ts) still falls back to a legacy `cashflowId` if it
- * finds one on an old doc, but every doc written from here on out uses the
- * new shape directly.
+ * categoryKind/categoryId replace the old cashflowId field. The read side
+ * (useTransactions.ts) reads these two field names directly — every doc
+ * written from here on out uses this shape.
  *
- * assignmentType/assignmentId are `null` (not a sentinel string like the
- * old "unassigned") when a transaction hasn't been categorized. Firestore
- * can't store `undefined`, so `null` is the on-disk representation of
+ * (These were previously named assignmentType/assignmentId here and in
+ * ruleEngine.ts, which meant synced transactions were writing to fields
+ * useTransactions.ts never read. Renamed to match the read side.)
+ *
+ * categoryKind/categoryId are `null` (not a sentinel string like the old
+ * "unassigned") when a transaction hasn't been categorized. Firestore can't
+ * store `undefined`, so `null` is the on-disk representation of
  * "unassigned" — the client layer (useTransactions.ts) converts this to
  * `undefined` when building its in-memory Transaction objects.
  */
@@ -44,8 +47,8 @@ interface TransactionDoc {
   rawName: string; // Plaid's legacy `name` field, kept for reference/debugging
   pending: boolean;
   category: PlaidTransaction["personal_finance_category"] | null;
-  assignmentType: CategoryKind | null;
-  assignmentId: string | null;
+  categoryKind: CategoryKind | null;
+  categoryId: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -53,7 +56,7 @@ interface TransactionDoc {
 /**
  * Partial update applied to an existing transaction document.
  *
- * Deliberately does NOT include assignmentType/assignmentId — a Plaid
+ * Deliberately does NOT include categoryKind/categoryId — a Plaid
  * "modified" event should never clobber a user's (or a prior rule's)
  * assignment on an existing transaction.
  */
@@ -148,8 +151,8 @@ export async function syncPlaidItem(
         rawName: tx.name,
         pending: tx.pending,
         category: tx.personal_finance_category ?? null,
-        assignmentType: null,
-        assignmentId: null,
+        categoryKind: null,
+        categoryId: null,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       },

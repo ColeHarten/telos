@@ -10,12 +10,54 @@ import type { Transaction as PlaidTransaction } from "plaid";
 export type RulesContext = {
   categories: Category[];
   automations: Map<string, string>; // merchantKey -> categoryId
+  plaidCategoryDefaults: Map<string, string>; // plaidDetailedCode -> categoryId
 };
 
+// ---------------------------------------------------------------------------
+// Confidence resolution for learned Plaid-category -> Category mappings
+// ---------------------------------------------------------------------------
+
+/**
+ * A code needs at least this many corrections pointing at the same category
+ * before Tier 2 will auto-assign on it. Below this, a single miscategorized
+ * transaction could otherwise hijack the whole code.
+ */
+const MIN_SAMPLES = 3;
+
+/**
+ * The winning category must lead the runner-up by at least this many
+ * corrections. Guards against a near-even split (e.g. 4 vs 3) being treated
+ * as a confident signal.
+ */
+const MIN_MARGIN = 2;
+
+/**
+ * Picks a winning categoryId from a { categoryId: count } map, or null if
+ * the signal isn't strong enough yet. Pure function — no I/O — so it's easy
+ * to unit test independent of Firestore.
+ */
+function resolveWinner(counts: Record<string, number>): string | null {
+  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (ranked.length === 0) return null;
+
+  const [topId, topCount] = ranked[0];
+  const runnerUpCount = ranked[1]?.[1] ?? 0;
+
+  if (topCount < MIN_SAMPLES) return null;
+  if (topCount - runnerUpCount < MIN_MARGIN) return null;
+
+  return topId;
+}
+
+// ---------------------------------------------------------------------------
+// Context building
+// ---------------------------------------------------------------------------
+
 export async function buildRulesContext(uid: string): Promise<RulesContext> {
-  const [categoriesSnap, automationsSnap] = await Promise.all([
+  const [categoriesSnap, automationsSnap, statsSnap] = await Promise.all([
     adminDb.collection("users").doc(uid).collection("categories").get(),
     adminDb.collection("users").doc(uid).collection("automations").get(),
+    adminDb.collection("users").doc(uid).collection("categoryPlaidStats").get(),
   ]);
 
   const categories = categoriesSnap.docs.map(
@@ -28,23 +70,14 @@ export async function buildRulesContext(uid: string): Promise<RulesContext> {
     automations.set(data.merchantKey, data.categoryId);
   });
 
-  return { categories, automations };
-}
+  const plaidCategoryDefaults = new Map<string, string>();
+  statsSnap.docs.forEach((d) => {
+    const data = d.data() as { counts?: Record<string, number> };
+    const winner = resolveWinner(data.counts ?? {});
+    if (winner) plaidCategoryDefaults.set(d.id, winner);
+  });
 
-// ---------------------------------------------------------------------------
-// Matching
-// ---------------------------------------------------------------------------
-
-/**
- * Plain substring match: does the transaction's merchant/description text
- * contain the category's name or any of its keywords?
- *
- * Deliberately simple for now — no category/amount/recurrence weighting.
- * The first category (in Firestore doc order) that matches wins.
- */
-function isKeywordMatch(haystack: string, category: Category): boolean {
-  const keywords = (category.keywords ?? []).concat(category.name);
-  return keywords.some((kw: string) => kw.trim().length > 0 && haystack.includes(normalizeMerchant(kw)));
+  return { categories, automations, plaidCategoryDefaults };
 }
 
 // ---------------------------------------------------------------------------
@@ -54,21 +87,28 @@ function isKeywordMatch(haystack: string, category: Category): boolean {
 /**
  * Assigns a transaction to a category using, in order:
  *   1. A manual automation (merchant -> category override) — always wins.
- *   2. The first category whose name/keywords appear in the merchant text.
+ *   2. A learned Plaid-category default: if enough past manual corrections
+ *      agree that transactions with this Plaid `detailed` code belong to the
+ *      same category, assign it there. Replaces keyword/name substring
+ *      matching entirely.
  *   3. Otherwise leaves the transaction unassigned ("Needs Review") — both
  *      fields set to null, not a sentinel string.
  *
- * assignmentType mirrors the matched category's `kind` directly (income,
- * expense, or transaction) — there's no separate "cashflow"/"transfer"
- * distinction anymore now that account transfers are just categories with
- * kind "transaction".
+ * categoryKind mirrors the matched category's `kind` directly (income,
+ * expense, or transfer).
+ *
+ * NOTE: field names here are categoryKind/categoryId to match Firestore
+ * transaction docs and useTransactions.ts. (Previously this file and
+ * syncService.ts used assignmentType/assignmentId, a stale name that meant
+ * synced transactions were writing to fields the client never read — fixed
+ * as part of this change; see syncService.ts.)
  */
 export async function applyRules<T extends {
   merchantName: string | null;
   rawName: string;
   category: PlaidTransaction["personal_finance_category"] | null;
-  assignmentType: CategoryKind | null;
-  assignmentId: string | null;
+  categoryKind: CategoryKind | null;
+  categoryId: string | null;
 }>(transaction: T, context: RulesContext): Promise<T> {
   const merchantKey = normalizeMerchant(transaction.merchantName ?? transaction.rawName);
 
@@ -76,20 +116,25 @@ export async function applyRules<T extends {
   const automatedCategoryId = context.automations.get(merchantKey);
   if (automatedCategoryId) {
     const automatedCategory = context.categories.find((c) => c.id === automatedCategoryId);
-    // Automation points at a category that no longer exists (deleted after
-    // the automation was created) — fall through to keyword matching rather
-    // than assigning a dangling id.
     if (automatedCategory) {
-      return { ...transaction, assignmentType: automatedCategory.kind, assignmentId: automatedCategory.id };
+      return { ...transaction, categoryKind: automatedCategory.kind, categoryId: automatedCategory.id };
+    }
+    // Automation points at a category that no longer exists — fall through.
+  }
+
+  // 2. Learned Plaid-category default.
+  const detailedCode = transaction.category?.detailed;
+  if (detailedCode) {
+    const learnedCategoryId = context.plaidCategoryDefaults.get(detailedCode);
+    if (learnedCategoryId) {
+      const learnedCategory = context.categories.find((c) => c.id === learnedCategoryId);
+      if (learnedCategory) {
+        return { ...transaction, categoryKind: learnedCategory.kind, categoryId: learnedCategory.id };
+      }
+      // Learned category was deleted since the stats accrued — fall through.
     }
   }
 
-  // 2. Simple keyword/name match.
-  const match = context.categories.find((c) => isKeywordMatch(merchantKey, c));
-  if (match) {
-    return { ...transaction, assignmentType: match.kind, assignmentId: match.id };
-  }
-
   // 3. No match — leave for the user to review.
-  return { ...transaction, assignmentType: null, assignmentId: null };
+  return { ...transaction, categoryKind: null, categoryId: null };
 }

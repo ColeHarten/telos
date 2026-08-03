@@ -130,7 +130,6 @@ export default function CategoriesPage() {
     kind: CategoryKind;
     estimatedMonthly: number;
     description: string;
-    keywords: string[];
     transferAccountId: string | null;
     paycheckDetails: PaycheckDetails | null;
   }) {
@@ -160,7 +159,6 @@ export default function CategoriesPage() {
       kind: formData.kind,
       estimatedMonthly: formData.estimatedMonthly,
       description: formData.description,
-      keywords: formData.keywords,
       transferAccountId: formData.kind === "transfer" ? formData.transferAccountId : null,
       paycheckDetails: formData.kind === "income" ? formData.paycheckDetails : null,
     };
