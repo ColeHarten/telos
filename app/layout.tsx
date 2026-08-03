@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Providers from "./providers";
 
 export const metadata: Metadata = {
-  title: "Personal Budgeting",
+  title: "Telos",
   description: "Personal budgeting app",
 };
 
