@@ -13,7 +13,7 @@ This replaces both the keyword-matching Tier 2 and the earlier "expose a Plaid-c
 
 ## 2. Non-goals
 
-- Not building an ML/embedding pipeline.
+- Not building an ML/embedding pipeline.ls
 - Not exposing Plaid's taxonomy anywhere in the UI.
 - Not changing Tier 1 (automations) or Tier 3 (Needs Review) behavior.
 - Not building a rules-editor UI.

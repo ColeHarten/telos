@@ -1,21 +1,185 @@
-MIT License
+# TELOS PROPRIETARY SOFTWARE LICENSE
 
-Copyright (c) 2026 ColeHarten
+**Copyright © 2026 Coleman Harten. All Rights Reserved.**
+**Effective Date: August 7, 2026**
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This Proprietary Software License Agreement ("License") governs access to and use of the Telos software, application, website, services, source code, object code, APIs, documentation, graphics, designs, and related materials (collectively, the "Software") owned by **Coleman Harten** ("Owner," "Coleman Harten," "I," "me," or "my").
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+By accessing, downloading, installing, copying, or using the Software, you ("you" or "User") agree to this License. If you do not agree to this License, you may not access, use, copy, modify, distribute, or otherwise exploit the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+## 1. Ownership
+
+The Software is proprietary software exclusively owned by **Coleman Harten**.
+
+All right, title, and interest in and to the Software, including all copyrights, trademarks, trade secrets, patents, designs, database rights, and other intellectual-property rights, are and shall remain exclusively with Coleman Harten.
+
+**The Software is licensed, not sold.**
+
+Nothing in this License transfers ownership of the Software or any intellectual property to you.
+
+Except for the limited license expressly granted in this License, no rights are granted to you, whether by implication, estoppel, or otherwise.
+
+## 2. Limited License
+
+Subject to your continued compliance with this License, Coleman Harten grants you a **limited, non-exclusive, non-transferable, non-sublicensable, revocable license** to access and use the Software solely for its intended purposes and, where applicable, for your personal or authorized internal business purposes.
+
+This license does not grant you any ownership interest in the Software or any intellectual property belonging to Coleman Harten.
+
+Coleman Harten may revoke or terminate this license in accordance with this License.
+
+## 3. Restrictions
+
+You may not, directly or indirectly:
+
+1. Copy, reproduce, duplicate, or distribute the Software except as expressly permitted by Coleman Harten;
+2. Modify, adapt, translate, or create derivative works based on the Software;
+3. Reverse engineer, decompile, disassemble, decode, or otherwise attempt to derive or discover the source code, algorithms, architecture, or underlying structure of the Software, except to the limited extent expressly permitted by applicable law;
+4. Attempt to circumvent, disable, defeat, or interfere with any security, authentication, access-control, or technological protection mechanism;
+5. Rent, lease, sell, sublicense, assign, transfer, publish, or otherwise make the Software available to any third party;
+6. Use the Software to provide a service bureau, outsourcing, timesharing, hosting, or similar service for third parties;
+7. Remove, alter, or obscure any copyright, trademark, proprietary, or other notices contained in the Software;
+8. Use the Software or any portion thereof to develop, train, operate, or assist a competing product or service;
+9. Use the Software for benchmarking, competitive analysis, or evaluation intended for publication or distribution without prior written permission;
+10. Use automated systems to scrape, crawl, harvest, or systematically extract information from the Software except where expressly authorized;
+11. Attempt to gain unauthorized access to the Software, its infrastructure, systems, networks, accounts, or data;
+12. Circumvent usage limits, access restrictions, subscription requirements, or other controls;
+13. Use the Software in violation of applicable law, regulation, or third-party rights; or
+14. Permit another person or entity to exercise any of the rights restricted by this License.
+
+## 4. No Source Code Rights
+
+The Software is provided solely in compiled, executable, hosted, or otherwise non-source-code form unless Coleman Harten expressly provides source code under a separate written agreement.
+
+You have no right to access, obtain, inspect, reproduce, or distribute the source code of the Software.
+
+Any source code or other proprietary materials accidentally or inadvertently made available to you remain the exclusive property of Coleman Harten and remain subject to this License.
+
+## 5. Intellectual Property
+
+The Software and all related materials are protected by applicable copyright, trademark, trade-secret, patent, and other intellectual-property laws.
+
+The name **Telos**, the Telos logo, product names, service names, designs, graphics, logos, trademarks, service marks, and related branding are owned by or licensed to Coleman Harten, unless otherwise expressly identified.
+
+Nothing in this License grants you any right to use the Telos name, logo, trademarks, branding, or other intellectual property belonging to Coleman Harten except as expressly authorized in writing.
+
+## 6. User Data
+
+You retain ownership of information and data that you lawfully submit to the Software ("User Data"), subject to the rights necessary for the Software to operate.
+
+You grant Coleman Harten the limited rights reasonably necessary to host, process, transmit, store, secure, and otherwise handle User Data for the purpose of providing, maintaining, securing, and improving the Software and fulfilling applicable legal and contractual obligations.
+
+Coleman Harten's collection and processing of personal information is additionally governed by the applicable Telos Privacy Policy.
+
+## 7. Third-Party Services
+
+The Software may integrate with or depend upon third-party services, APIs, platforms, financial institutions, data providers, payment processors, authentication providers, hosting providers, or other third-party products and services.
+
+Your use of third-party services may be subject to separate terms and conditions imposed by those third parties.
+
+Nothing in this License grants you rights to third-party services or third-party intellectual property.
+
+## 8. Updates and Changes
+
+Coleman Harten may modify, update, enhance, replace, suspend, or discontinue any portion of the Software at any time.
+
+Updates, patches, modifications, improvements, and enhancements provided by Coleman Harten shall be considered part of the Software and shall remain subject to this License unless expressly stated otherwise.
+
+## 9. Termination
+
+This License remains effective until terminated.
+
+Your rights under this License automatically terminate if you materially breach any provision of this License.
+
+Upon termination, you must immediately cease all use of the Software and, where applicable, delete all copies of the Software in your possession or control.
+
+Termination does not affect any rights or obligations that accrued before termination.
+
+Sections concerning ownership, intellectual property, restrictions, confidentiality, disclaimers, limitations of liability, indemnification, and governing law shall survive termination.
+
+## 10. Disclaimer of Warranties
+
+**TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE," WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE.**
+
+COLEMAN HARTEN DISCLAIMS ALL WARRANTIES, INCLUDING, WITHOUT LIMITATION, IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT, ACCURACY, RELIABILITY, AVAILABILITY, AND SECURITY.
+
+COLEMAN HARTEN DOES NOT WARRANT THAT THE SOFTWARE WILL BE UNINTERRUPTED, ERROR-FREE, SECURE, OR FREE FROM VIRUSES OR OTHER HARMFUL COMPONENTS.
+
+## 11. Limitation of Liability
+
+**TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, YOU AGREE THAT YOUR ACCESS TO AND USE OF THE SOFTWARE IS AT YOUR SOLE RISK.**
+
+**TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, COLEMAN HARTEN SHALL NOT BE LIABLE TO YOU FOR ANY DAMAGES, LOSSES, COSTS, EXPENSES, CLAIMS, OR LIABILITIES ARISING OUT OF OR RELATING TO YOUR ACCESS TO, USE OF, OR INABILITY TO USE THE SOFTWARE, INCLUDING ANY LOSS OF DATA, LOSS OF PROFITS, LOSS OF REVENUE, LOSS OF BUSINESS, LOSS OF GOODWILL, INTERRUPTION OF SERVICE, OR OTHER ECONOMIC LOSS.**
+
+**TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, COLEMAN HARTEN'S TOTAL AGGREGATE LIABILITY TO YOU ARISING OUT OF OR RELATING TO THE SOFTWARE, THIS LICENSE, OR ANY RELATED SERVICES SHALL BE $0.00.**
+
+This limitation applies regardless of the legal theory on which a claim is asserted, including contract, warranty, tort, negligence, strict liability, statute, or any other legal theory, and regardless of whether Coleman Harten was advised of the possibility of such damages.
+
+**Nothing in this License is intended to exclude or limit any liability that cannot lawfully be excluded or limited under applicable law.**
+
+If any portion of this Section is determined to be unenforceable, that portion shall be enforced to the maximum extent permitted by applicable law, and the remaining portions shall remain in effect.
+
+## 12. Indemnification
+
+To the maximum extent permitted by applicable law, you agree to defend, indemnify, and hold harmless Coleman Harten and his officers, directors, employees, affiliates, licensors, and service providers from claims, damages, liabilities, losses, costs, and expenses, including reasonable attorneys' fees, arising from:
+
+1. Your violation of this License;
+2. Your misuse of the Software;
+3. Your violation of applicable law or regulation; or
+4. Your violation of the rights of another person or entity.
+
+## 13. Confidentiality
+
+You acknowledge that portions of the Software may contain confidential and proprietary information belonging to Coleman Harten.
+
+You agree not to disclose, reproduce, publish, distribute, or use Coleman Harten's confidential information except as necessary to exercise the limited rights expressly granted by this License.
+
+## 14. Reservation of Rights
+
+**ALL RIGHTS NOT EXPRESSLY GRANTED UNDER THIS LICENSE ARE EXPRESSLY RESERVED BY COLEMAN HARTEN.**
+
+The Software is **proprietary, closed-source software and is not open-source software**.
+
+No implied license or other right to the Software, its source code, intellectual property, or proprietary materials is granted.
+
+## 15. Assignment
+
+You may not assign, transfer, delegate, or sublicense this License or any rights granted under it without the prior written consent of Coleman Harten.
+
+Coleman Harten may assign or transfer this License, in whole or in part, without your consent in connection with a merger, acquisition, corporate reorganization, sale of assets, transfer of intellectual property, or similar transaction.
+
+## 16. Governing Law
+
+This License shall be governed by and construed in accordance with the laws of the **State of [STATE], United States**, without regard to its conflict-of-laws principles.
+
+Any dispute arising out of or relating to this License shall be subject to the exclusive jurisdiction of the state and federal courts located in **[COUNTY, STATE]**, unless otherwise required by applicable law.
+
+## 17. Severability
+
+If any provision of this License is determined to be invalid or unenforceable, that provision shall be enforced to the maximum extent permitted by law, and the remaining provisions shall remain in full force and effect.
+
+## 18. Entire Agreement
+
+This License constitutes the entire agreement between you and Coleman Harten regarding the Software and supersedes all prior or contemporaneous agreements concerning the Software, except for any separate written agreements expressly entered into between you and Coleman Harten.
+
+## 19. Amendments
+
+Coleman Harten may update this License from time to time. The updated version will become effective upon posting or upon the date specified in the updated License.
+
+Your continued use of the Software following the effective date of an updated License constitutes acceptance of the updated terms to the extent permitted by applicable law.
+
+## 20. Contact
+
+Questions regarding this License may be directed to:
+
+**Coleman Harten**
+**Email:** [[cole.harten1@gmail.COM](mailto:cole.harten1@gmail.com)]
+
+---
+
+# COPYRIGHT NOTICE
+
+**Copyright © 2026 Coleman Harten. All Rights Reserved.**
+
+**TELOS IS PROPRIETARY, CLOSED-SOURCE SOFTWARE OWNED BY COLEMAN HARTEN. THE SOFTWARE IS NOT OPEN SOURCE. NO RIGHTS TO COPY, MODIFY, DISTRIBUTE, SUBLICENSE, REVERSE ENGINEER, OR CREATE DERIVATIVE WORKS FROM THE SOFTWARE ARE GRANTED EXCEPT AS EXPRESSLY PROVIDED IN THIS LICENSE OR REQUIRED BY APPLICABLE LAW.**
+
+**© 2026 Coleman Harten. All Rights Reserved.**

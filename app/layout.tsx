@@ -2,8 +2,11 @@ import type { Metadata } from "next";
 import Providers from "./providers";
 
 export const metadata: Metadata = {
-  title: "Telos",
+  title: "Telos: Built for where you're going",
   description: "Personal budgeting app",
+  icons: {
+    icon: "/favicon.ico?v=1.0",
+  },
 };
 
 export default function RootLayout({
@@ -13,6 +16,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="icon" href="/favicon.ico?v=1.0" />
+      </head>
       <body>
         <Providers>{children}</Providers>
       </body>
