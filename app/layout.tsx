@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Providers from "./providers";
 
 export const metadata: Metadata = {
-  title: "Telos: Built for where you're going",
+  title: "Telos: Money with purpose",
   description: "Personal budgeting app",
   icons: {
     icon: "/favicon.ico?v=1.0",
