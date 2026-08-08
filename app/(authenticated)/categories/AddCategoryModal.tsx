@@ -91,6 +91,7 @@ interface AddCategoryModalProps {
     description: string;
     transferAccountId: string | null;
     paycheckDetails: PaycheckDetails | null;
+    deductionBreakdown: { deductionId: string; linkedAccountId: string; monthlyAmount: number }[];
   }) => Promise<void>;
   isSaving: boolean;
   editingCategory: Category | null;
@@ -123,6 +124,25 @@ export default function AddCategoryModal({
   const isEditing = editingCategory !== null;
   const activeAccounts = accounts.filter((a) => !a.isArchived);
 
+  // Accounts selectable as a deduction's contribution destination.
+  const contributionEligibleAccounts = useMemo(
+    () => accounts.filter((a) => a.isContributionEligible && !a.isArchived),
+    [accounts]
+  );
+
+  // Enforces the 1:1 rule (each account linked from at most one deduction
+  // row) at the UI level, by excluding already-linked accounts from every
+  // other row's option list.
+  const linkedAccountIds = useMemo(
+    () => new Set(deductions.map((d) => d.linkedAccountId).filter((id): id is string => Boolean(id))),
+    [deductions]
+  );
+
+  // This category is a transfer category that was auto-created from a
+  // paycheck deduction link — its amount is system-managed, not editable
+  // here (see the "UI-locked" decision in the roadmap doc).
+  const isAutoLinkedTransfer = kind === "transfer" && Boolean(editingCategory?.sourceDeductionId);
+
   useEffect(() => {
     if (!open) return;
 
@@ -137,7 +157,16 @@ export default function AddCategoryModal({
         setUsePaycheckProfile(true);
         setPayFrequency(editingCategory.paycheckDetails.payFrequency);
         setGrossSalary(String(editingCategory.paycheckDetails.grossSalary));
-        setDeductions(editingCategory.paycheckDetails.deductions);
+        // Backfill id/linkedAccountId for deductions saved before this
+        // feature existed — without an id, the reconciliation logic has no
+        // stable key and would treat every row as new on the next save.
+        setDeductions(
+          editingCategory.paycheckDetails.deductions.map((d) => ({
+            ...d,
+            id: d.id ?? crypto.randomUUID(),
+            linkedAccountId: d.linkedAccountId ?? null,
+          }))
+        );
       } else {
         setUsePaycheckProfile(false);
         setPayFrequency("biweekly");
@@ -166,7 +195,10 @@ export default function AddCategoryModal({
   const frequencyShortLabel = payFrequencyOptions.find((o) => o.value === payFrequency)?.shortLabel ?? "";
 
   function addDeductionRow(type: DeductionType, label = "", defaultPercent = 0) {
-    setDeductions((prev) => [...prev, { label, value: defaultPercent, kind: "percentOfGross", type }]);
+    setDeductions((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), label, value: defaultPercent, kind: "percentOfGross", type, linkedAccountId: null },
+    ]);
   }
 
   function updateDeductionRow(index: number, changes: Partial<Deduction>) {
@@ -187,47 +219,78 @@ export default function AddCategoryModal({
   }, [deductions]);
 
   function renderDeductionRow(row: Deduction & { index: number }) {
+    const showAccountLink = row.type !== "tax";
+    const linkedAccount = row.linkedAccountId
+      ? contributionEligibleAccounts.find((a) => a.id === row.linkedAccountId) ?? null
+      : null;
+    const availableAccountsForRow = contributionEligibleAccounts.filter(
+      (a) => a.id === row.linkedAccountId || !linkedAccountIds.has(a.id)
+    );
+
     return (
-      <Box
-        key={row.index}
-        sx={{ display: "grid", gridTemplateColumns: "1fr 150px 130px 40px", alignItems: "center", gap: 1, px: 2, py: 1 }}
-      >
-        <TextField
-          placeholder={row.type === "tax" ? "e.g., Federal Income Tax" : "e.g., 401k Contribution"}
-          size="small"
-          value={row.label}
-          onChange={(e) => updateDeductionRow(row.index, { label: e.target.value })}
-          variant="standard"
-          slotProps={{ input: { disableUnderline: true } }}
-        />
-        <Select
-          size="small"
-          variant="standard"
-          value={row.kind}
-          onChange={(e) => updateDeductionRow(row.index, { kind: e.target.value as Deduction["kind"] })}
-          disableUnderline
-        >
-          <MenuItem value="percentOfGross">% of Gross</MenuItem>
-          <MenuItem value="flatAmount">Flat Amount</MenuItem>
-        </Select>
-        <TextField
-          size="small"
-          type="number"
-          variant="standard"
-          value={row.value}
-          onChange={(e) => updateDeductionRow(row.index, { value: Number(e.target.value) || 0 })}
-          slotProps={{
-            input: {
-              disableUnderline: true,
-              endAdornment: <InputAdornment position="end">{row.kind === "percentOfGross" ? "%" : "$"}</InputAdornment>,
-            },
-          }}
-        />
-        <Tooltip title="Delete Item">
-          <IconButton onClick={() => removeDeductionRow(row.index)} size="small">
-            <DeleteRoundedIcon sx={{ color: "#dc2626", fontSize: 18 }} />
-          </IconButton>
-        </Tooltip>
+      <Box key={row.id} sx={{ px: 2, py: 1 }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: "1fr 150px 130px 40px", alignItems: "center", gap: 1 }}>
+          <TextField
+            placeholder={row.type === "tax" ? "e.g., Federal Income Tax" : "e.g., 401k Contribution"}
+            size="small"
+            value={row.label}
+            onChange={(e) => updateDeductionRow(row.index, { label: e.target.value })}
+            variant="standard"
+            slotProps={{ input: { disableUnderline: true } }}
+          />
+          <Select
+            size="small"
+            variant="standard"
+            value={row.kind}
+            onChange={(e) => updateDeductionRow(row.index, { kind: e.target.value as Deduction["kind"] })}
+            disableUnderline
+          >
+            <MenuItem value="percentOfGross">% of Gross</MenuItem>
+            <MenuItem value="flatAmount">Flat Amount</MenuItem>
+          </Select>
+          <TextField
+            size="small"
+            type="number"
+            variant="standard"
+            value={row.value}
+            onChange={(e) => updateDeductionRow(row.index, { value: Number(e.target.value) || 0 })}
+            slotProps={{
+              input: {
+                disableUnderline: true,
+                endAdornment: <InputAdornment position="end">{row.kind === "percentOfGross" ? "%" : "$"}</InputAdornment>,
+              },
+            }}
+          />
+          <Tooltip title="Delete Item">
+            <IconButton onClick={() => removeDeductionRow(row.index)} size="small">
+              <DeleteRoundedIcon sx={{ color: "#dc2626", fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
+        </Box>
+
+        {showAccountLink && contributionEligibleAccounts.length > 0 && (
+          <Autocomplete
+            size="small"
+            options={availableAccountsForRow}
+            getOptionLabel={(option) => option.name}
+            value={linkedAccount}
+            onChange={(_, newValue) => updateDeductionRow(row.index, { linkedAccountId: newValue ? newValue.id : null })}
+            disabled={isSaving}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                variant="standard"
+                placeholder="Link to a tracked account (optional)"
+                sx={{
+                  "& .MuiInput-root:before": { borderBottom: "none" },
+                  "& .MuiInput-root:after": { borderBottom: "none" },
+                  "& .MuiInput-root:hover:not(.Mui-disabled):before": { borderBottom: "none" },
+                }}
+              />
+            )}
+            sx={{ maxWidth: 340, mt: 0.25 }}
+          />
+        )}
       </Box>
     );
   }
@@ -293,11 +356,21 @@ export default function AddCategoryModal({
 
     let paycheckDetails: PaycheckDetails | null = null;
     let finalEstimatedMonthly: number;
+    let deductionBreakdown: { deductionId: string; linkedAccountId: string; monthlyAmount: number }[] = [];
 
     if (isPaycheckSynced) {
       const cleanedDeductions = deductions
         .filter((d) => d.label.trim().length > 0)
-        .map((d) => ({ label: d.label.trim(), value: d.value, kind: d.kind, type: d.type }));
+        .map((d) => ({
+          id: d.id,
+          label: d.label.trim(),
+          value: d.value,
+          kind: d.kind,
+          type: d.type,
+          // Defensive: a "tax" row should never carry a link even though the
+          // UI never offers the picker for it.
+          linkedAccountId: d.type === "tax" ? null : d.linkedAccountId ?? null,
+        }));
       const calculated = calculateWithholdings(Number(grossSalary) || 0, cleanedDeductions, payFrequency);
 
       paycheckDetails = {
@@ -306,6 +379,10 @@ export default function AddCategoryModal({
         deductions: cleanedDeductions,
       };
       finalEstimatedMonthly = calculated.estimatedMonthlyNet;
+      deductionBreakdown = calculated.deductionBreakdown;
+    } else if (isAutoLinkedTransfer && editingCategory) {
+      // System-managed amount — never overwrite it from this form.
+      finalEstimatedMonthly = editingCategory.estimatedMonthly;
     } else {
       const parsed = Number(estimatedMonthly || 0);
       finalEstimatedMonthly = Number.isNaN(parsed) ? 0 : parsed;
@@ -318,6 +395,7 @@ export default function AddCategoryModal({
       description: description.trim(),
       transferAccountId: kind === "transfer" ? transferAccountId : null,
       paycheckDetails,
+      deductionBreakdown,
     });
   };
 
@@ -343,6 +421,13 @@ export default function AddCategoryModal({
         <Stack spacing={2.5} sx={{ mt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
 
+          {isAutoLinkedTransfer && (
+            <Alert severity="info" icon={<LockRoundedIcon fontSize="small" />}>
+              This transfer is managed by a paycheck deduction. Its amount and destination update automatically —
+              edit the deduction on the linked income category to change them.
+            </Alert>
+          )}
+
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
             <TextField
               fullWidth
@@ -363,7 +448,7 @@ export default function AddCategoryModal({
                 label="Type"
                 value={kind}
                 onChange={(e) => setKind(e.target.value as CategoryKind)}
-                disabled={isSaving}
+                disabled={isSaving || isAutoLinkedTransfer}
                 renderValue={(value) => {
                   const opt = KIND_OPTIONS.find((o) => o.value === value)!;
                   return (
@@ -395,7 +480,7 @@ export default function AddCategoryModal({
                   setTransferAccountId(newValue ? newValue.id : "");
                   setDestinationError(null);
                 }}
-                disabled={isSaving}
+                disabled={isSaving || isAutoLinkedTransfer}
                 renderInput={(params) => (
                   <TextField
                     {...params}
@@ -502,6 +587,19 @@ export default function AddCategoryModal({
               label="Estimated monthly"
               value={formatCurrency(calculatedValues.estimatedMonthlyNet)}
               disabled
+              sx={{
+                "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2, bgcolor: "#f8fafc" },
+                "& input": { textAlign: "right" },
+              }}
+            />
+          ) : isAutoLinkedTransfer && editingCategory ? (
+            <TextField
+              fullWidth
+              size="small"
+              label="Estimated monthly transfer"
+              value={formatCurrency(editingCategory.estimatedMonthly)}
+              disabled
+              helperText="Synced automatically from a linked paycheck deduction."
               sx={{
                 "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2, bgcolor: "#f8fafc" },
                 "& input": { textAlign: "right" },

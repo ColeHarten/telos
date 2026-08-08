@@ -2,17 +2,20 @@
 
 import type { Account, AccountType, NormalBalance } from "@/lib/types/types";
 import {
+  Box,
   Button,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   InputAdornment,
   InputLabel,
   MenuItem,
   Select,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -37,6 +40,7 @@ interface AccountFormDialogProps {
     accountType: AccountType;
     normalBalance: NormalBalance;
     balance: number;
+    isContributionEligible: boolean;
   }) => Promise<void>;
   isSaving: boolean;
   editingAccount: Account | null;
@@ -52,6 +56,7 @@ export default function AccountFormDialog({
   const [name, setName] = useState("");
   const [accountType, setAccountType] = useState<AccountType>("cash");
   const [balance, setBalance] = useState("");
+  const [isContributionEligible, setIsContributionEligible] = useState(false);
 
   const isEditing = editingAccount !== null;
   const isSyncedAccount = editingAccount?.plaidItemId != null;
@@ -63,10 +68,12 @@ export default function AccountFormDialog({
         setName(editingAccount.name);
         setAccountType(editingAccount.accountType);
         setBalance(String(editingAccount.currentBalance ?? editingAccount.startingBalance ?? 0));
+        setIsContributionEligible(Boolean(editingAccount.isContributionEligible));
       } else {
         setName("");
         setAccountType("cash");
         setBalance("");
+        setIsContributionEligible(false);
       }
     }
   }, [open, editingAccount]);
@@ -81,6 +88,7 @@ export default function AccountFormDialog({
       accountType,
       normalBalance,
       balance: parsedBalance,
+      isContributionEligible,
     });
   };
 
@@ -159,6 +167,27 @@ export default function AccountFormDialog({
               }}
             />
           )}
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={isContributionEligible}
+                onChange={(e) => setIsContributionEligible(e.target.checked)}
+                disabled={isSaving}
+              />
+            }
+            label={
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  Eligible for paycheck contributions
+                </Typography>
+                <Typography variant="caption" sx={{ color: "text.secondary", display: "block" }}>
+                  Lets this account be selected as a destination for a deduction in a Paycheck Profile.
+                </Typography>
+              </Box>
+            }
+            sx={{ ml: 0, alignItems: "flex-start" }}
+          />
         </Stack>
       </DialogContent>
 

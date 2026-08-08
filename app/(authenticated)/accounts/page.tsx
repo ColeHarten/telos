@@ -124,6 +124,7 @@ export default function AccountsPage() {
     accountType: AccountType;
     normalBalance: NormalBalance;
     balance: number;
+    isContributionEligible: boolean;
   }) => {
     if (Number.isNaN(formData.balance)) {
       setError("Balance must be a valid number.");
@@ -152,6 +153,7 @@ export default function AccountsPage() {
           name: formData.name,
           accountType: formData.accountType,
           normalBalance: formData.normalBalance,
+          isContributionEligible: formData.isContributionEligible,
         };
 
         // Disallow updating balances manually if the account is a Synced Plaid account
@@ -167,6 +169,7 @@ export default function AccountsPage() {
           accountType: formData.accountType,
           normalBalance: formData.normalBalance,
           startingBalance: formData.balance,
+          isContributionEligible: formData.isContributionEligible,
         });
       }
 

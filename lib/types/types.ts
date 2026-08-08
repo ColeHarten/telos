@@ -32,6 +32,11 @@ export type Account = {
   isManual: boolean;
   isArchived: boolean;
 
+  // Eligible as a destination for a paycheck deduction's linked transfer.
+  // Explicit flag rather than inferring from accountType — accountType has
+  // no HSA option, and inference would silently misclassify accounts.
+  isContributionEligible: boolean;
+
   // Plaid fields (null for manual accounts)
   plaidAccountId?: string | null;
   plaidItemId?: string | null;
@@ -60,6 +65,13 @@ export type Category = {
   plaidCategories?: string[];
   transferAccountId?: string | null;
 
+  // Set only on transfer categories auto-created from a paycheck deduction
+  // link. Lets the reconciliation logic find "the transfer category I made
+  // for this deduction last time" instead of matching on name/amount.
+  // Both null for any category not created this way.
+  sourceIncomeCategoryId?: string | null;
+  sourceDeductionId?: string | null;
+
   // --- Paycheck fields (only meaningful when kind === "income") ---
   paycheckDetails?: PaycheckDetails | null;
 };
@@ -69,10 +81,16 @@ export type DeductionKind = "percentOfGross" | "flatAmount";
 export type DeductionType = "tax" | "preTaxDeduction" | "postTaxDeduction";
 
 export interface Deduction {
+  id: string; // stable client-generated key (crypto.randomUUID()) — lets the
+  // reconciliation logic track a deduction row across edits/renames
   label: string;
   value: number;
   kind: DeductionKind;
   type: DeductionType;
+  // Only meaningful when type is preTaxDeduction/postTaxDeduction — a "tax"
+  // deduction is withheld, not contributed anywhere. Each contribution-
+  // eligible account may be linked from at most one deduction row (1:1).
+  linkedAccountId?: string | null;
 }
 
 export interface PaycheckDetails {

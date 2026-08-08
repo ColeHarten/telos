@@ -41,6 +41,7 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
               data.currentBalance === undefined ? undefined : Number(data.currentBalance),
             isManual: Boolean(data.isManual ?? true),
             isArchived: Boolean(data.isArchived ?? false),
+            isContributionEligible: Boolean(data.isContributionEligible ?? false),
             plaidAccountId: data.plaidAccountId ?? null,
             plaidItemId: data.plaidItemId ?? null,
             plaidMask: data.plaidMask ?? null,
@@ -78,6 +79,7 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
       accountType: AccountType;
       normalBalance: string;
       startingBalance?: number;
+      isContributionEligible?: boolean;
     }) => {
       if (!user) throw new Error("Not signed in");
 
@@ -91,6 +93,7 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
         currentBalance: payload.startingBalance ?? 0,
         isManual: true,
         isArchived: false,
+        isContributionEligible: payload.isContributionEligible ?? false,
         plaidAccountId: null,
         plaidItemId: null,
         plaidInstitutionId: null,

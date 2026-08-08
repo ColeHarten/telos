@@ -1,5 +1,11 @@
 import type { Deduction, PayFrequency } from "@/lib/types/types";
 
+type DeductionBreakdownEntry = {
+  deductionId: string;
+  linkedAccountId: string;
+  monthlyAmount: number;
+};
+
 export const payFrequencyOptions: {
   label: string;
   shortLabel: string;
@@ -14,12 +20,21 @@ export const payFrequencyOptions: {
 
 export function calculateWithholdings(gross: number, deductions: Deduction[], frequency: PayFrequency) {
   let totalWithheld = 0;
+  const deductionBreakdown: DeductionBreakdownEntry[] = [];
 
   for (const deduction of deductions) {
-    if (deduction.kind === "percentOfGross") {
-      totalWithheld += (deduction.value / 100) * gross;
-    } else {
-      totalWithheld += deduction.value;
+    const deductionAmount = deduction.kind === "percentOfGross"
+      ? (deduction.value / 100) * gross
+      : deduction.value;
+
+    totalWithheld += deductionAmount;
+
+    if (deduction.type !== "tax" && deduction.linkedAccountId) {
+      deductionBreakdown.push({
+        deductionId: deduction.id,
+        linkedAccountId: deduction.linkedAccountId,
+        monthlyAmount: deductionAmount * (payFrequencyOptions.find((o) => o.value === frequency)?.multiplier ?? 26 / 12),
+      });
     }
   }
 
@@ -33,5 +48,6 @@ export function calculateWithholdings(gross: number, deductions: Deduction[], fr
     estimatedMonthlyNet: netPay * multiplier,
     estimatedMonthlyGross: gross * multiplier,
     estimatedMonthlyWithheld: totalWithheld * multiplier,
+    deductionBreakdown,
   };
 }

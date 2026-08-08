@@ -62,6 +62,7 @@ export default function CategoriesPage() {
     addCategory,
     updateCategory,
     archiveCategory,
+    reconcileContributionTransfers,
     categoriesLoading,
   } = useCategories(user, authLoading);
   const isLoading = categoriesLoading;
@@ -132,6 +133,7 @@ export default function CategoriesPage() {
     description: string;
     transferAccountId: string | null;
     paycheckDetails: PaycheckDetails | null;
+    deductionBreakdown: { deductionId: string; linkedAccountId: string; monthlyAmount: number }[];
   }) {
     const trimmedName = formData.name.trim();
     const normalizedName = trimmedName.toLowerCase();
@@ -167,10 +169,25 @@ export default function CategoriesPage() {
       setFormError(null);
       setIsSaving(true);
 
+      let incomeCategoryId: string | null = null;
+
       if (selectedEditingCategory) {
         await updateCategory(selectedEditingCategory.id, payload);
+        incomeCategoryId = selectedEditingCategory.id;
       } else {
-        await addCategory(payload);
+        incomeCategoryId = await addCategory(payload);
+      }
+
+      // Reconcile linked-deduction transfer categories whenever an income
+      // category is saved — including with an empty breakdown, so turning
+      // off "Add withholdings and deductions" (or removing a link) cleans
+      // up any transfer categories that were auto-created previously.
+      if (formData.kind === "income" && incomeCategoryId) {
+        await reconcileContributionTransfers(
+          incomeCategoryId,
+          formData.paycheckDetails?.deductions ?? [],
+          formData.deductionBreakdown
+        );
       }
 
       setDialogOpen(false);
