@@ -98,14 +98,47 @@ export default function CategoriesPage() {
     transfer: { count: transferCategories.length, total: transferCategories.reduce((s, c) => s + (c.estimatedMonthly ?? 0), 0) },
   };
 
+  function isDependentTransferCategory(category: Category | null | undefined) {
+    return Boolean(category?.kind === "transfer" && category.sourceIncomeCategoryId && category.sourceDeductionId);
+  }
+
   const displayedCategories = useMemo(() => {
     const base = showArchived ? archivedCategories : activeCategories;
     const query = searchQuery.trim().toLowerCase();
-    return base.filter((c) => {
+
+    const filtered = base.filter((c) => {
       if (kindFilter !== "all" && c.kind !== kindFilter) return false;
       if (!query) return true;
       return c.name.toLowerCase().includes(query) || (c.description ?? "").toLowerCase().includes(query);
-    }).sort((a: Category, b: Category) => a.kind.localeCompare(b.kind));
+    });
+
+    const incomeParents = filtered
+      .filter((c) => c.kind === "income")
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const dependentTransfers = filtered.filter((c) => isDependentTransferCategory(c));
+    const otherCategories = filtered
+      .filter((c) => c.kind !== "income" && !isDependentTransferCategory(c))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const rows: Array<{ type: "parent" | "child" | "other"; category: Category; parentCategory?: Category }> = [];
+
+    incomeParents.forEach((incomeCategory) => {
+      rows.push({ type: "parent", category: incomeCategory });
+
+      const children = dependentTransfers
+        .filter((child) => child.sourceIncomeCategoryId === incomeCategory.id)
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      children.forEach((child) => {
+        rows.push({ type: "child", category: child, parentCategory: incomeCategory });
+      });
+    });
+
+    otherCategories.forEach((category) => {
+      rows.push({ type: "other", category });
+    });
+
+    return rows;
   }, [showArchived, archivedCategories, activeCategories, kindFilter, searchQuery]);
 
   function handleOpenAddForm() {
@@ -201,6 +234,12 @@ export default function CategoriesPage() {
   }
 
   async function handleArchiveCategory(categoryId: string) {
+    const categoryToArchive = categories.find((c) => c.id === categoryId);
+    if (isDependentTransferCategory(categoryToArchive)) {
+      setError("This transfer category is managed by its income category and cannot be archived separately.");
+      return;
+    }
+
     try {
       setError(null);
       await archiveCategory(categoryId);
@@ -414,28 +453,48 @@ export default function CategoriesPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              displayedCategories.map((category) => {
+              displayedCategories.map((row) => {
+                const category = row.category;
                 const style = categoryStyles[category.kind];
+                const isDependentTransfer = row.type === "child" && Boolean(row.parentCategory);
+
                 return (
-                  <TableRow key={category.id} hover sx={{ "&:last-child td, &:last-child th": { border: 0 } }}>
+                  <TableRow key={`${row.type}-${category.id}`} hover sx={{ "&:last-child td, &:last-child th": { border: 0 } }}>
                     <TableCell>
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a" }}>{category.name}</Typography>
-                        {category.description && (
-                          <Typography variant="caption" sx={{ color: "#64748b", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 320 }}>
-                            {category.description}
-                          </Typography>
-                        )}
+                      <Box sx={{ minWidth: 0, display: "flex", alignItems: "center", gap: 1, pl: isDependentTransfer ? 2.25 : 0 }}>
+                        <Box>
+                          <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a" }}>{category.name}</Typography>
+                          {isDependentTransfer && row.parentCategory && (
+                            <Typography variant="caption" sx={{ color: "#64748b", display: "block" }}>
+                              Linked to {row.parentCategory.name}
+                            </Typography>
+                          )}
+                          {category.description && !isDependentTransfer && (
+                            <Typography variant="caption" sx={{ color: "#64748b", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 320 }}>
+                              {category.description}
+                            </Typography>
+                          )}
+                        </Box>
                       </Box>
                     </TableCell>
                     <TableCell>
-                      <Chip label={style.label} size="small" sx={{ bgcolor: style.background, color: style.color, fontWeight: 700, fontSize: "0.75rem", height: 24 }} />
+                      <Chip
+                        label={isDependentTransfer ? "Dependent transfer" : style.label}
+                        size="small"
+                        sx={{ bgcolor: isDependentTransfer ? "#f8fafc" : style.background, color: isDependentTransfer ? "#64748b" : style.color, fontWeight: 700, fontSize: "0.75rem", height: 24 }}
+                      />
                     </TableCell>
                     <TableCell align="right">{renderAmountCell(category)}</TableCell>
                     <TableCell align="right">
-                      <IconButton aria-label={`Actions for ${category.name}`} size="small" onClick={(e) => handleOpenRowMenu(e, category.id)}>
-                        <MoreHorizRoundedIcon fontSize="small" sx={{ color: "#64748b" }} />
-                      </IconButton>
+                      {isDependentTransfer ? (
+                        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginRight: "5px", color: "text.disabled" }}>
+                          <LockRoundedIcon sx={{ fontSize: 14 }} />
+                        </Box>
+                      ) : (
+                        <IconButton aria-label={`Actions for ${category.name}`} size="small" onClick={(e) => handleOpenRowMenu(e, category.id)}>
+                          <MoreHorizRoundedIcon fontSize="small" sx={{ color: "#64748b" }} />
+                        </IconButton>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -456,24 +515,33 @@ export default function CategoriesPage() {
       />
 
       <Menu anchorEl={rowMenuAnchor} open={Boolean(rowMenuAnchor)} onClose={handleCloseRowMenu} slotProps={{ paper: { sx: { mt: 1, borderRadius: 2, minWidth: 160, border: "1px solid", borderColor: "divider" } } }}>
-        {rowMenuCategory && !rowMenuCategory.isArchived && (
-          <MenuItem onClick={() => { handleOpenEditForm(rowMenuCategory); handleCloseRowMenu(); }} sx={{ gap: 1.5, py: 1.25 }}>
-            <EditRoundedIcon sx={{ fontSize: 18, color: "#64748b" }} />
-            <Typography variant="body2" sx={{ fontWeight: 500 }}>Edit</Typography>
-          </MenuItem>
-        )}
-        {rowMenuCategory && !rowMenuCategory.isArchived ? (
-          <MenuItem onClick={() => { handleArchiveCategory(rowMenuCategory.id); handleCloseRowMenu(); }} sx={{ gap: 1.5, py: 1.25, color: "error.main" }}>
-            <ArchiveRoundedIcon sx={{ fontSize: 18 }} />
-            <Typography variant="body2" sx={{ fontWeight: 500 }}>Archive</Typography>
+        {rowMenuCategory && isDependentTransferCategory(rowMenuCategory) ? (
+          <MenuItem disabled sx={{ gap: 1.5, py: 1.25 }}>
+            <LockRoundedIcon sx={{ fontSize: 18, color: "#64748b" }} />
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>Managed by income category</Typography>
           </MenuItem>
         ) : (
-          rowMenuCategory && (
-            <MenuItem onClick={() => { handleRestoreCategory(rowMenuCategory); handleCloseRowMenu(); }} sx={{ gap: 1.5, py: 1.25, color: "success.main" }}>
-              <UnarchiveRoundedIcon sx={{ fontSize: 18 }} />
-              <Typography variant="body2" sx={{ fontWeight: 500 }}>Restore</Typography>
-            </MenuItem>
-          )
+          <>
+            {rowMenuCategory && !rowMenuCategory.isArchived && (
+              <MenuItem onClick={() => { handleOpenEditForm(rowMenuCategory); handleCloseRowMenu(); }} sx={{ gap: 1.5, py: 1.25 }}>
+                <EditRoundedIcon sx={{ fontSize: 18, color: "#64748b" }} />
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>Edit</Typography>
+              </MenuItem>
+            )}
+            {rowMenuCategory && !rowMenuCategory.isArchived ? (
+              <MenuItem onClick={() => { handleArchiveCategory(rowMenuCategory.id); handleCloseRowMenu(); }} sx={{ gap: 1.5, py: 1.25, color: "error.main" }}>
+                <ArchiveRoundedIcon sx={{ fontSize: 18 }} />
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>Archive</Typography>
+              </MenuItem>
+            ) : (
+              rowMenuCategory && (
+                <MenuItem onClick={() => { handleRestoreCategory(rowMenuCategory); handleCloseRowMenu(); }} sx={{ gap: 1.5, py: 1.25, color: "success.main" }}>
+                  <UnarchiveRoundedIcon sx={{ fontSize: 18 }} />
+                  <Typography variant="body2" sx={{ fontWeight: 500 }}>Restore</Typography>
+                </MenuItem>
+              )
+            )}
+          </>
         )}
       </Menu>
     </Stack>

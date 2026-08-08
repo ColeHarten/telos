@@ -120,6 +120,7 @@ export default function AddCategoryModal({
   const [payFrequency, setPayFrequency] = useState<PayFrequency>("biweekly");
   const [grossSalary, setGrossSalary] = useState("0");
   const [deductions, setDeductions] = useState<Deduction[]>([]);
+  const [deductionValueDrafts, setDeductionValueDrafts] = useState<Record<string, string>>({});
 
   const isEditing = editingCategory !== null;
   const activeAccounts = accounts.filter((a) => !a.isArchived);
@@ -184,6 +185,7 @@ export default function AddCategoryModal({
       setGrossSalary("0");
       setDeductions([]);
     }
+    setDeductionValueDrafts({});
     setDestinationError(null);
   }, [open, editingCategory]);
 
@@ -207,6 +209,38 @@ export default function AddCategoryModal({
 
   function removeDeductionRow(index: number) {
     setDeductions((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function handleDeductionValueChange(rowId: string, index: number, rawValue: string) {
+    setDeductionValueDrafts((prev) => ({ ...prev, [rowId]: rawValue }));
+
+    if (rawValue.trim() === "") return;
+
+    const parsed = Number(rawValue);
+    if (!Number.isNaN(parsed)) {
+      updateDeductionRow(index, { value: parsed });
+    }
+  }
+
+  function handleDeductionValueBlur(rowId: string, index: number) {
+    const draftValue = deductionValueDrafts[rowId];
+    if (draftValue === undefined) return;
+
+    const trimmed = draftValue.trim();
+    if (trimmed === "") {
+      updateDeductionRow(index, { value: 0 });
+    } else {
+      const parsed = Number(trimmed);
+      if (!Number.isNaN(parsed)) {
+        updateDeductionRow(index, { value: parsed });
+      }
+    }
+
+    setDeductionValueDrafts((prev) => {
+      const next = { ...prev };
+      delete next[rowId];
+      return next;
+    });
   }
 
   const groupedIndexed = useMemo(() => {
@@ -252,8 +286,9 @@ export default function AddCategoryModal({
             size="small"
             type="number"
             variant="standard"
-            value={row.value}
-            onChange={(e) => updateDeductionRow(row.index, { value: Number(e.target.value) || 0 })}
+            value={deductionValueDrafts[row.id] ?? String(row.value)}
+            onChange={(e) => handleDeductionValueChange(row.id, row.index, e.target.value)}
+            onBlur={() => handleDeductionValueBlur(row.id, row.index)}
             slotProps={{
               input: {
                 disableUnderline: true,
