@@ -7,6 +7,7 @@ import {
   mapPlaidAccountType,
   getNormalBalanceFromPlaid,
 } from "@/lib/services/plaidService";
+import { encryptSecret } from "@/lib/services/encryption";
 import { adminDb } from "@/lib/firebaseAdmin";
 import { syncPlaidItem } from "@/lib/services/syncService";
 
@@ -20,6 +21,9 @@ export async function POST(req: Request) {
     const accessToken = exchange.access_token;
     const plaidItemId = exchange.item_id;
 
+    // fetchAccounts/getInstitutionForItem/syncPlaidItem below all use the
+    // plaintext accessToken directly (in-memory only, never logged) — only
+    // the Firestore write is encrypted.
     const accounts = await fetchAccounts(accessToken);
 
     const itemRef = adminDb
@@ -31,9 +35,8 @@ export async function POST(req: Request) {
     // store info about the institution with the item
     const institution = await getInstitutionForItem(accessToken);
 
-    // SECURITY NOTE: encrypt these using a key derived from the user's id and a master key stored in the server environment
     await itemRef.set({
-      accessToken,
+      accessToken: encryptSecret(accessToken),
       itemId: plaidItemId,
       cursor: "",
       createdAt: Date.now(),
@@ -67,7 +70,8 @@ export async function POST(req: Request) {
 
     await accountBatch.commit();
 
-    // initial sync
+    // initial sync — re-reads the item doc written above and decrypts its
+    // accessToken internally (see syncService.ts)
     await syncPlaidItem(user.uid, plaidItemId);
 
     return NextResponse.json({ success: true });

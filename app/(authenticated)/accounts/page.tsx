@@ -2,6 +2,7 @@
 
 import useAccounts from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import type { Account, AccountType, NormalBalance } from "@/lib/types/types";
 import { formatCurrency } from "@/lib/utils";
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
@@ -14,6 +15,7 @@ import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
 import PieChartRoundedIcon from "@mui/icons-material/PieChartRounded";
+import SyncProblemRoundedIcon from "@mui/icons-material/SyncProblemRounded";
 import SyncRoundedIcon from "@mui/icons-material/SyncRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
@@ -38,6 +40,7 @@ import {
   TableHead,
   TableRow,
   Tabs,
+  Tooltip,
   Typography
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
@@ -49,7 +52,7 @@ type ViewFilter = "active" | "archived";
 
 export default function AccountsPage() {
   const { user, authLoading } = useAuth();
-  const { accounts, accountsLoading, addManualAccount, updateAccount, archiveAccount } = useAccounts(user, authLoading);
+  const { accounts, accountsLoading, itemsNeedingReauth, addManualAccount, updateAccount, archiveAccount } = useAccounts(user, authLoading);
   
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -218,6 +221,19 @@ export default function AccountsPage() {
   function handleCloseRowMenu() {
     setRowMenuAnchor(null);
     setRowMenuAccountId(null);
+  }
+
+  // Fires after a per-row reconnect succeeds. Doesn't need to touch local
+  // state — syncPlaidItem clears needsReauth on the plaidItems doc once the
+  // sync completes, and useAccounts' live listener on that collection picks
+  // it up automatically, so the row's warning icon just disappears on its
+  // own once the item is actually healthy again.
+  async function triggerResyncAfterReconnect() {
+    try {
+      await authenticatedFetch("/api/plaid/sync", { method: "POST" });
+    } catch (syncError) {
+      console.error("[AccountsPage] Resync after reconnect failed:", syncError);
+    }
   }
 
   const rowMenuAccount = accounts.find((a) => a.id === rowMenuAccountId) ?? null;
@@ -546,13 +562,32 @@ export default function AccountsPage() {
                 {baseFilteredAccounts.map((account) => {
                   const styleConfig = accountTypeStyles[account.accountType] || { label: account.accountType, color: "#64748b" };
                   const balance = account.currentBalance ?? account.startingBalance ?? 0;
+                  const needsReauth = Boolean(account.plaidItemId && itemsNeedingReauth.has(account.plaidItemId));
 
                   return (
                     <TableRow key={account.id} sx={{ "&:hover": { backgroundColor: "#f8fafc" }, "& td": { py: 1.75, borderBottom: "1px solid #f1f5f9" } }}>
                       <TableCell sx={{ fontWeight: 600, color: "#0f172a", fontSize: "0.875rem" }}>
                         <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
                           <Box component="span">{account.name}</Box>
-                          {account.plaidItemId && account.isArchived ? <ArchiveRoundedIcon sx={{ fontSize: 14, color: "#94a3b8" }} /> : <SyncRoundedIcon sx={{ fontSize: 14, color: "#94a3b8" }} />}
+                          {needsReauth ? (
+                            <PlaidLinkButton
+                              updateModeItemId={account.plaidItemId!}
+                              onSyncSuccess={triggerResyncAfterReconnect}
+                              render={({ onClick, disabled, label }) => (
+                                <Tooltip title={label}>
+                                  <span>
+                                    <IconButton size="small" onClick={onClick} disabled={disabled} sx={{ p: 0.25, color: "#dc2626" }}>
+                                      <SyncProblemRoundedIcon sx={{ fontSize: 15 }} />
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
+                              )}
+                            />
+                          ) : account.plaidItemId && account.isArchived ? (
+                            <ArchiveRoundedIcon sx={{ fontSize: 14, color: "#94a3b8" }} />
+                          ) : (
+                            <SyncRoundedIcon sx={{ fontSize: 14, color: "#94a3b8" }} />
+                          )}
                         </Stack>
                       </TableCell>
                       <TableCell>

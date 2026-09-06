@@ -1,32 +1,249 @@
-import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/services/auth";
-import { syncAllPlaidItems } from "@/lib/services/syncService";
+import { adminDb } from "@/lib/firebaseAdmin";
+import type { CategoryKind } from "@/lib/types/types";
+import type { DocumentReference, WriteBatch } from "firebase-admin/firestore";
+import type {
+  RemovedTransaction as PlaidRemovedTransaction,
+  Transaction as PlaidTransaction,
+} from "plaid";
+import { syncTransactions, getPlaidErrorCode } from "./plaidService";
+import { decryptSecret } from "./encryption";
+import { applyRules, buildRulesContext } from "./ruleEngine";
 
-export async function POST(req: Request) {
-  try {
-    console.log("[sync] starting");
+const MAX_BATCH_SIZE = 500;
 
-    const user = await requireUser(req);
-    console.log("[sync] user:", user?.uid);
+/**
+ * Shape of a Plaid Item document as stored in Firestore.
+ */
+interface PlaidItemDoc {
+  accessToken: string; // encrypted at rest — see lib/services/encryption.ts. Decrypt before use.
+  itemId: string;
+  cursor: string;
+  createdAt: number;
+  institutionId: string | null;
+  institutionName: string | null;
+  // Set when a sync call fails with ITEM_LOGIN_REQUIRED — cleared
+  // automatically the next time this item syncs successfully.
+  needsReauth?: boolean;
+  lastSyncError?: string;
+  lastSyncErrorAt?: number;
+}
 
-    const result = await syncAllPlaidItems(user.uid);
+/**
+ * Shape of a transaction document as stored in Firestore.
+ *
+ * categoryKind/categoryId replace the old cashflowId field. The read side
+ * (useTransactions.ts) reads these two field names directly — every doc
+ * written from here on out uses this shape.
+ *
+ * (These were previously named assignmentType/assignmentId here and in
+ * ruleEngine.ts, which meant synced transactions were writing to fields
+ * useTransactions.ts never read. Renamed to match the read side.)
+ *
+ * categoryKind/categoryId are `null` (not a sentinel string like the old
+ * "unassigned") when a transaction hasn't been categorized. Firestore can't
+ * store `undefined`, so `null` is the on-disk representation of
+ * "unassigned" — the client layer (useTransactions.ts) converts this to
+ * `undefined` when building its in-memory Transaction objects.
+ */
+interface TransactionDoc {
+  accountId: string;
+  amount: number;
+  date: string;
+  merchantName: string | null;
+  rawName: string; // Plaid's legacy `name` field, kept for reference/debugging
+  pending: boolean;
+  category: PlaidTransaction["personal_finance_category"] | null;
+  categoryKind: CategoryKind | null;
+  categoryId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
 
-    console.log("[sync] success");
+/**
+ * Partial update applied to an existing transaction document.
+ *
+ * Deliberately does NOT include categoryKind/categoryId — a Plaid
+ * "modified" event should never clobber a user's (or a prior rule's)
+ * assignment on an existing transaction.
+ */
+type TransactionUpdate = Pick<TransactionDoc, "amount" | "rawName" | "pending" | "updatedAt">;
 
-    return NextResponse.json({
-      success: true,
-      ...result,
-    });
-  } catch (err: any) {
-    console.error("[sync] FAILED:", err);
+type BatchOp =
+  | { type: "set"; ref: DocumentReference; data: TransactionDoc }
+  | { type: "merge"; ref: DocumentReference; data: TransactionUpdate }
+  | { type: "delete"; ref: DocumentReference };
 
-    return NextResponse.json(
-      {
-        error: "Sync failed",
-        message: err?.message,
-        stack: err?.stack,
-      },
-      { status: 500 }
-    );
+interface SyncPlaidItemResult {
+  addedCount: number;
+  modifiedCount: number;
+  removedCount: number;
+}
+
+interface SyncAllPlaidItemsResult {
+  added: number;
+  modified: number;
+  removed: number;
+  // Item IDs skipped because their login needs to be refreshed via Plaid
+  // Link's update mode — see createUpdateModeLinkToken in plaidService.ts.
+  itemsNeedingReauth: string[];
+}
+
+/**
+ * Commits an arbitrary list of write operations in chunks of at most
+ * MAX_BATCH_SIZE, since a single Firestore batch cannot exceed 500 writes.
+ */
+async function commitInChunks(ops: BatchOp[]): Promise<void> {
+  for (let i = 0; i < ops.length; i += MAX_BATCH_SIZE) {
+    const chunk = ops.slice(i, i + MAX_BATCH_SIZE);
+    const batch: WriteBatch = adminDb.batch();
+
+    for (const op of chunk) {
+      if (op.type === "set") {
+        batch.set(op.ref, op.data);
+      } else if (op.type === "merge") {
+        batch.set(op.ref, op.data, { merge: true });
+      } else {
+        batch.delete(op.ref);
+      }
+    }
+
+    await batch.commit();
   }
+}
+
+export async function syncPlaidItem(
+  uid: string,
+  itemId: string
+): Promise<SyncPlaidItemResult> {
+  const itemRef = adminDb
+    .collection("users")
+    .doc(uid)
+    .collection("plaidItems")
+    .doc(itemId);
+
+  const itemSnap = await itemRef.get();
+
+  if (!itemSnap.exists) throw new Error("Plaid item not found");
+
+  const item = itemSnap.data() as PlaidItemDoc;
+  const accessToken = decryptSecret(item.accessToken);
+
+  let cursor = item.cursor || "";
+  let hasMore = true;
+
+  const added: PlaidTransaction[] = [];
+  const modified: PlaidTransaction[] = [];
+  const removed: PlaidRemovedTransaction[] = [];
+
+  while (hasMore) {
+    const data = await syncTransactions(accessToken, cursor);
+    added.push(...data.added);
+    modified.push(...data.modified);
+    removed.push(...data.removed);
+    cursor = data.next_cursor;
+    hasMore = data.has_more;
+  }
+
+  const txRef = adminDb.collection("users").doc(uid).collection("transactions");
+  const ops: BatchOp[] = [];
+
+  // Fetch categories + automations once for this sync run, not once per transaction.
+  const rulesContext = await buildRulesContext(uid);
+
+  // INSERT
+  for (const tx of added) {
+    const data: TransactionDoc = await applyRules(
+      {
+        accountId: tx.account_id,
+        amount: tx.amount,
+        date: tx.date,
+        merchantName: tx.merchant_name ?? null,
+        rawName: tx.name,
+        pending: tx.pending,
+        category: tx.personal_finance_category ?? null,
+        categoryKind: null,
+        categoryId: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+      rulesContext
+    );
+
+    ops.push({ type: "set", ref: txRef.doc(tx.transaction_id), data });
+  }
+
+  // UPDATE
+  for (const tx of modified) {
+    const data: TransactionUpdate = {
+      amount: tx.amount,
+      rawName: tx.name,
+      pending: tx.pending,
+      updatedAt: Date.now(),
+    };
+
+    ops.push({ type: "merge", ref: txRef.doc(tx.transaction_id), data });
+  }
+
+  // DELETE
+  for (const tx of removed) {
+    ops.push({ type: "delete", ref: txRef.doc(tx.transaction_id) });
+  }
+
+  await commitInChunks(ops);
+
+  // Only advance the cursor after all pages have been fetched and
+  // all writes for this sync have committed. Also clears any prior
+  // needsReauth flag — a successful sync means the item's login is fine.
+  await itemRef.update({ cursor, needsReauth: false });
+
+  return {
+    addedCount: added.length,
+    modifiedCount: modified.length,
+    removedCount: removed.length,
+  };
+}
+
+export async function syncAllPlaidItems(
+  uid: string
+): Promise<SyncAllPlaidItemsResult> {
+  const itemsSnap = await adminDb
+    .collection("users")
+    .doc(uid)
+    .collection("plaidItems")
+    .get();
+
+  const total: SyncAllPlaidItemsResult = {
+    added: 0,
+    modified: 0,
+    removed: 0,
+    itemsNeedingReauth: [],
+  };
+
+  for (const itemDoc of itemsSnap.docs) {
+    try {
+      const result = await syncPlaidItem(uid, itemDoc.id);
+
+      total.added += result.addedCount;
+      total.modified += result.modifiedCount;
+      total.removed += result.removedCount;
+    } catch (err) {
+      if (getPlaidErrorCode(err) === "ITEM_LOGIN_REQUIRED") {
+        // Expected, recoverable state — the item's credentials need
+        // refreshing via update-mode Link, not a code fix. Don't let one
+        // stale connection block syncing every other linked account.
+        console.warn(`[syncService] Item ${itemDoc.id} needs reauth (ITEM_LOGIN_REQUIRED) — skipping.`);
+        total.itemsNeedingReauth.push(itemDoc.id);
+        await itemDoc.ref
+          .update({ needsReauth: true, lastSyncError: "ITEM_LOGIN_REQUIRED", lastSyncErrorAt: Date.now() })
+          .catch((updateErr) => {
+            console.error(`[syncService] Failed to flag item ${itemDoc.id} as needing reauth:`, updateErr);
+          });
+        continue;
+      }
+      // Any other error is unexpected — surface it, same as before.
+      throw err;
+    }
+  }
+
+  return total;
 }

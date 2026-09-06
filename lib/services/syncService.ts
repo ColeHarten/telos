@@ -6,6 +6,7 @@ import type {
   Transaction as PlaidTransaction,
 } from "plaid";
 import { syncTransactions, getPlaidErrorCode } from "./plaidService";
+import { decryptSecret } from "./encryption";
 import { applyRules, buildRulesContext } from "./ruleEngine";
 
 const MAX_BATCH_SIZE = 500;
@@ -14,7 +15,7 @@ const MAX_BATCH_SIZE = 500;
  * Shape of a Plaid Item document as stored in Firestore.
  */
 interface PlaidItemDoc {
-  accessToken: string;
+  accessToken: string; // encrypted at rest — see lib/services/encryption.ts. Decrypt before use.
   itemId: string;
   cursor: string;
   createdAt: number;
@@ -125,6 +126,7 @@ export async function syncPlaidItem(
   if (!itemSnap.exists) throw new Error("Plaid item not found");
 
   const item = itemSnap.data() as PlaidItemDoc;
+  const accessToken = decryptSecret(item.accessToken);
 
   let cursor = item.cursor || "";
   let hasMore = true;
@@ -134,7 +136,7 @@ export async function syncPlaidItem(
   const removed: PlaidRemovedTransaction[] = [];
 
   while (hasMore) {
-    const data = await syncTransactions(item.accessToken, cursor);
+    const data = await syncTransactions(accessToken, cursor);
     added.push(...data.added);
     modified.push(...data.modified);
     removed.push(...data.removed);

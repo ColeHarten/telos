@@ -1,5 +1,6 @@
 "use client";
 
+import TelosLogo from "@/components/telos-logo";
 import { auth } from "@/lib/firebaseClient";
 import GoogleIcon from "@mui/icons-material/Google";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
@@ -16,52 +17,6 @@ import {
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-
-function PiggyBankIcon({
-  size = 40,
-  color = "currentColor",
-}: {
-  size?: number;
-  color?: string;
-}) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 64 64"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <path
-        d="M18.5 25.5C21.8 20.7 27.5 18 34.5 18H40.5C50.2 18 57 24.1 57 32.8C57 38.7 53.7 43.8 48.5 46.3V54H39.5V49.2C38.2 49.4 36.8 49.5 35.3 49.5H30.8C29.3 49.5 27.9 49.4 26.5 49.1V54H17.5V45.9C13.7 43.8 11 40.5 10 36.5H5V27.5H10.2C11.1 24.7 12.8 22.2 15.1 20.2C14.5 17.9 14.8 15.5 16.1 13.5C16.5 12.9 17.3 12.8 17.9 13.2L24.5 17.3"
-        stroke={color}
-        strokeWidth="4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M29 14H41"
-        stroke={color}
-        strokeWidth="4"
-        strokeLinecap="round"
-      />
-      <path
-        d="M45.5 29.5H45.55"
-        stroke={color}
-        strokeWidth="5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M27 23.5C29.2 22.5 31.7 22 34.5 22"
-        stroke={color}
-        strokeWidth="3"
-        strokeLinecap="round"
-        opacity="0.55"
-      />
-    </svg>
-  );
-}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -172,8 +127,7 @@ export default function LoginPage() {
                   boxShadow: "0 16px 36px rgba(37, 99, 235, 0.30)",
                 }}
               >
-                {/* <AccountBalanceWalletRoundedIcon sx={{ fontSize: 38 }} /> */}
-                <PiggyBankIcon size={38} color="white" />
+                <TelosLogo size={38} color="white" />
               </Box>
 
               <Box sx={{
@@ -191,7 +145,7 @@ export default function LoginPage() {
                     color: "grey.900",
                   }}
                 >
-                  Budgeting
+                  Telos
                 </Typography>
 
                 <Typography
@@ -201,8 +155,7 @@ export default function LoginPage() {
                     lineHeight: 1.6,
                   }}
                 >
-                  Plan your income, expenses, savings, and debt payments each
-                  month.
+                  Money with purpose.
                 </Typography>
               </Box>
 

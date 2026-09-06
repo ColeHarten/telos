@@ -14,6 +14,17 @@ export type PlaidLinkRenderProps = {
 type PlaidLinkButtonProps = {
   onSyncSuccess: () => void;
   /**
+   * When set, this button re-opens Plaid Link in UPDATE mode for the given
+   * existing item (e.g. one flagged needsReauth after an ITEM_LOGIN_REQUIRED
+   * sync failure) instead of linking a brand-new account. Fetches its token
+   * from create-update-link-token instead of create-link-token, and on
+   * success skips exchange-token entirely — the item's access_token is
+   * unchanged in update mode, only its credentials were refreshed, so
+   * re-exchanging would be wrong. onSyncSuccess is still called, so the
+   * caller can trigger a resync to clear needsReauth.
+   */
+  updateModeItemId?: string;
+  /**
    * Optional custom renderer. Receives the real onClick/disabled/label state
    * so callers can present the trigger however they like (e.g. as a MenuItem
    * matching another option in the same menu) without duplicating any of the
@@ -33,11 +44,13 @@ type PlaidLinkButtonProps = {
 
 function PlaidLinkContent({
   token,
+  isUpdateMode,
   onSyncSuccess,
   render,
   onStateChange,
 }: {
   token: string;
+  isUpdateMode: boolean;
   onSyncSuccess: () => void;
   render?: (props: PlaidLinkRenderProps) => React.ReactNode;
   onStateChange?: (props: PlaidLinkRenderProps) => void;
@@ -46,20 +59,26 @@ function PlaidLinkContent({
   const config = useMemo(() => ({
     token,
     onSuccess: async (public_token: string) => {
-      await authenticatedFetch("/api/plaid/exchange-token", {
-        method: "POST",
-        body: JSON.stringify({ public_token }),
-      });
+      if (!isUpdateMode) {
+        await authenticatedFetch("/api/plaid/exchange-token", {
+          method: "POST",
+          body: JSON.stringify({ public_token }),
+        });
+      }
+      // Update mode: the item's access_token is unchanged, only its
+      // credentials were refreshed — nothing to exchange. onSyncSuccess is
+      // the caller's cue to trigger a resync, which clears needsReauth.
       onSyncSuccess();
     },
-  }), [token, onSyncSuccess]);
+  }), [token, isUpdateMode, onSyncSuccess]);
 
   const { open, ready } = usePlaidLink(config);
 
+  const readyLabel = isUpdateMode ? "Reconnect account" : "Connect Bank Account";
   const triggerProps: PlaidLinkRenderProps = {
     onClick: () => open(),
     disabled: !ready,
-    label: ready ? "Connect Bank Account" : "Loading...",
+    label: ready ? readyLabel : "Loading...",
   };
 
   useEffect(() => {
@@ -93,26 +112,34 @@ function PlaidLinkContent({
         },
     }}
     >
-    {ready ? "Connect Bank Account" : "Loading..."}
+    {ready ? readyLabel : "Loading..."}
     </Button>
   );
 }
 
-export function PlaidLinkButton({ onSyncSuccess, render, onStateChange }: PlaidLinkButtonProps) {
+export function PlaidLinkButton({ onSyncSuccess, updateModeItemId, render, onStateChange }: PlaidLinkButtonProps) {
   const [token, setToken] = useState<string | null>(null);
   const isFetching = useRef(false);
+  const isUpdateMode = Boolean(updateModeItemId);
 
   useEffect(() => {
     if (isFetching.current || token) return;
     isFetching.current = true;
 
-    authenticatedFetch("/api/plaid/create-link-token", { method: "POST" })
+    const fetchPromise = isUpdateMode
+      ? authenticatedFetch("/api/plaid/create-update-link-token", {
+          method: "POST",
+          body: JSON.stringify({ itemId: updateModeItemId }),
+        })
+      : authenticatedFetch("/api/plaid/create-link-token", { method: "POST" });
+
+    fetchPromise
       .then((res) => res.json())
       .then((data) => {
         if (data.linkToken) setToken(data.linkToken);
       })
       .catch(console.error);
-  }, [token]);
+  }, [token, isUpdateMode, updateModeItemId]);
 
   const loadingProps: PlaidLinkRenderProps = { onClick: () => {}, disabled: true, label: "Loading..." };
 
@@ -135,5 +162,13 @@ export function PlaidLinkButton({ onSyncSuccess, render, onStateChange }: PlaidL
     return <Button disabled>Loading...</Button>;
   }
 
-  return <PlaidLinkContent token={token} onSyncSuccess={onSyncSuccess} render={render} onStateChange={onStateChange} />;
+  return (
+    <PlaidLinkContent
+      token={token}
+      isUpdateMode={isUpdateMode}
+      onSyncSuccess={onSyncSuccess}
+      render={render}
+      onStateChange={onStateChange}
+    />
+  );
 }

@@ -10,6 +10,7 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [itemsNeedingReauth, setItemsNeedingReauth] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (authLoading) return;
@@ -73,6 +74,43 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
     };
   }, [authLoading, user]);
 
+  // Separate, small live listener on plaidItems — needsReauth is set there
+  // (by syncService.ts, when a sync hits ITEM_LOGIN_REQUIRED) and cleared
+  // there automatically on the next successful sync of that item.
+  // Kept on plaidItems rather than duplicated onto every Account doc under
+  // that item, so there's exactly one place this flag can drift from —
+  // account rows just look it up by plaidItemId.
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!user) {
+      setItemsNeedingReauth(new Set());
+      return;
+    }
+
+    const itemsQuery = collection(db, "users", user.uid, "plaidItems");
+
+    const unsubscribeItems = onSnapshot(
+      itemsQuery,
+      (snapshot) => {
+        const next = new Set<string>();
+        snapshot.docs.forEach((d) => {
+          if (d.data().needsReauth === true) next.add(d.id);
+        });
+        setItemsNeedingReauth(next);
+      },
+      (err) => {
+        // Non-fatal — reauth indicators are supplementary; don't block
+        // account loading if this listener fails.
+        console.error("[useAccounts] Could not load plaid item reauth status:", err);
+      }
+    );
+
+    return () => {
+      unsubscribeItems();
+    };
+  }, [authLoading, user]);
+
   const addManualAccount = useCallback(
     async (payload: {
       name: string;
@@ -128,7 +166,7 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
     [user]
   );
 
-  return { accounts, accountsLoading, error, addManualAccount, updateAccount, archiveAccount };
+  return { accounts, accountsLoading, error, itemsNeedingReauth, addManualAccount, updateAccount, archiveAccount };
 }
 
 export default useAccounts;

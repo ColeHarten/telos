@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/services/auth";
 import { createUpdateModeLinkToken } from "@/lib/services/plaidService";
+import { decryptSecret } from "@/lib/services/encryption";
 import { adminDb } from "@/lib/firebaseAdmin";
 
 export async function POST(req: Request) {
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
     }
 
     const { accessToken } = itemSnap.data() as { accessToken: string };
-    const linkToken = await createUpdateModeLinkToken(user.uid, accessToken);
+    const linkToken = await createUpdateModeLinkToken(user.uid, decryptSecret(accessToken));
 
     return NextResponse.json({ linkToken });
   } catch (err) {
