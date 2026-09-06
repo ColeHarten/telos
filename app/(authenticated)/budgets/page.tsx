@@ -146,7 +146,7 @@ export default function BudgetsPage() {
       const category = categoriesById.get(tx.categoryId);
       if (!category) continue;
       const contribution = tx.categoryKind === "income" ? Math.max(0, -tx.amount) : Math.max(0, tx.amount);
-      map.set(tx.categoryId, (map.get(tx.categoryId) ?? 0));
+      map.set(tx.categoryId, (map.get(tx.categoryId) ?? 0) + contribution);
     }
     return map;
   }, [monthTransactions, categoriesById]);

@@ -5,7 +5,7 @@ import type {
   RemovedTransaction as PlaidRemovedTransaction,
   Transaction as PlaidTransaction,
 } from "plaid";
-import { syncTransactions } from "./plaidService";
+import { syncTransactions, getPlaidErrorCode } from "./plaidService";
 import { applyRules, buildRulesContext } from "./ruleEngine";
 
 const MAX_BATCH_SIZE = 500;
@@ -20,6 +20,11 @@ interface PlaidItemDoc {
   createdAt: number;
   institutionId: string | null;
   institutionName: string | null;
+  // Set when a sync call fails with ITEM_LOGIN_REQUIRED — cleared
+  // automatically the next time this item syncs successfully.
+  needsReauth?: boolean;
+  lastSyncError?: string;
+  lastSyncErrorAt?: number;
 }
 
 /**
@@ -77,6 +82,9 @@ interface SyncAllPlaidItemsResult {
   added: number;
   modified: number;
   removed: number;
+  // Item IDs skipped because their login needs to be refreshed via Plaid
+  // Link's update mode — see createUpdateModeLinkToken in plaidService.ts.
+  itemsNeedingReauth: string[];
 }
 
 /**
@@ -182,8 +190,9 @@ export async function syncPlaidItem(
   await commitInChunks(ops);
 
   // Only advance the cursor after all pages have been fetched and
-  // all writes for this sync have committed.
-  await itemRef.update({ cursor });
+  // all writes for this sync have committed. Also clears any prior
+  // needsReauth flag — a successful sync means the item's login is fine.
+  await itemRef.update({ cursor, needsReauth: false });
 
   return {
     addedCount: added.length,
@@ -205,14 +214,33 @@ export async function syncAllPlaidItems(
     added: 0,
     modified: 0,
     removed: 0,
+    itemsNeedingReauth: [],
   };
 
-  for (const doc of itemsSnap.docs) {
-    const result = await syncPlaidItem(uid, doc.id);
+  for (const itemDoc of itemsSnap.docs) {
+    try {
+      const result = await syncPlaidItem(uid, itemDoc.id);
 
-    total.added += result.addedCount;
-    total.modified += result.modifiedCount;
-    total.removed += result.removedCount;
+      total.added += result.addedCount;
+      total.modified += result.modifiedCount;
+      total.removed += result.removedCount;
+    } catch (err) {
+      if (getPlaidErrorCode(err) === "ITEM_LOGIN_REQUIRED") {
+        // Expected, recoverable state — the item's credentials need
+        // refreshing via update-mode Link, not a code fix. Don't let one
+        // stale connection block syncing every other linked account.
+        console.warn(`[syncService] Item ${itemDoc.id} needs reauth (ITEM_LOGIN_REQUIRED) — skipping.`);
+        total.itemsNeedingReauth.push(itemDoc.id);
+        await itemDoc.ref
+          .update({ needsReauth: true, lastSyncError: "ITEM_LOGIN_REQUIRED", lastSyncErrorAt: Date.now() })
+          .catch((updateErr) => {
+            console.error(`[syncService] Failed to flag item ${itemDoc.id} as needing reauth:`, updateErr);
+          });
+        continue;
+      }
+      // Any other error is unexpected — surface it, same as before.
+      throw err;
+    }
   }
 
   return total;
