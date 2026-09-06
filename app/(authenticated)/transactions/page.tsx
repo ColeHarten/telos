@@ -483,25 +483,6 @@ export default function TransactionsPage() {
           >
             {syncing ? "Syncing..." : "Sync Transactions"}
           </Button>
-
-          <Button
-            variant="contained"
-            disableElevation
-            endIcon={<KeyboardArrowDownIcon sx={{ fontSize: 18 }} />}
-            startIcon={<FileUploadOutlinedIcon sx={{ fontSize: 18 }} />}
-            sx={{
-              bgcolor: "#2563eb",
-              textTransform: "none",
-              fontWeight: 600,
-              fontSize: "0.85rem",
-              borderRadius: 2,
-              px: 1.75,
-              py: 0.85,
-              "&:hover": { bgcolor: "#1d4ed8" },
-            }}
-          >
-            Export
-          </Button>
         </Stack>
       </Stack>
 

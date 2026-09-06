@@ -257,11 +257,11 @@ export default function AuthenticatedLayout({
               }}
             >
               <Typography variant="body2" color="text.secondary">
-                © 2026 Budgeting
+                © 2026 Telos
               </Typography>
 
               <Typography variant="body2" color="text.secondary">
-                Phase 2: Plaid Integration (Cashflow Matching) is in progress. Some features may not work as expected.
+                Phase 3: Automations and clean up
               </Typography>
             </Box>
           </Container>
