@@ -19,6 +19,7 @@ import SyncRoundedIcon from "@mui/icons-material/SyncRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import UnarchiveRoundedIcon from "@mui/icons-material/UnarchiveRounded";
+import DeleteForeverRoundedIcon from "@mui/icons-material/DeleteForeverRounded";
 import {
   Alert,
   Avatar,
@@ -44,17 +45,21 @@ import {
 import ContributionEligibilityPromptDialog from "./ContributionEligibilityPromptDialog";
 import { useEffect, useMemo, useState } from "react";
 import AccountFormDialog from "./AccountFormDialog";
+import DeleteAccountDialog from "./DeleteAccountDialog";
 import { accountTypeStyles } from "./accountTypes";
 import { PlaidConnectButton, PlaidReconnectButton } from "./plaidLinkButton";
 
 type ViewFilter = "active" | "archived";
 
 export default function AccountsPage() {
-  const { user, authLoading } = useAuth();
-  const { accounts, accountsLoading, itemsNeedingReauth, addManualAccount, updateAccount, archiveAccount } = useAccounts(user, authLoading);
-  
+  const { user, authLoading } = useAuth();  
+  const { accounts, accountsLoading, itemsNeedingReauth, addManualAccount, updateAccount, archiveAccount, checkAccountIsolation, deleteAccount } = useAccounts(user, authLoading);
+
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [deleteDialogAccount, setDeleteDialogAccount] = useState<Account | null>(null);
+  const [deleteSuccessNotice, setDeleteSuccessNotice] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedEditingAccount, setSelectedEditingAccount] = useState<Account | null>(null);
@@ -638,6 +643,29 @@ export default function AccountsPage() {
         )}
       </Paper>
 
+      <DeleteAccountDialog
+        open={deleteDialogAccount !== null}
+        accountId={deleteDialogAccount?.id ?? null}
+        accountName={deleteDialogAccount?.name ?? ""}
+        onClose={() => setDeleteDialogAccount(null)}
+        onCheckIsolation={checkAccountIsolation}
+        onConfirmDelete={async (id) => {
+          await deleteAccount(id);
+          setDeleteSuccessNotice(true);
+        }}
+      />
+
+      <Snackbar
+        open={deleteSuccessNotice}
+        autoHideDuration={4000}
+        onClose={() => setDeleteSuccessNotice(false)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+      >
+        <Alert severity="success" variant="filled" onClose={() => setDeleteSuccessNotice(false)} sx={{ borderRadius: 2.5 }}>
+          Account deleted permanently.
+        </Alert>
+      </Snackbar>
+
       {/* Account Forms Dialog Popup Wrapper */}
       <AccountFormDialog
         open={dialogOpen}
@@ -683,6 +711,17 @@ export default function AccountsPage() {
               <UnarchiveRoundedIcon sx={{ fontSize: 16 }} /> Restore
             </MenuItem>
           )
+        )}
+        {rowMenuAccount && rowMenuAccount.isArchived && (
+          <MenuItem
+            onClick={() => {
+              setDeleteDialogAccount(rowMenuAccount);
+              handleCloseRowMenu();
+            }}
+            sx={{ gap: 1, color: "error.main" }}
+          >
+            <DeleteForeverRoundedIcon sx={{ fontSize: 16 }} /> Delete Permanently
+          </MenuItem>
         )}
       </Menu>
     </Stack>

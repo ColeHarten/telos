@@ -172,3 +172,14 @@ export function getNormalBalanceFromPlaid(
       return "asset";
   }
 }
+
+// Revokes Plaid's access to this item entirely (used when deleting the last
+// account tied to a given Plaid connection). Irreversible on Plaid's side —
+// the user would need to re-link via Plaid Link to reconnect this bank.
+export async function removeItem(accessToken: string) {
+  const res = await plaidClient.itemRemove({
+    access_token: accessToken,
+  });
+
+  return res.data;
+}
