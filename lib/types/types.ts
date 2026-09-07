@@ -20,29 +20,21 @@ export type AuthUser = {
 
 export type Account = {
   id: string;
-
-  // Common
   name: string;
   accountType: AccountType;
   normalBalance: NormalBalance;
-
   startingBalance?: number;
   currentBalance?: number;
-
   isManual: boolean;
   isArchived: boolean;
-
-  // Eligible as a destination for a paycheck deduction's linked transfer.
-  // Explicit flag rather than inferring from accountType — accountType has
-  // no HSA option, and inference would silently misclassify accounts.
   isContributionEligible: boolean;
-
-  // Plaid fields (null for manual accounts)
   plaidAccountId?: string | null;
   plaidItemId?: string | null;
   plaidMask?: string | null;
-
-  // Metadata
+  // Denormalized from the plaidItem so exchange-token can dedupe new links
+  // against existing accounts without an extra join. Manual accounts write
+  // this as null (see useAccounts.addManualAccount).
+  plaidInstitutionId?: string | null;
   createdAt?: unknown;
   updatedAt?: unknown;
 };

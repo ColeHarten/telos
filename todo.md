@@ -1,7 +1,7 @@
 # TODO
 1. When adding an account, build the "eligible for paycheck transfer" into it
 2. Don't allow used to add same acc twice
-3. Setting page (just simplify for now)
+3. ~~Setting page (just simplify for now)~~
 4. Check (and maybe improve) the automations
 
 

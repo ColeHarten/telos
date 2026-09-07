@@ -168,26 +168,28 @@ export default function AccountFormDialog({
             />
           )}
 
-          <FormControlLabel
-            control={
-              <Switch
-                checked={isContributionEligible}
-                onChange={(e) => setIsContributionEligible(e.target.checked)}
-                disabled={isSaving}
-              />
-            }
-            label={
-              <Box>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  Eligible for paycheck contributions
-                </Typography>
-                <Typography variant="caption" sx={{ color: "text.secondary", display: "block" }}>
-                  Lets this account be selected as a destination for a deduction in a Paycheck Profile.
-                </Typography>
-              </Box>
-            }
-            sx={{ ml: 0, alignItems: "flex-start" }}
-          />
+          {isEditing && (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={isContributionEligible}
+                  onChange={(e) => setIsContributionEligible(e.target.checked)}
+                  disabled={isSaving}
+                />
+              }
+              label={
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    Eligible for paycheck contributions
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: "text.secondary", display: "block" }}>
+                    Lets this account be selected as a destination for a deduction in a Paycheck Profile.
+                  </Typography>
+                </Box>
+              }
+              sx={{ ml: 0, alignItems: "flex-start" }}
+            />
+          )}
         </Stack>
       </DialogContent>
 

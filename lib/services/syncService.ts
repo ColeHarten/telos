@@ -15,17 +15,20 @@ const MAX_BATCH_SIZE = 500;
  * Shape of a Plaid Item document as stored in Firestore.
  */
 interface PlaidItemDoc {
-  accessToken: string; // encrypted at rest — see lib/services/encryption.ts. Decrypt before use.
+  accessToken: string;
   itemId: string;
   cursor: string;
   createdAt: number;
   institutionId: string | null;
   institutionName: string | null;
-  // Set when a sync call fails with ITEM_LOGIN_REQUIRED — cleared
-  // automatically the next time this item syncs successfully.
   needsReauth?: boolean;
   lastSyncError?: string;
   lastSyncErrorAt?: number;
+  // Plaid account_ids under this item that exchange-token identified as
+  // duplicates of an already-linked account at link time, so they have no
+  // corresponding Account doc. Every sync excludes their transactions too,
+  // so they don't pile up as orphaned "Unlinked Account" rows.
+  skippedDuplicateAccountIds?: string[];
 }
 
 /**
@@ -115,18 +118,14 @@ export async function syncPlaidItem(
   uid: string,
   itemId: string
 ): Promise<SyncPlaidItemResult> {
-  const itemRef = adminDb
-    .collection("users")
-    .doc(uid)
-    .collection("plaidItems")
-    .doc(itemId);
-
+  const itemRef = adminDb.collection("users").doc(uid).collection("plaidItems").doc(itemId);
   const itemSnap = await itemRef.get();
 
   if (!itemSnap.exists) throw new Error("Plaid item not found");
 
   const item = itemSnap.data() as PlaidItemDoc;
   const accessToken = decryptSecret(item.accessToken);
+  const skippedAccountIds = new Set(item.skippedDuplicateAccountIds ?? []);
 
   let cursor = item.cursor || "";
   let hasMore = true;
@@ -144,14 +143,17 @@ export async function syncPlaidItem(
     hasMore = data.has_more;
   }
 
+  // Never write transactions for an account we intentionally didn't create
+  // an Account doc for (see exchange-token/route.ts's dedupe step).
+  const filteredAdded = added.filter((tx) => !skippedAccountIds.has(tx.account_id));
+  const filteredModified = modified.filter((tx) => !skippedAccountIds.has(tx.account_id));
+  const filteredRemoved = removed.filter((tx) => !skippedAccountIds.has(tx.account_id));
+
   const txRef = adminDb.collection("users").doc(uid).collection("transactions");
   const ops: BatchOp[] = [];
-
-  // Fetch categories + automations once for this sync run, not once per transaction.
   const rulesContext = await buildRulesContext(uid);
 
-  // INSERT
-  for (const tx of added) {
+  for (const tx of filteredAdded) {
     const data: TransactionDoc = await applyRules(
       {
         accountId: tx.account_id,
@@ -168,38 +170,30 @@ export async function syncPlaidItem(
       },
       rulesContext
     );
-
     ops.push({ type: "set", ref: txRef.doc(tx.transaction_id), data });
   }
 
-  // UPDATE
-  for (const tx of modified) {
+  for (const tx of filteredModified) {
     const data: TransactionUpdate = {
       amount: tx.amount,
       rawName: tx.name,
       pending: tx.pending,
       updatedAt: Date.now(),
     };
-
     ops.push({ type: "merge", ref: txRef.doc(tx.transaction_id), data });
   }
 
-  // DELETE
-  for (const tx of removed) {
+  for (const tx of filteredRemoved) {
     ops.push({ type: "delete", ref: txRef.doc(tx.transaction_id) });
   }
 
   await commitInChunks(ops);
-
-  // Only advance the cursor after all pages have been fetched and
-  // all writes for this sync have committed. Also clears any prior
-  // needsReauth flag — a successful sync means the item's login is fine.
   await itemRef.update({ cursor, needsReauth: false });
 
   return {
-    addedCount: added.length,
-    modifiedCount: modified.length,
-    removedCount: removed.length,
+    addedCount: filteredAdded.length,
+    modifiedCount: filteredModified.length,
+    removedCount: filteredRemoved.length,
   };
 }
 

@@ -118,7 +118,7 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
       normalBalance: string;
       startingBalance?: number;
       isContributionEligible?: boolean;
-    }) => {
+    }): Promise<string> => {
       if (!user) throw new Error("Not signed in");
 
       const ref = doc(collection(db, "users", user.uid, "accounts"));
@@ -140,10 +140,11 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+
+      return ref.id;
     },
     [user]
   );
-
   const updateAccount = useCallback(
     async (id: string, changes: Partial<Account>) => {
       if (!user) throw new Error("Not signed in");

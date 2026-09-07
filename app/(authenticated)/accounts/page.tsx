@@ -15,7 +15,6 @@ import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
 import PieChartRoundedIcon from "@mui/icons-material/PieChartRounded";
-import SyncProblemRoundedIcon from "@mui/icons-material/SyncProblemRounded";
 import SyncRoundedIcon from "@mui/icons-material/SyncRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
@@ -40,13 +39,13 @@ import {
   TableHead,
   TableRow,
   Tabs,
-  Tooltip,
   Typography
 } from "@mui/material";
+import ContributionEligibilityPromptDialog from "./ContributionEligibilityPromptDialog";
 import { useEffect, useMemo, useState } from "react";
 import AccountFormDialog from "./AccountFormDialog";
 import { accountTypeStyles } from "./accountTypes";
-import { PlaidLinkButton, type PlaidLinkRenderProps } from "./plaidLinkButton";
+import { PlaidConnectButton, PlaidReconnectButton } from "./plaidLinkButton";
 
 type ViewFilter = "active" | "archived";
 
@@ -65,11 +64,42 @@ export default function AccountsPage() {
   const [addMenuAnchor, setAddMenuAnchor] = useState<HTMLElement | null>(null);
   const addMenuOpen = Boolean(addMenuAnchor);
 
-  const [plaidTrigger, setPlaidTrigger] = useState<PlaidLinkRenderProps>({
-    onClick: () => {},
-    disabled: true,
-    label: "Loading...",
-  });
+  const [contributionPromptAccounts, setContributionPromptAccounts] = useState<{ id: string; name: string }[]>([]);
+  const [contributionPromptSource, setContributionPromptSource] = useState<"plaid" | "manual" | null>(null);
+  const [isSavingContributionPrompt, setIsSavingContributionPrompt] = useState(false);
+  const [duplicateNotice, setDuplicateNotice] = useState(0);
+
+  function closeContributionPrompt() {
+    const source = contributionPromptSource;
+    setContributionPromptAccounts([]);
+    setContributionPromptSource(null);
+    // Plaid's initial sync writes transactions server-side, and useTransactions
+    // only fetches once on mount, so a reload is the simplest way to pick those
+    // up. Manual account creation and every isContributionEligible update below
+    // are already live via useAccounts' onSnapshot listener — nothing to force.
+    if (source === "plaid") window.location.reload();
+  }
+
+  async function handleContributionPromptConfirm(selections: Record<string, boolean>) {
+    try {
+      setIsSavingContributionPrompt(true);
+      await Promise.all(
+        Object.entries(selections).map(([id, eligible]) =>
+          updateAccount(id, { isContributionEligible: eligible })
+        )
+      );
+    } catch (saveError) {
+      console.error(saveError);
+      setError("Could not save contribution eligibility for the new account(s).");
+    } finally {
+      setIsSavingContributionPrompt(false);
+      closeContributionPrompt();
+    }
+  }
+
+  function handleContributionPromptSkip() {
+    closeContributionPrompt();
+  }
 
   const [rowMenuAnchor, setRowMenuAnchor] = useState<HTMLElement | null>(null);
   const [rowMenuAccountId, setRowMenuAccountId] = useState<string | null>(null);
@@ -167,13 +197,15 @@ export default function AccountsPage() {
 
         await updateAccount(selectedEditingAccount.id, payload);
       } else {
-        await addManualAccount({
+        const newAccountId = await addManualAccount({
           name: formData.name,
           accountType: formData.accountType,
           normalBalance: formData.normalBalance,
           startingBalance: formData.balance,
           isContributionEligible: formData.isContributionEligible,
         });
+        setContributionPromptAccounts([{ id: newAccountId, name: formData.name.trim() }]);
+        setContributionPromptSource("manual");
       }
 
       setDialogOpen(false);
@@ -318,36 +350,34 @@ export default function AccountsPage() {
             }}
           >
             <Box sx={{ px: 1.5, py: 1 }}>
-              <MenuItem
-                onClick={() => {
-                  setAddMenuAnchor(null);
-                  plaidTrigger.onClick();
+              <PlaidConnectButton
+                onAccountsLinked={(accounts, skippedDuplicateCount) => {
+                  setContributionPromptAccounts(accounts.map((a) => ({ id: a.id, name: a.name })));
+                  setContributionPromptSource("plaid");
+                  setDuplicateNotice(skippedDuplicateCount);
                 }}
-                disabled={plaidTrigger.disabled}
-                sx={{ borderRadius: 2, py: 1.25, alignItems: "flex-start", gap: 1.5 }}
-              >
-                <Box
-                  sx={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 2,
-                    bgcolor: "#eef2ff",
-                    color: "#4f46e5",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                  }}
-                >
-                  <AccountBalanceRoundedIcon sx={{ fontSize: 20 }} />
-                </Box>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    {plaidTrigger.disabled ? plaidTrigger.label : "Connect a Bank"}
-                  </Typography>
-                </Box>
-                <ChevronRightRoundedIcon sx={{ ml: "auto", color: "text.disabled", flexShrink: 0 }} />
-              </MenuItem>
+                onLinkError={(message) => setError(message)}
+                render={({ onClick, disabled, label }) => (
+                  <MenuItem
+                    onClick={() => {
+                      setAddMenuAnchor(null);
+                      onClick();
+                    }}
+                    disabled={disabled}
+                    sx={{ borderRadius: 2, py: 1.25, alignItems: "flex-start", gap: 1.5 }}
+                  >
+                    <Box sx={{ width: 36, height: 36, borderRadius: 2, bgcolor: "#eef2ff", color: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <AccountBalanceRoundedIcon sx={{ fontSize: 20 }} />
+                    </Box>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                        {disabled ? label : "Connect a Bank"}
+                      </Typography>
+                    </Box>
+                    <ChevronRightRoundedIcon sx={{ ml: "auto", color: "text.disabled", flexShrink: 0 }} />
+                  </MenuItem>
+                )}
+              />
 
               <MenuItem
                 onClick={() => {
@@ -381,11 +411,6 @@ export default function AccountsPage() {
             </Box>
           </Menu>
 
-          <PlaidLinkButton
-            onSyncSuccess={() => window.location.reload()}
-            render={() => null}
-            onStateChange={setPlaidTrigger}
-          />
         </Stack>
       </Stack>
 
@@ -570,18 +595,9 @@ export default function AccountsPage() {
                         <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
                           <Box component="span">{account.name}</Box>
                           {needsReauth ? (
-                            <PlaidLinkButton
-                              updateModeItemId={account.plaidItemId!}
+                            <PlaidReconnectButton
+                              itemId={account.plaidItemId!}
                               onSyncSuccess={triggerResyncAfterReconnect}
-                              render={({ onClick, disabled, label }) => (
-                                <Tooltip title={label}>
-                                  <span>
-                                    <IconButton size="small" onClick={onClick} disabled={disabled} sx={{ p: 0.25, color: "#dc2626" }}>
-                                      <SyncProblemRoundedIcon sx={{ fontSize: 15 }} />
-                                    </IconButton>
-                                  </span>
-                                </Tooltip>
-                              )}
                             />
                           ) : account.plaidItemId && account.isArchived ? (
                             <ArchiveRoundedIcon sx={{ fontSize: 14, color: "#94a3b8" }} />
@@ -629,6 +645,25 @@ export default function AccountsPage() {
         isSaving={isSaving}
         editingAccount={selectedEditingAccount}
       />
+
+      <ContributionEligibilityPromptDialog
+        open={contributionPromptAccounts.length > 0}
+        accounts={contributionPromptAccounts}
+        isSaving={isSavingContributionPrompt}
+        onConfirm={handleContributionPromptConfirm}
+        onSkip={handleContributionPromptSkip}
+      />
+
+      <Snackbar
+        open={duplicateNotice > 0}
+        autoHideDuration={6000}
+        onClose={() => setDuplicateNotice(0)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+      >
+        <Alert severity="info" variant="filled" onClose={() => setDuplicateNotice(0)} sx={{ borderRadius: 2.5 }}>
+          {duplicateNotice} account{duplicateNotice === 1 ? "" : "s"} already linked — skipped.
+        </Alert>
+      </Snackbar>
 
       {/* Row context Action options menu popup */}
       <Menu anchorEl={rowMenuAnchor} open={Boolean(rowMenuAnchor)} onClose={handleCloseRowMenu}>
