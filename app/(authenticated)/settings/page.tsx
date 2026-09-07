@@ -307,6 +307,7 @@ export default function SettingsPage() {
                     <Select
                       label="Currency"
                       value={currency}
+                      disabled={true}
                       onChange={(event) =>
                         handleCurrencyChange(event.target.value as Currency)
                       }
@@ -335,6 +336,7 @@ export default function SettingsPage() {
                     <Select
                       label="Default budget month"
                       value={defaultMonth}
+                      disabled={true}
                       onChange={(event) =>
                         handleDefaultMonthChange(
                           event.target.value as DefaultBudgetMonth
@@ -402,7 +404,7 @@ export default function SettingsPage() {
               <Divider sx={{ my: 2 }} />
 
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                Budgeting App v1.0.0
+                Telos v1.0.0
               </Typography>
 
               <Typography
@@ -410,7 +412,7 @@ export default function SettingsPage() {
                 variant="body2"
                 sx={{ mt: 0.5 }}
               >
-                A simple budgeting app to plan your financial future.
+                Money with purpose.
               </Typography>
             </CardContent>
           </Card>
