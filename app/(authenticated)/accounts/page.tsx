@@ -334,6 +334,7 @@ export default function AccountsPage() {
           <Menu
             anchorEl={addMenuAnchor}
             open={addMenuOpen}
+            keepMounted
             onClose={() => setAddMenuAnchor(null)}
             anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
             transformOrigin={{ vertical: "top", horizontal: "right" }}
