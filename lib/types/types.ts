@@ -114,8 +114,8 @@ export type AppSettings = {
 
 export type Transaction = {
   id: string;
-  originAccId: string;   // the account that the transaction originated from (e.g. a checking account)
-  originAccName: string; // the name of the account that the transaction originated from (e.g. a checking account)
+  originAccId: string;
+  originAccName: string;
   displayName: string;
   amount: number;
   date: string;
@@ -126,6 +126,13 @@ export type Transaction = {
 
   categoryKind: CategoryKind | undefined;
   categoryId: string | undefined;
+
+  // Only meaningful when categoryKind === "transfer". The destination
+  // account id resolved from the matched Category's transferAccountId at
+  // assignment time, denormalized onto the transaction so it keeps
+  // working even if the source Category is later hard-deleted (see
+  // reconcileContributionTransfers in useCategories.ts). null otherwise.
+  transferAccountId: string | null;
 };
 
 export type Automation = {

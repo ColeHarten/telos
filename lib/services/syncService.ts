@@ -47,6 +47,15 @@ interface PlaidItemDoc {
  * store `undefined`, so `null` is the on-disk representation of
  * "unassigned" — the client layer (useTransactions.ts) converts this to
  * `undefined` when building its in-memory Transaction objects.
+ *
+ * transferAccountId is only meaningful when categoryKind === "transfer". It
+ * is the destination Account id resolved from the matched Category's
+ * transferAccountId at the moment applyRules assigned the transaction —
+ * denormalized here (rather than re-resolved later via a join against
+ * categories) so downstream consumers (budget "actual" totals, account
+ * deletion isolation checks — see useAccounts.ts) keep working even if the
+ * source transfer Category is later hard-deleted (see
+ * reconcileContributionTransfers in useCategories.ts).
  */
 interface TransactionDoc {
   accountId: string;
@@ -58,6 +67,7 @@ interface TransactionDoc {
   category: PlaidTransaction["personal_finance_category"] | null;
   categoryKind: CategoryKind | null;
   categoryId: string | null;
+  transferAccountId: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -65,9 +75,9 @@ interface TransactionDoc {
 /**
  * Partial update applied to an existing transaction document.
  *
- * Deliberately does NOT include categoryKind/categoryId — a Plaid
- * "modified" event should never clobber a user's (or a prior rule's)
- * assignment on an existing transaction.
+ * Deliberately does NOT include categoryKind/categoryId/transferAccountId —
+ * a Plaid "modified" event should never clobber a user's (or a prior
+ * rule's) assignment on an existing transaction.
  */
 type TransactionUpdate = Pick<TransactionDoc, "amount" | "rawName" | "pending" | "updatedAt">;
 
@@ -165,6 +175,7 @@ export async function syncPlaidItem(
         category: tx.personal_finance_category ?? null,
         categoryKind: null,
         categoryId: null,
+        transferAccountId: null,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       },

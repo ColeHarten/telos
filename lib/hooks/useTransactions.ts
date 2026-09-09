@@ -49,8 +49,18 @@ function normalizeAssignment(
  * normalizeAssignment, this throws — an invalid combination reaching this
  * point means the caller (our own UI code) has a bug, not that Firestore has
  * bad data, so it should fail loudly during development.
+ *
+ * transferAccountId is validated here (rather than categoryId) against the
+ * transaction's own origin account, since categoryId for a "transfer"
+ * assignment is a Category doc id, not an Account id — see
+ * updateTransactionAssignment for where transferAccountId is resolved.
  */
-function assertValidAssignment(categoryKind: CategoryKind | undefined, categoryId: string | undefined, originAccId: string): void {
+function assertValidAssignment(
+  categoryKind: CategoryKind | undefined,
+  categoryId: string | undefined,
+  transferAccountId: string | null,
+  originAccId: string
+): void {
   if (!categoryKind) {
     if (categoryId) {
       throw new Error(`Invalid assignment: type is "undefined" but categoryId ("${categoryId}") was provided.`);
@@ -62,8 +72,15 @@ function assertValidAssignment(categoryKind: CategoryKind | undefined, categoryI
     throw new Error(`Invalid assignment: type is "${categoryKind}" but no categoryId was provided.`);
   }
 
-  if (categoryKind === "transfer" && categoryId === originAccId) {
-    throw new Error(`Invalid assignment: cannot mark a transaction as a transfer to its own origin account ("${originAccId}").`);
+  if (categoryKind === "transfer") {
+    if (!transferAccountId) {
+      throw new Error(
+        `Invalid assignment: type is "transfer" but no destination account could be resolved for categoryId ("${categoryId}").`
+      );
+    }
+    if (transferAccountId === originAccId) {
+      throw new Error(`Invalid assignment: cannot mark a transaction as a transfer to its own origin account ("${originAccId}").`);
+    }
   }
 }
 
@@ -89,6 +106,7 @@ function toTransaction(
     category?: PersonalFinanceCategory | null;
     categoryKind?: CategoryKind | undefined;
     categoryId?: string | undefined;
+    transferAccountId?: string | null;
   }
 ): Omit<Transaction, "originAccName"> {
   const originAccId = data.accountId || "unlinked";
@@ -109,6 +127,10 @@ function toTransaction(
     plaidCategoryDetailed: data.category?.detailed ?? null,
     categoryKind,
     categoryId,
+    // Defensive: only meaningful for "transfer" — force null for any other
+    // kind (or for unassigned), regardless of what's stored, so a stale or
+    // hand-edited field can never leak into the wrong place.
+    transferAccountId: categoryKind === "transfer" ? data.transferAccountId ?? null : null,
   };
 }
 
@@ -171,8 +193,8 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
 
       // Soft warning only — a transfer assignment pointing at an account we
       // don't know about shouldn't block rendering the rest of the list.
-      if (tx.categoryKind === "transfer" && tx.categoryId && !accountNameById.has(tx.categoryId)) {
-        console.warn(`[useTransactions] Transaction ${tx.id} transfers to unknown account "${tx.categoryId}".`);
+      if (tx.categoryKind === "transfer" && tx.transferAccountId && !accountNameById.has(tx.transferAccountId)) {
+        console.warn(`[useTransactions] Transaction ${tx.id} transfers to unknown account "${tx.transferAccountId}".`);
       }
 
       return { ...tx, originAccName };
@@ -211,6 +233,18 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
    * transfer ("transfer" kind), or clears the assignment entirely by
    * passing categoryKind/categoryId as undefined.
    *
+   * `transferAccountId` should be passed whenever `categoryKind ===
+   * "transfer"` — it's the destination Account id resolved from the picked
+   * Category's `transferAccountId` (the caller — see
+   * app/(authenticated)/transactions/page.tsx's handleCategoryChange —
+   * already has the full categories list, so resolution happens there).
+   * It's denormalized onto the transaction itself (rather than re-derived
+   * later from categoryId) so budget "actual" totals and the account
+   * deletion isolation check (see useAccounts.ts's checkAccountIsolation)
+   * keep working even if the source Category is later hard-deleted (see
+   * reconcileContributionTransfers in useCategories.ts). It's ignored (and
+   * stored as null) for any categoryKind other than "transfer".
+   *
    * Optimistically updates local state so the UI reflects the change
    * instantly; reverts via the previous snapshot if the write fails.
    *
@@ -223,7 +257,12 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
    * recordCategorySignal.
    */
   const updateTransactionAssignment = useCallback(
-    async (transactionId: string, categoryKind: CategoryKind | undefined, categoryId?: string) => {
+    async (
+      transactionId: string,
+      categoryKind: CategoryKind | undefined,
+      categoryId?: string,
+      transferAccountId?: string | null
+    ) => {
       if (!user?.uid) return;
 
       const target = rawTransactions.find((tx) => tx.id === transactionId);
@@ -233,8 +272,13 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
         return;
       }
 
+      // Only meaningful when categoryKind is "transfer" — normalized to
+      // null otherwise so a stale value can never linger on a non-transfer
+      // assignment.
+      const normalizedTransferAccountId = categoryKind === "transfer" ? transferAccountId ?? null : null;
+
       try {
-        assertValidAssignment(categoryKind, categoryId, target.originAccId);
+        assertValidAssignment(categoryKind, categoryId, normalizedTransferAccountId, target.originAccId);
       } catch (err) {
         console.error("[useTransactions] Invalid assignment:", err);
         setTransactionsError(err instanceof Error ? err.message : "Invalid assignment.");
@@ -243,7 +287,11 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
 
       const previous = rawTransactions;
       setRawTransactions((prev) =>
-        prev.map((tx) => (tx.id === transactionId ? { ...tx, categoryKind, categoryId } : tx))
+        prev.map((tx) =>
+          tx.id === transactionId
+            ? { ...tx, categoryKind, categoryId, transferAccountId: normalizedTransferAccountId }
+            : tx
+        )
       );
 
       try {
@@ -255,6 +303,7 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
           // write layer needs the `null` translation.
           categoryKind: categoryKind ?? null,
           categoryId: categoryId ?? null,
+          transferAccountId: normalizedTransferAccountId,
           updatedAt: Date.now(),
         });
       } catch (err) {

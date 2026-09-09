@@ -217,12 +217,15 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
         reasons.push("This account has transaction history.");
       }
 
-      // Transactions categorized as a transfer into this account.
+      // Transactions categorized as a transfer into this account. Queried
+      // by transferAccountId (the resolved destination account,
+      // denormalized onto the transaction at assignment time) rather than
+      // categoryId, so this still finds them even if the source transfer
+      // Category has since been deleted (see reconcileContributionTransfers).
       const transferSnap = await getDocs(
         query(
           collection(db, "users", user.uid, "transactions"),
-          where("categoryKind", "==", "transfer"),
-          where("categoryId", "==", accountId),
+          where("transferAccountId", "==", accountId),
           limit(1)
         )
       );

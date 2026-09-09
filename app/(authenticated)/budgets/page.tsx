@@ -151,11 +151,11 @@ export default function BudgetsPage() {
     return map;
   }, [monthTransactions, categoriesById]);
 
-  const actualByAccountId = useMemo(() => {
+    const actualByAccountId = useMemo(() => {
     const map = new Map<string, number>();
     for (const tx of monthTransactions) {
-      if (tx.categoryKind !== "transfer" || !tx.categoryId) continue;
-      map.set(tx.categoryId, (map.get(tx.categoryId) ?? 0) + Math.abs(tx.amount));
+      if (tx.categoryKind !== "transfer" || !tx.transferAccountId) continue;
+      map.set(tx.transferAccountId, (map.get(tx.transferAccountId) ?? 0) + Math.abs(tx.amount));
     }
     return map;
   }, [monthTransactions]);

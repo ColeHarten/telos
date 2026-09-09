@@ -85,6 +85,19 @@ export async function buildRulesContext(uid: string): Promise<RulesContext> {
 // ---------------------------------------------------------------------------
 
 /**
+ * Resolves the transferAccountId to store on a transaction for a matched
+ * category: the category's own transferAccountId when it's a transfer
+ * category, otherwise null. Denormalizing this onto the transaction (rather
+ * than re-deriving it later from categoryId) is what lets budget "actual"
+ * totals and the account-deletion isolation check (see useAccounts.ts)
+ * keep working even after the source Category is hard-deleted (see
+ * reconcileContributionTransfers in useCategories.ts).
+ */
+function resolveTransferAccountId(category: Category): string | null {
+  return category.kind === "transfer" ? category.transferAccountId ?? null : null;
+}
+
+/**
  * Assigns a transaction to a category using, in order:
  *   1. A manual automation (merchant -> category override) — always wins.
  *   2. A learned Plaid-category default: if enough past manual corrections
@@ -95,7 +108,8 @@ export async function buildRulesContext(uid: string): Promise<RulesContext> {
  *      fields set to null, not a sentinel string.
  *
  * categoryKind mirrors the matched category's `kind` directly (income,
- * expense, or transfer).
+ * expense, or transfer). transferAccountId is set alongside it whenever the
+ * matched category is a transfer category — see resolveTransferAccountId.
  *
  * NOTE: field names here are categoryKind/categoryId to match Firestore
  * transaction docs and useTransactions.ts. (Previously this file and
@@ -109,6 +123,7 @@ export async function applyRules<T extends {
   category: PlaidTransaction["personal_finance_category"] | null;
   categoryKind: CategoryKind | null;
   categoryId: string | null;
+  transferAccountId: string | null;
 }>(transaction: T, context: RulesContext): Promise<T> {
   const merchantKey = normalizeMerchant(transaction.merchantName ?? transaction.rawName);
 
@@ -117,7 +132,12 @@ export async function applyRules<T extends {
   if (automatedCategoryId) {
     const automatedCategory = context.categories.find((c) => c.id === automatedCategoryId);
     if (automatedCategory) {
-      return { ...transaction, categoryKind: automatedCategory.kind, categoryId: automatedCategory.id };
+      return {
+        ...transaction,
+        categoryKind: automatedCategory.kind,
+        categoryId: automatedCategory.id,
+        transferAccountId: resolveTransferAccountId(automatedCategory),
+      };
     }
     // Automation points at a category that no longer exists — fall through.
   }
@@ -129,12 +149,17 @@ export async function applyRules<T extends {
     if (learnedCategoryId) {
       const learnedCategory = context.categories.find((c) => c.id === learnedCategoryId);
       if (learnedCategory) {
-        return { ...transaction, categoryKind: learnedCategory.kind, categoryId: learnedCategory.id };
+        return {
+          ...transaction,
+          categoryKind: learnedCategory.kind,
+          categoryId: learnedCategory.id,
+          transferAccountId: resolveTransferAccountId(learnedCategory),
+        };
       }
       // Learned category was deleted since the stats accrued — fall through.
     }
   }
 
   // 3. No match — leave for the user to review.
-  return { ...transaction, categoryKind: null, categoryId: null };
+  return { ...transaction, categoryKind: null, categoryId: null, transferAccountId: null };
 }

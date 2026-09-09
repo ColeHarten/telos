@@ -366,12 +366,15 @@ export default function TransactionsPage() {
    * same merchant.
    */
   async function handleCategoryChange(tx: (typeof transactions)[number], categoryId: string) {
-    // compute CategoryKind from the selected categoryId, it can be "income"|"expense"|"transfer"
-    const categoryKind = categories.find((c) => c.id === categoryId)?.kind;
-
-    await updateTransactionAssignment(tx.id, categoryKind, categoryId);
-
     const category = categories.find((c) => c.id === categoryId);
+    // compute CategoryKind from the selected categoryId, it can be "income"|"expense"|"transfer"
+    const categoryKind = category?.kind;
+    // Only meaningful for "transfer" categories — resolved here since this
+    // page already has the full categories list.
+    const transferAccountId = category?.kind === "transfer" ? category.transferAccountId ?? null : null;
+
+    await updateTransactionAssignment(tx.id, categoryKind, categoryId, transferAccountId);
+
     if (!category) return;
 
     setPendingAutomation({
