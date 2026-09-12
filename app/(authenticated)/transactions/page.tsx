@@ -113,13 +113,6 @@ function getMerchantAvatar(name: string = "") {
   return { bgcolor: "#f1f5f9", color: "#64748b", icon: <StorefrontOutlinedIcon sx={{ fontSize: 18 }} /> };
 }
 
-
-function getCashflowName(cashflowId: string | undefined, cashflows: Category[]|undefined): string {
-  if (!cashflowId || !cashflows) return "No Cashflow or Cashflows Unavailable";
-  const cashflow = cashflows.find((cf) => cf.id === cashflowId);
-  return cashflow ? cashflow.name : "Unknown Cashflow";
-}
-
 function buildPaginationItems(currentPage: number, totalPages: number) {
   if (totalPages <= MAX_VISIBLE_PAGES) {
     return Array.from({ length: totalPages }, (_, index) => index + 1);
