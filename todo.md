@@ -1,113 +1,86 @@
-# TODO
-1. ~~When adding an account, build the "eligible for paycheck transfer" into it~~
-2. ~~Don't allow used to add same acc twice~~
-3. ~~Setting page (just simplify for now)~~
-4. Check (and maybe improve) the automations
-5. Add ability to fully delete account if nothing is linked to it
+# Telos App Review (Revised)
 
+## 1. Current State
 
+Telos is a Next.js 16 (App Router) budgeting app backed by Firebase (Firestore + Auth) and Plaid, styled with MUI. Pages talk to Firestore **directly from the client** via `lib/firebaseClient.ts`, through hooks scoped under `users/{uid}/...`: `useAccounts`, `useCategories`, `useBudget`, `useTransactions`, `useAutomations`. Server-only work (Plaid calls, access-token encryption, admin Firestore) lives in `app/api/plaid/*`, gated by `lib/services/auth.ts`'s `requireUser`.
 
-
-
-
-
-
-# #############################
-# --- THIS MAY ALL BE DONE IDK
-# #############################
-
-# Feature: Contribution-Eligible Accounts + Paycheck-Linked Transfers
-
-**Status as of this doc: fully designed, zero code written.** Everything below is planning — nothing has been implemented yet. This is a resume-point, not a changelog.
+Per the footer in `app/(authenticated)/layout.tsx`, the app is mid-build ("Phase 3: Automations and clean up"). The transfer-account-ID bug that was the biggest correctness issue in the last pass has been fixed cleanly — transactions now carry a proper `transferAccountId`, resolved once in `ruleEngine.ts` and reused consistently by the isolation check and the budgets aggregation.
 
 ---
 
-## 1. The problem
+## 2. Major Bugs
 
-Pre-tax and post-tax paycheck deductions (401(k), HSA, etc.) currently reduce the income category's `estimatedMonthly` (via `calculateWithholdings` in `paycheck.ts`) and then that money just disappears from the app's data model. If the destination account (e.g. a 401(k)) is also tracked as an `Account`, there's no link between "money left your paycheck" and "money arrived in that account" — so budgets and account tracking are silently disconnected for that dollar amount.
-
-## 2. The design (agreed)
-
-- A retirement/HSA/etc. contribution should show up as a **transfer Category** (reusing your existing `kind: "transfer"` + `transferAccountId` machinery) — not as a direct balance bump and not as a new subsystem.
-- The account link lives **per deduction row**, not per Paycheck Profile — so a profile can have one deduction going to a 401(k) and another going to an HSA, tracked separately.
-- Eligibility to be a contribution destination is an **explicit boolean on `Account`**, not inferred from `accountType` — because accountType has no HSA option and inference would silently misclassify accounts.
-
-## 3. Data model changes (not yet applied to `types.ts`)
-
-```typescript
-// On Account:
-isContributionEligible: boolean; // default false — same pattern as isManual/isArchived
-
-// On Deduction:
-id: string;                        // NEW — stable key, generated client-side (crypto.randomUUID())
-linkedAccountId?: string | null;   // NEW — only meaningful when type is preTaxDeduction/postTaxDeduction
-
-// On Category:
-sourceIncomeCategoryId?: string | null; // NEW — marks this as auto-created from a paycheck profile
-sourceDeductionId?: string | null;      // NEW — which deduction row created/owns this transfer category
+### 2.1 Settings page: preferences are permanently non-interactive, and loading state is wrong
+`app/(authenticated)/settings/page.tsx` still has both issues from before:
+```js
+const { user } = useAuth();
+const { settings, updateSettings, ensureUserProfile } = useBudget(user, false);
 ```
+`authLoading` is hardcoded to `false` rather than read from `useAuth()`, so `useBudget`'s internal effects believe auth has already resolved even while it's still loading — causing a spurious "no settings" flash on load.
 
-**Why `Deduction` needs an `id`:** deduction rows currently have no stable identity (`{ label, value, kind, type }` only). Without an id, the reconciliation logic that finds "the transfer category I made for this deduction last time" would have to key off `label`, which breaks the moment someone renames a deduction — causing duplicate transfer categories instead of updating the existing one.
+Both dropdowns are also still hardcoded off:
+```jsx
+<Select label="Currency" value={currency} disabled={true} onChange={...}>
+<Select label="Default budget month" value={defaultMonth} disabled={true} onChange={...}>
+```
+The save path (`handleCurrencyChange` → `updateSettings`) works end-to-end, but the UI can never trigger it. **Fix**: pass real `authLoading`; replace `disabled={true}` with `disabled={isSavingSettings}` (or hide the controls entirely — see UI/UX section below — if the feature isn't meant to ship yet).
 
-**Migration concern (unresolved):** existing saved paycheck profiles have deductions with no `id`. The edit form needs to backfill an id on load (or the first re-save of an old profile will treat every row as new — not catastrophic, just creates redundant transfer categories on first save post-migration). Needs a decision before shipping.
+---
 
-## 4. Files touched, by status
+## 3. Minor Fixes
 
-| File | Status | What's needed |
-|---|---|---|
-| `types.ts` | Have current version | Add the 5 fields listed in §3 |
-| `AccountFormDialog.tsx` | Have current version | Add `isContributionEligible` toggle (Switch), wire into `onSave` payload |
-| `useAccounts.ts` | Have current version | Extend `addManualAccount`/`updateAccount` payloads + Firestore write + `onSnapshot` read-mapper for `isContributionEligible` |
-| `paycheck.ts` (`calculateWithholdings`) | Have current version | Currently only returns aggregate totals (`netPay`, `totalWithheld`, `estimatedMonthlyNet`, etc.). **Needs a new per-deduction breakdown** — something like `deductionBreakdown: { deductionId, linkedAccountId, monthlyAmount }[]` — so the sync step knows exactly how much to put in each linked transfer category. |
-| `AddCategoryModal.tsx` | Have current version | Add account-picker `Autocomplete` to deduction rows (only for `preTaxDeduction`/`postTaxDeduction` types), filtered to `accounts.filter(a => a.isContributionEligible && !a.isArchived)`. Same pattern as the existing transfer-destination picker already in this file. |
-| `useCategories.ts` | Have current version | **`addCategory` currently returns nothing — needs to return the new doc's ID**, so the reconciliation step can stamp `sourceIncomeCategoryId` onto transfer categories created in the same save. |
-| `CategoriesPage.tsx` | **Missing — need current version** | Likely where the actual "paycheck save → reconcile transfer categories" orchestration should live, since it already owns `handleSaveCategoryForm`. |
-| Account list page / whatever wires `AccountFormDialog`'s `onSave` to `addManualAccount`/`updateAccount` | **Missing entirely — not yet seen** | Need this to extend the save payload correctly; don't know today whether add vs. update is decided here or elsewhere. |
-| New: reconciliation logic (sync step) | **Does not exist as a concept anywhere in the codebase today** | This is genuinely new logic, not an edit to something existing — see §5. |
+### 3.1 Dead code left in `transactions/page.tsx`
+`getCashflowName` is defined but never called. Remove it, or wire it in if it was meant to label something in the row detail.
 
-## 5. The core gap: there is no "sync" to extend
+### 3.2 Stray debug log in a server route
+`app/api/plaid/create-link-token/route.ts`:
+```js
+console.log("Creating link token");
+```
+Harmless but noisy in production logs — remove or gate behind a debug flag.
 
-Earlier assumption was wrong: there's no existing hook/function that syncs paycheck profile → category. `AddCategoryModal.tsx`'s `handleSubmit` just computes `estimatedMonthlyNet` inline and stuffs it into a flat payload; `useCategories.ts`'s `addCategory`/`updateCategory` are dumb CRUD with no concept of derived data or reconciliation.
+### 3.3 Malformed/stray `tsconfig.json` include entry
+```json
+"include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+, "app/api/plaid/create-link-token"  ],
+```
+`app/api/plaid/create-link-token` is redundant (already covered by `**/*.ts`/`**/*.tsx`) and the formatting suggests it was pasted in accidentally. Clean up to avoid confusing future edits to this file.
 
-**New logic needed**, most likely living in `CategoriesPage.tsx`'s `handleSaveCategoryForm` (or a new dedicated function it calls):
+### 3.4 No field/type validation at the Firestore rules layer
+Carried over from the last review: rules correctly scope *who* can read/write (`users/{uid}/...`), but nothing stops a client from writing an invalid `kind`, `categoryKind`, or similarly-typed enum field directly. Not a data-exposure risk, but worth tightening (e.g., with `request.resource.data.kind in ['income','expense','transfer']`-style checks) before this becomes a real data-integrity bug.
 
-1. After saving the income category (existing behavior, unchanged), get its ID (requires `addCategory` to return one — see §4).
-2. For each deduction row with a `linkedAccountId`:
-   - Look for an existing Category where `sourceDeductionId === deduction.id`.
-   - If found: update its `estimatedMonthly` to the new computed amount (from `paycheck.ts`'s new breakdown) and its `transferAccountId` (in case the link changed).
-   - If not found: create a new `transfer`-kind Category, stamped with `sourceIncomeCategoryId` and `sourceDeductionId`.
-3. For any existing transfer category whose `sourceDeductionId` no longer matches a deduction on the profile (row deleted or unlinked): **archive it** (agreed default — matches how stale accounts/categories are already handled elsewhere; never hard-delete).
+### 3.5 Dashboard recomputes 6 months of cash-flow from the full transaction list on every render
+`cashFlowTrend` in `dashboard/page.tsx` loops over the entire `transactions` array once per month (×6) every time `monthKey` or `transactions` changes. Fine at current data volumes, but combined with `useTransactions`' unbounded one-shot fetch (see Future Work), this will get slower as a user's history grows. Consider precomputing monthly totals once, or scoping the loop to just the needed date range.
 
-## 6. Open decisions — defaults proposed, not yet confirmed
+---
 
-| Question | Proposed default | Rationale |
-|---|---|---|
-| Deduction unlinked/removed — delete or archive its transfer category? | **Archive** | Consistent with existing archive-don't-delete pattern |
-| Should the auto-created transfer category's `estimatedMonthly` be locked/read-only in the UI (like the income category's synced field already is)? | **Yes, lock it** | Otherwise a hand-edit gets silently clobbered on the next paycheck save |
-| Can two deduction rows link to the same account (e.g. separate "401k" and "employer match" rows, same destination)? | **Allow it** — key by `deductionId`, not `linkedAccountId` | Keying by account would silently merge distinct rows into one category |
+## 4. UI/UX Suggestions
 
-**These need your explicit confirmation before implementation starts** — they affect money correctness and aren't safe to assume silently.
+### 4.1 Settings selects look interactive but aren't
+Beyond the functional bug in 2.1, the visual design compounds it: both `Select` components render with full chevrons and hover affordances despite being permanently disabled, which reads as broken rather than "not yet available." Either finish the feature (see 2.1) or swap in a plain read-only display (e.g., a `Typography` row) until it's ready.
 
-## 7. Plaid interaction (already discussed, no action needed)
+### 4.2 Disabled "New Automation" button relies on hover-only tooltip
+`app/(authenticated)/automations/page.tsx` explains why the button is disabled purely via a `Tooltip`, which isn't discoverable on touch devices and is easy to miss via keyboard navigation. Consider an inline helper line near the button, in addition to (or instead of) the tooltip.
 
-- Selecting an account as contribution-eligible works identically for Plaid-linked and manual accounts — the flag lives on `Account` regardless of `isManual`.
-- Pre-tax deductions never appear as Plaid transactions on the source (checking) side, since payroll routes that money before it hits checking — no double-count risk there.
-- Destination-side risk only exists if the retirement account is Plaid-linked **and** you're pulling transaction-level data on it (Plaid Investments product) — not currently integrated in `syncService.ts`, so this is a non-issue today. If that integration is ever added, keep budgeted transfer amounts and real synced transactions conceptually separate (planned vs. actual), don't try to reconcile them into one number.
+### 4.3 "Last Synced" card doesn't reflect an in-progress sync
+Now that this card shows real data (fixed from the last review), it still just freezes on the old timestamp while `syncing` is `true` on the Transactions page. A small "Syncing…" state on the card itself (not just the button spinner) would make the in-progress state clearer.
 
-## 8. Suggested build order (unchanged from original roadmap)
+---
 
-1. `types.ts` — foundation
-2. `AccountFormDialog.tsx` + `useAccounts.ts` — get `isContributionEligible` working standalone, testable in isolation before touching paycheck logic
-3. `paycheck.ts` — add the per-deduction breakdown; verify existing `netPay`/`estimatedMonthlyNet` display still works unchanged
-4. `AddCategoryModal.tsx` — wire up the account picker on deduction rows
-5. `useCategories.ts` — make `addCategory` return the new ID
-6. Reconciliation logic in `CategoriesPage.tsx` (or extracted function) — highest-risk step, do last once everything upstream is verified
+## 5. Future Work
 
-## 9. To resume: what to bring back to this conversation
+1. **Make transaction reads live and bounded.** `useTransactions.ts` still fetches the *entire* transaction history with a one-shot `getDocs`, not `onSnapshot`. Switch to a live listener and add a bounded query (e.g., last N months, paginated) so other tabs/devices stay in sync and cost/latency don't grow unbounded with account age.
 
-1. Confirm or revise the 3 open decisions in §6.
-2. Paste **`CategoriesPage.tsx`** (current version).
-3. Paste whichever file wires `AccountFormDialog` to `useAccounts`'s `addManualAccount`/`updateAccount` (the accounts list page — not yet shared).
-4. Decide the migration approach for existing deductions with no `id` (§3).
+2. **Batch multi-document writes for atomicity.** `useCategories.ts`'s `reconcileContributionTransfers` still issues a sequence of individual `addCategory`/`updateCategory`/`deleteCategory` calls in a loop; a partial failure leaves paycheck-linked transfer categories inconsistent. Wrap these in a single Firestore `writeBatch()`/transaction.
 
-Once those four things are in hand, implementation can start at step 1 of the build order in §8.
+3. **De-duplicate cross-page business logic.** `isInMonth`, `getCurrentMonthKey`, budget-value parsing, and actual-vs-planned aggregation are still separately re-implemented in `dashboard/page.tsx`, `budgets/page.tsx`, and `useBudget.ts`. Pull this into a shared `lib/budgetCalculations.ts` so fixes like the transfer-account-ID one don't need to be applied in multiple places by hand.
+
+4. **Add a real sync-status trail.** Beyond the point-in-time "Last Synced" display, persist sync history (counts added/modified/removed, timestamp, any `itemsNeedingReauth`) so users have visibility into what changed on their last sync, not just the final summary snackbar.
+
+5. **Write developer documentation.** There's currently no documentation beyond the default `create-next-app` README — no architecture overview, no description of the Firestore data model (`users/{uid}/accounts|categories|budgets|transactions|automations|plaidItems`), no explanation of the categorization pipeline (automations → learned Plaid-category defaults → "Needs Review"), and no notes on the Plaid Link/update-mode flow or the encryption scheme for access tokens. As the app grows past "Phase 3," this becomes the biggest onboarding cost for anyone besides the original author — worth a `docs/` folder covering data model, auth flow, and the sync/categorization pipeline at minimum.

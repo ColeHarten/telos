@@ -4,7 +4,6 @@ import { createLinkToken } from "@/lib/services/plaidService";
 
 export async function POST(req: Request) {
   try {
-    console.log("Creating link token");
     const user = await requireUser(req);
 
     const linkToken = await createLinkToken(user.uid);
