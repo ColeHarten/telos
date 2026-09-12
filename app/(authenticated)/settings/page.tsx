@@ -119,7 +119,7 @@ export default function SettingsPage() {
       </Box>
 
     {(error || successMessage) && <Snackbar
-              open={(!error|| !successMessage)}
+          open={Boolean(error || successMessage)}
               autoHideDuration={5000}
               onClose={error ? () => setError(null) : () => setSuccessMessage(null)}
               anchorOrigin={{ vertical: "bottom", horizontal: "left" }}

@@ -304,7 +304,7 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
           categoryKind: categoryKind ?? null,
           categoryId: categoryId ?? null,
           transferAccountId: normalizedTransferAccountId,
-          updatedAt: Date.now(),
+          updatedAt: serverTimestamp(),
         });
       } catch (err) {
         console.error("Failed to update assignment:", err);

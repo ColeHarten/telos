@@ -6,7 +6,6 @@ import useAuth from "@/lib/hooks/useAuth";
 import { useCategories } from "@/lib/hooks/useCategories";
 import useAutomations from "@/lib/hooks/useAutomations";
 import useTransactions from "@/lib/hooks/useTransactions";
-import type { Category, CategoryKind } from "@/lib/types/types";
 import AutomationPromptDialog from "./automationsPromptDialog";
 
 // Icons
@@ -113,12 +112,6 @@ function getMerchantAvatar(name: string = "") {
   return { bgcolor: "#f1f5f9", color: "#64748b", icon: <StorefrontOutlinedIcon sx={{ fontSize: 18 }} /> };
 }
 
-
-function getCashflowName(cashflowId: string | undefined, cashflows: Category[]|undefined): string {
-  if (!cashflowId || !cashflows) return "No Cashflow or Cashflows Unavailable";
-  const cashflow = cashflows.find((cf) => cf.id === cashflowId);
-  return cashflow ? cashflow.name : "Unknown Cashflow";
-}
 
 function buildPaginationItems(currentPage: number, totalPages: number) {
   if (totalPages <= MAX_VISIBLE_PAGES) {
