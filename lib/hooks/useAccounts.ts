@@ -29,11 +29,28 @@ export type AccountIsolationCheck = {
   hasActivePlaidConnection: boolean;
 };
 
+// Best-effort conversion of a Firestore-Timestamp-like value (or a raw
+// epoch-ms number) into a JS Date. Mirrors the pattern already used for
+// account.updatedAt in dashboard/page.tsx's formatRelativeSync.
+function toDateOrNull(raw: unknown): Date | null {
+  if (!raw) return null;
+  const value = raw as { toDate?: () => Date; seconds?: number };
+  if (typeof value.toDate === "function") return value.toDate();
+  if (typeof value.seconds === "number") return new Date(value.seconds * 1000);
+  if (typeof raw === "number") return new Date(raw);
+  return null;
+}
+
 export function useAccounts(user: AuthUser | null, authLoading: boolean) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [itemsNeedingReauth, setItemsNeedingReauth] = useState<Set<string>>(new Set());
+  // Most recent lastSyncedAt across all of the user's plaidItems docs, or
+  // null if no item has ever completed a sync. Powers the "Last Synced"
+  // card on the Transactions page — see syncService.ts's syncPlaidItem,
+  // which is the only place lastSyncedAt is written.
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
@@ -103,11 +120,16 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
   // Kept on plaidItems rather than duplicated onto every Account doc under
   // that item, so there's exactly one place this flag can drift from —
   // account rows just look it up by plaidItemId.
+  //
+  // This listener also derives lastSyncedAt (the max across all items) for
+  // the same reason: it's per-Item state, not per-Account state, and a
+  // second onSnapshot here keeps it live without re-fetching accounts.
   useEffect(() => {
     if (authLoading) return;
 
     if (!user) {
       setItemsNeedingReauth(new Set());
+      setLastSyncedAt(null);
       return;
     }
 
@@ -117,15 +139,25 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
       itemsQuery,
       (snapshot) => {
         const next = new Set<string>();
+        let latestSyncedAt: Date | null = null;
+
         snapshot.docs.forEach((d) => {
-          if (d.data().needsReauth === true) next.add(d.id);
+          const data = d.data();
+          if (data.needsReauth === true) next.add(d.id);
+
+          const syncedAt = toDateOrNull(data.lastSyncedAt);
+          if (syncedAt && (!latestSyncedAt || syncedAt > latestSyncedAt)) {
+            latestSyncedAt = syncedAt;
+          }
         });
+
         setItemsNeedingReauth(next);
+        setLastSyncedAt(latestSyncedAt);
       },
       (err) => {
-        // Non-fatal — reauth indicators are supplementary; don't block
-        // account loading if this listener fails.
-        console.error("[useAccounts] Could not load plaid item reauth status:", err);
+        // Non-fatal — reauth indicators and sync-status are supplementary;
+        // don't block account loading if this listener fails.
+        console.error("[useAccounts] Could not load plaid item status:", err);
       }
     );
 
@@ -326,6 +358,7 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
     accountsLoading,
     error,
     itemsNeedingReauth,
+    lastSyncedAt,
     addManualAccount,
     updateAccount,
     archiveAccount,

@@ -6,6 +6,7 @@ import useAuth from "@/lib/hooks/useAuth";
 import { useCategories } from "@/lib/hooks/useCategories";
 import useAutomations from "@/lib/hooks/useAutomations";
 import useTransactions from "@/lib/hooks/useTransactions";
+import type { Category, CategoryKind } from "@/lib/types/types";
 import AutomationPromptDialog from "./automationsPromptDialog";
 
 // Icons
@@ -113,6 +114,12 @@ function getMerchantAvatar(name: string = "") {
 }
 
 
+function getCashflowName(cashflowId: string | undefined, cashflows: Category[]|undefined): string {
+  if (!cashflowId || !cashflows) return "No Cashflow or Cashflows Unavailable";
+  const cashflow = cashflows.find((cf) => cf.id === cashflowId);
+  return cashflow ? cashflow.name : "Unknown Cashflow";
+}
+
 function buildPaginationItems(currentPage: number, totalPages: number) {
   if (totalPages <= MAX_VISIBLE_PAGES) {
     return Array.from({ length: totalPages }, (_, index) => index + 1);
@@ -145,6 +152,21 @@ function formatShortDate(value: string) {
   } catch {
     return value;
   }
+}
+
+// Formats the live lastSyncedAt Date from useAccounts into the same
+// "Mon D, YYYY" / "h:mm AM" split the "Last Synced" card renders. Returns
+// null for both when there's no sync yet, so the card can fall back to
+// "Never synced" instead of showing a stale placeholder date.
+function formatLastSynced(lastSyncedAt: Date | null): { dateLabel: string; timeLabel: string | null } {
+  if (!lastSyncedAt) {
+    return { dateLabel: "Never synced", timeLabel: null };
+  }
+
+  return {
+    dateLabel: lastSyncedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+    timeLabel: lastSyncedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+  };
 }
 
 // Local (not UTC) YYYY-MM-DD, matching the format used by <input type="date"> and stored transaction dates.
@@ -194,7 +216,7 @@ function formatDateRangeButtonLabel(preset: DateRangePreset, customFrom: string,
 
 export default function TransactionsPage() {
   const { user, authLoading } = useAuth();
-  const { accounts = [] } = useAccounts(user, authLoading);
+  const { accounts = [], lastSyncedAt } = useAccounts(user, authLoading);
   const {
     transactions = [],
     transactionsLoading,
@@ -254,6 +276,15 @@ export default function TransactionsPage() {
   const dateRangeLabel = useMemo(
     () => formatDateRangeButtonLabel(dateRangePreset, customDateFrom, customDateTo),
     [dateRangePreset, customDateFrom, customDateTo]
+  );
+
+  // Live "Last Synced" card content — sourced from useAccounts' plaidItems
+  // listener (see syncService.ts's syncPlaidItem, the only writer of
+  // lastSyncedAt), rather than a hardcoded placeholder date. Updates
+  // automatically once a sync completes, since that listener is live.
+  const { dateLabel: lastSyncedDateLabel, timeLabel: lastSyncedTimeLabel } = useMemo(
+    () => formatLastSynced(lastSyncedAt),
+    [lastSyncedAt]
   );
 
   // Top-tier filters: account + date range. These scope both the summary cards
@@ -343,6 +374,9 @@ export default function TransactionsPage() {
 
       setSyncSuccess(true);
       await refetchTransactions();
+      // No need to manually refresh lastSyncedAt here — useAccounts' live
+      // plaidItems listener picks up the new lastSyncedAt as soon as
+      // syncPlaidItem writes it server-side.
     } catch (err: any) {
       setTransactionsError(err.message || "Sync error");
     } finally {
@@ -694,8 +728,12 @@ export default function TransactionsPage() {
           <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <Box>
               <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Last Synced</Typography>
-              <Typography sx={{ fontWeight: 700, color: "#0f172a", mt: 0.5, fontSize: "1.25rem" }}>Jul 1, 2026</Typography>
-              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>7:13 AM</Typography>
+              <Typography sx={{ fontWeight: 700, color: "#0f172a", mt: 0.5, fontSize: "1.25rem" }}>{lastSyncedDateLabel}</Typography>
+              {lastSyncedTimeLabel && (
+                <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
+                  {lastSyncedTimeLabel}
+                </Typography>
+              )}
             </Box>
             <Avatar sx={{ bgcolor: "#eff6ff", color: "#2563eb", width: 44, height: 44 }}>
               <CalendarMonthOutlinedIcon sx={{ fontSize: 20 }} />

@@ -1,4 +1,5 @@
 import { adminDb } from "@/lib/firebaseAdmin";
+import { FieldValue } from "firebase-admin/firestore";
 import type { CategoryKind } from "@/lib/types/types";
 import type { DocumentReference, WriteBatch } from "firebase-admin/firestore";
 import type {
@@ -24,6 +25,10 @@ interface PlaidItemDoc {
   needsReauth?: boolean;
   lastSyncError?: string;
   lastSyncErrorAt?: number;
+  // Set whenever syncPlaidItem completes successfully for this item (server
+  // timestamp). Read client-side by useAccounts.ts to power the
+  // "Last Synced" display on the Transactions page — see 2.4.
+  lastSyncedAt?: FirebaseFirestore.Timestamp;
   // Plaid account_ids under this item that exchange-token identified as
   // duplicates of an already-linked account at link time, so they have no
   // corresponding Account doc. Every sync excludes their transactions too,
@@ -199,7 +204,11 @@ export async function syncPlaidItem(
   }
 
   await commitInChunks(ops);
-  await itemRef.update({ cursor, needsReauth: false });
+  // lastSyncedAt is a server timestamp — set only on a fully successful
+  // sync of this item (never on the ITEM_LOGIN_REQUIRED path in
+  // syncAllPlaidItems below), so it reflects the last time this item's
+  // transactions were actually refreshed rather than merely attempted.
+  await itemRef.update({ cursor, needsReauth: false, lastSyncedAt: FieldValue.serverTimestamp() });
 
   return {
     addedCount: filteredAdded.length,
