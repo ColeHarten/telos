@@ -71,6 +71,9 @@ Beyond the functional bug in 2.1, the visual design compounds it: both `Select` 
 ### 4.3 "Last Synced" card doesn't reflect an in-progress sync
 Now that this card shows real data (fixed from the last review), it still just freezes on the old timestamp while `syncing` is `true` on the Transactions page. A small "Syncing…" state on the card itself (not just the button spinner) would make the in-progress state clearer.
 
+### 4.4 Make negative presentation dynamic
+I want to add a preference option to control how negative balances should be display: either with a negative sign or brackets.
+
 ---
 
 ## 5. Future Work

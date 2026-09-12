@@ -106,7 +106,6 @@ export type DefaultBudgetMonth = "current" | "next";
 
 export type AppSettings = {
   currency: Currency;
-  defaultBudgetMonth: DefaultBudgetMonth;
   createdAt?: unknown;
   updatedAt?: unknown;
 };

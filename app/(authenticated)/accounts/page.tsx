@@ -2,6 +2,7 @@
 
 import useAccounts from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
+import PageHeader from "@/components/PageHeader";
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import type { Account, AccountType, NormalBalance } from "@/lib/types/types";
 import { formatCurrency } from "@/lib/utils";
@@ -276,22 +277,9 @@ export default function AccountsPage() {
   const rowMenuAccount = accounts.find((a) => a.id === rowMenuAccountId) ?? null;
 
   return (
-    <Stack spacing={3} sx={{ p: 4, bgcolor: "#f8fafc", minHeight: "100vh", fontFamily: "Inter, sans-serif" }}>
+    <Stack spacing={3} sx={{ p: 4, bgcolor: "#f8fafc", minHeight: "100vh" }}>
       {/* Header */}
-      <Stack
-        spacing={2}
-        sx={{
-          flexDirection: { xs: "column", sm: "row" },
-          alignItems: { xs: "stretch", sm: "center" },
-          justifyContent: "space-between",
-        }}
-      >
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, color: "#0f172a", letterSpacing: "-0.03em", fontSize: "1.75rem" }}>
-            Accounts
-          </Typography>
-        </Box>
-
+      <PageHeader title="Accounts">
         <Stack direction="row" spacing={1.5} sx={{ flexShrink: 0, alignItems: "center", flexWrap: "wrap", rowGap: 1.5 }}>
           <Button
             variant="outlined"
@@ -418,7 +406,7 @@ export default function AccountsPage() {
           </Menu>
 
         </Stack>
-      </Stack>
+      </PageHeader>
 
       {error && (
         <Snackbar open autoHideDuration={5000} onClose={() => setError(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }}>

@@ -8,6 +8,7 @@ import useAutomations from "@/lib/hooks/useAutomations";
 import useTransactions from "@/lib/hooks/useTransactions";
 import type { Category, CategoryKind } from "@/lib/types/types";
 import AutomationPromptDialog from "./automationsPromptDialog";
+import PageHeader from "@/components/PageHeader";
 
 // Icons
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
@@ -422,20 +423,10 @@ export default function TransactionsPage() {
   const endItem = Math.min(currentPageSafe * pageSize, filteredTransactions.length);
 
   return (
-    <Stack spacing={3} sx={{ p: 4, bgcolor: "#f8fafc", minHeight: "100vh", fontFamily: "Inter, sans-serif" }}>
+    <Stack spacing={3} sx={{ p: 4, bgcolor: "#f8fafc", minHeight: "100vh" }}>
 
       {/* 1. Header Toolbar Actions */}
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={2}
-        sx={{ alignItems: { xs: "stretch", sm: "center" }, justifyContent: "space-between" }}
-      >
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, color: "#0f172a", letterSpacing: "-0.03em", fontSize: "1.75rem" }}>
-            Transactions
-          </Typography>
-        </Box>
-
+      <PageHeader title="Transactions">
         <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", flexWrap: "wrap", rowGap: 1.5 }}>
           <Button
             variant="outlined"
@@ -507,7 +498,7 @@ export default function TransactionsPage() {
             {syncing ? "Syncing..." : "Sync Transactions"}
           </Button>
         </Stack>
-      </Stack>
+      </PageHeader>
 
       {/* Account filter menu */}
       <Menu

@@ -7,6 +7,7 @@ import useBudget from "@/lib/hooks/useBudget";
 import useCategories from "@/lib/hooks/useCategories";
 import useTransactions from "@/lib/hooks/useTransactions";
 import { formatCurrency } from "@/lib/utils";
+import PageHeader from "@/components/PageHeader";
 
 import { Box, Card, CardContent, Chip, LinearProgress, Typography } from "@mui/material";
 import Link from "next/link";
@@ -20,6 +21,15 @@ import type { Account, BudgetLine, Transaction } from "@/lib/types/types";
 
 function isInMonth(dateStr: string, monthKey: string) {
   return dateStr.startsWith(monthKey);
+}
+
+function isWithinLast30Days(dateStr: string) {
+  const transactionDate = new Date(`${dateStr}T00:00:00`);
+  const startDate = new Date();
+  startDate.setHours(0, 0, 0, 0);
+  startDate.setDate(startDate.getDate() - 29);
+
+  return transactionDate >= startDate;
 }
 
 function formatShortMonthLabel(monthKey: string) {
@@ -211,7 +221,7 @@ export default function DashboardPage() {
 
   // Recent transactions ---------------------------------------------------------------
   const recentTransactions = useMemo(
-    () => [...transactions].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 5),
+    () => [...transactions].filter((tx) => isWithinLast30Days(tx.date)).sort((a, b) => (a.date < b.date ? 1 : -1)),
     [transactions]
   ) as Transaction[];
 
@@ -220,14 +230,11 @@ export default function DashboardPage() {
   const isLoading = authLoading || rangeLoading || transactionsLoading;
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: "20px", bgcolor: "#f8fafc", minHeight: "100vh", fontFamily: "Inter, sans-serif", p: 4 }}>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: "20px", bgcolor: "#f8fafc", minHeight: "100vh", p: 4 }}>
       {/* Header */}
-      <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", rowGap: "12px" }}>
-        <Typography variant="h4" sx={{ fontWeight: 600, letterSpacing: "-0.02em", color: INK, fontSize: "1.6rem" }}>
-          Dashboard
-        </Typography>
+      <PageHeader title="Dashboard">
         <MonthPickerControl monthKey={monthKey} onChange={setMonthKey} showStepButtons />
-      </Box>
+      </PageHeader>
 
       {isLoading ? (
         <Card variant="outlined" sx={CARD_SX}>
@@ -319,9 +326,15 @@ export default function DashboardPage() {
                 {/* minWidth/minHeight on ResponsiveContainer + guarded against an
                     empty dataset + flexShrink:0 on the wrapper so it can never
                     collapse to 0 inside its flow (source of the -1/-1 warning). */}
-                <Box sx={{ width: "100%", minWidth: 0, height: 70, mt: 2, flexShrink: 0 }}>
+                <Box sx={{ width: "100%", minWidth: 1, height: 70, mt: 2, flexShrink: 0 }}>
                   {cashFlowTrend.length > 0 && (
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                    <ResponsiveContainer
+                      width="100%"
+                      height="100%"
+                      minWidth={1}
+                      minHeight={1}
+                      initialDimension={{ width: 1, height: 70 }}
+                    >
                       <LineChart data={cashFlowTrend} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
                         <XAxis dataKey="label" tick={{ fontSize: 10, fill: MUTED }} axisLine={false} tickLine={false} />
                         <Line type="monotone" dataKey="net" stroke={ACCENT} strokeWidth={2} dot={false} />
@@ -374,9 +387,8 @@ export default function DashboardPage() {
               <CardContent sx={{ p: "20px" }}>
                 <Box sx={{ display: "flex", flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                   <Typography sx={{ fontWeight: 600, color: INK, fontSize: "0.95rem" }}>Recent Transactions</Typography>
-                  <FooterLink href="/transactions" label="View all" compact />
                 </Box>
-                <Box sx={{ mt: 1 }}>
+                <Box sx={{ mt: 1, maxHeight: 310, overflowY: "auto", pr: 0.5 }}>
                   {recentTransactions.length === 0 ? (
                     <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>No transactions yet.</Typography>
                   ) : (
@@ -385,12 +397,11 @@ export default function DashboardPage() {
                         key={tx.id}
                         sx={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", py: "12px", borderTop: i === 0 ? "none" : `1px solid ${BORDER}` }}
                       >
-                        <Typography variant="caption" sx={{ color: MUTED, width: 76, flexShrink: 0 }}>{formatLongDate(tx.date)}</Typography>
                         <Box sx={{ minWidth: 0, flex: 1 }}>
                           <Typography variant="body2" sx={{ fontWeight: 500, color: INK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {tx.displayName}
                           </Typography>
-                          <Typography variant="caption" sx={{ color: MUTED }}>{tx.plaidCategoryPrimary ?? tx.originAccName}</Typography>
+                          <Typography variant="caption" sx={{ color: MUTED, width: 76, flexShrink: 0 }}>{formatLongDate(tx.date)}</Typography>
                         </Box>
                         <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: "nowrap", ml: 1, color: tx.amount > 0 ? NEGATIVE : POSITIVE }}>
                           {tx.amount > 0 ? `-${formatCurrency(tx.amount)}` : `+${formatCurrency(Math.abs(tx.amount))}`}
@@ -399,6 +410,7 @@ export default function DashboardPage() {
                     ))
                   )}
                 </Box>
+                <FooterLink href="/accounts" label="View all" />
               </CardContent>
             </Card>
 
@@ -408,7 +420,7 @@ export default function DashboardPage() {
                   <Typography sx={{ fontWeight: 600, color: INK, fontSize: "0.95rem" }}>Accounts</Typography>
                   <FooterLink href="/accounts" label="Add account" compact />
                 </Box>
-                <Box sx={{ mt: 1 }}>
+                <Box sx={{ mt: 1, maxHeight: 310, overflowY: "auto", pr: 0.5 }}>
                   {activeAccounts.length === 0 ? (
                     <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>No accounts linked yet.</Typography>
                   ) : (
@@ -421,27 +433,22 @@ export default function DashboardPage() {
                         >
                           <Box sx={{ minWidth: 0 }}>
                             <Typography variant="body2" sx={{ fontWeight: 500, color: INK }}>{account.name}</Typography>
-                            <Typography variant="caption" sx={{ color: MUTED }}>{accountTypeLabel(account.accountType)}</Typography>
+                            <Typography variant="caption" sx={{ color: MUTED }}>{accountTypeLabel(account.accountType)}                             {syncLabel && <Typography variant="caption" sx={{ color: MUTED, whiteSpace: "nowrap" }}> · Last updated {syncLabel}</Typography>}</Typography>
                           </Box>
                           <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "12px" }}>
                             <Typography variant="body2" sx={{ fontWeight: 600, color: account.normalBalance === "liability" ? NEGATIVE : INK }}>
                               {account.normalBalance === "liability" ? "-" : ""}{formatCurrency(Math.abs(account.currentBalance ?? 0))}
                             </Typography>
-                            {syncLabel && <Typography variant="caption" sx={{ color: MUTED, whiteSpace: "nowrap" }}>{syncLabel}</Typography>}
                           </Box>
                         </Box>
                       );
                     })
                   )}
                 </Box>
-                <FooterLink href="/accounts" label="View all accounts" />
+                <FooterLink href="/accounts" label="View all" />
               </CardContent>
             </Card>
           </Box>
-
-          <Typography variant="caption" sx={{ color: "#cbd5e1", textAlign: "center" }}>
-            All amounts are in USD
-          </Typography>
         </>
       )}
     </Box>

@@ -41,6 +41,7 @@ import {
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 import AddCategoryModal from "./AddCategoryModal";
+import PageHeader from "@/components/PageHeader";
 
 type KindFilter = "all" | CategoryKind;
 
@@ -315,15 +316,9 @@ export default function CategoriesPage() {
   const rowMenuCategory = categories.find((c) => c.id === rowMenuCategoryId) ?? null;
 
   return (
-    <Stack spacing={3} sx={{ p: 4, bgcolor: "#f8fafc", minHeight: "100vh", fontFamily: "Inter, sans-serif" }}>
+    <Stack spacing={3} sx={{ p: 4, bgcolor: "#f8fafc", minHeight: "100vh" }}>
       {/* Header */}
-      <Stack spacing={2} sx={{ flexDirection: { xs: "column", sm: "row" }, alignItems: { xs: "stretch", sm: "center" }, justifyContent: "space-between" }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, color: "#0f172a", letterSpacing: "-0.03em", fontSize: "1.75rem" }}>
-            Categories
-          </Typography>
-        </Box>
-
+      <PageHeader title="Categories">
         <Button
           variant="contained"
           disableElevation
@@ -344,7 +339,7 @@ export default function CategoriesPage() {
         >
           Add Category
         </Button>
-      </Stack>
+      </PageHeader>
 
       {error && (
         <Snackbar open={error !== null} autoHideDuration={5000} onClose={() => setError(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }}>

@@ -1,7 +1,5 @@
 "use client";
 
-import AddRoundedIcon from "@mui/icons-material/AddRounded";
-import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import EastRoundedIcon from "@mui/icons-material/EastRounded";
 import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
@@ -13,7 +11,6 @@ import VerifiedUserRoundedIcon from "@mui/icons-material/VerifiedUserRounded";
 import {
   Avatar,
   Box,
-  Button,
   Chip,
   IconButton,
   InputAdornment,
@@ -21,7 +18,6 @@ import {
   MenuItem,
   Paper,
   TextField,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import { useMemo, useState } from "react";
@@ -29,6 +25,7 @@ import useAuth from "@/lib/hooks/useAuth";
 import useAutomations from "@/lib/hooks/useAutomations";
 import { useCategories } from "@/lib/hooks/useCategories";
 import type { Category, CategoryKind } from "@/lib/types/types";
+import PageHeader from "@/components/PageHeader";
 
 // ---------------------------------------------------------------------------
 // Display helpers
@@ -95,75 +92,9 @@ export default function AutomationsPage() {
   }
 
   return (
-    <Box sx={{ padding: "40px", backgroundColor: "#ffffff", minHeight: "100vh", fontFamily: "Inter, sans-serif" }}>
+    <Box sx={{ padding: "32px", minHeight: "100vh" }}>
       {/* Header */}
-      <Box
-        sx={{
-          display: "flex",
-          flexDirection: { xs: "column", sm: "row" },
-          alignItems: { xs: "stretch", sm: "flex-start" },
-          justifyContent: "space-between",
-          gap: "16px",
-          marginBottom: "32px",
-        }}
-      >
-        <Typography sx={{ fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em", fontSize: "1.9rem" }}>
-          Automations
-        </Typography>
-
-        <Tooltip title="Automations are created from the Transactions page — categorize a transaction and you'll be offered the option to automate it.">
-          <span>
-            <Button
-              variant="contained"
-              disableElevation
-              disabled
-              startIcon={<AddRoundedIcon sx={{ fontSize: "18px" }} />}
-              sx={{
-                backgroundColor: "#6366f1",
-                textTransform: "none",
-                fontWeight: 600,
-                fontSize: "0.9rem",
-                borderRadius: "20px",
-                paddingLeft: "20px",
-                paddingRight: "20px",
-                paddingTop: "10px",
-                paddingBottom: "10px",
-                whiteSpace: "nowrap",
-              }}
-            >
-              New Automation
-            </Button>
-          </span>
-        </Tooltip>
-      </Box>
-
-      {/* Info banner */}
-      <Paper
-        variant="outlined"
-        sx={{
-          display: "flex",
-          alignItems: "flex-start",
-          gap: "16px",
-          padding: "20px 24px",
-          borderRadius: "24px",
-          backgroundColor: "#f5f5fd",
-          borderColor: "#e9e8fb",
-          marginBottom: "32px",
-        }}
-      >
-        <Avatar sx={{ backgroundColor: "#ede9fe", color: "#6366f1", width: "40px", height: "40px" }}>
-          <AutoAwesomeRoundedIcon sx={{ fontSize: "20px" }} />
-        </Avatar>
-        <Box>
-          <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "0.95rem" }}>
-            Automatic categorization is on
-          </Typography>
-          <Typography sx={{ color: "#64748b", fontSize: "0.85rem", marginTop: "2px" }}>
-            New transactions are matched against your categories automatically. Automations you create below
-            always take priority over that automatic matching.
-          </Typography>
-        </Box>
-      </Paper>
+      <PageHeader title="Automations" sx={{ mb: 4 }} />
 
       {/* Section header */}
       <Box
@@ -205,7 +136,7 @@ export default function AutomationsPage() {
           sx={{
             minWidth: "280px",
             "& .MuiOutlinedInput-root": {
-              borderRadius: "20px",
+              borderRadius: 2,
               fontSize: "0.9rem",
               backgroundColor: "#f8fafc",
               "& fieldset": { borderColor: "#e2e8f0" },
@@ -218,11 +149,11 @@ export default function AutomationsPage() {
       {/* Automation rows */}
       <Box sx={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         {automationsLoading ? (
-          <Paper variant="outlined" sx={{ padding: "32px", borderRadius: "24px", borderColor: "#e2e8f0", textAlign: "center" }}>
+          <Paper variant="outlined" sx={{ padding: "32px", borderRadius: 3, borderColor: "#e2e8f0", textAlign: "center" }}>
             <Typography sx={{ color: "#94a3b8", fontSize: "0.9rem" }}>Loading automations…</Typography>
           </Paper>
         ) : filteredAutomations.length === 0 ? (
-          <Paper variant="outlined" sx={{ padding: "32px", borderRadius: "24px", borderColor: "#e2e8f0", textAlign: "center" }}>
+          <Paper variant="outlined" sx={{ padding: "32px", borderRadius: 3, borderColor: "#e2e8f0", textAlign: "center" }}>
             <Typography sx={{ color: "#94a3b8", fontSize: "0.9rem" }}>
               {automations.length === 0
                 ? "No automations yet. Categorize a transaction to create one."
@@ -243,7 +174,7 @@ export default function AutomationsPage() {
                   alignItems: "center",
                   justifyContent: "space-between",
                   padding: "16px 24px",
-                  borderRadius: "24px",
+                  borderRadius: 3,
                   borderColor: "#e2e8f0",
                   "&:hover": { borderColor: "#cbd5e1" },
                 }}
@@ -285,33 +216,6 @@ export default function AutomationsPage() {
           })
         )}
       </Box>
-
-      {/* Footer note */}
-      <Paper
-        variant="outlined"
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          gap: "16px",
-          padding: "20px 24px",
-          borderRadius: "24px",
-          backgroundColor: "#f8fafc",
-          borderColor: "#e2e8f0",
-          marginTop: "24px",
-        }}
-      >
-        <Avatar sx={{ backgroundColor: "#e2e8f0", color: "#64748b", width: "36px", height: "36px" }}>
-          <VerifiedUserRoundedIcon sx={{ fontSize: "18px" }} />
-        </Avatar>
-        <Box>
-          <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>
-            Automations always override automatic categorization.
-          </Typography>
-          <Typography sx={{ color: "#64748b", fontSize: "0.85rem" }}>
-            Recreating an automation for the same merchant overwrites the old one.
-          </Typography>
-        </Box>
-      </Paper>
 
       {/* Row action menu */}
       <Menu anchorEl={rowMenuAnchor} open={Boolean(rowMenuAnchor)} onClose={handleCloseRowMenu}>

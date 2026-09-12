@@ -8,6 +8,7 @@ import useCategories from "@/lib/hooks/useCategories";
 import useTransactions from "@/lib/hooks/useTransactions";
 import type { Transaction } from "@/lib/types/types";
 import { formatCurrency } from "@/lib/utils";
+import PageHeader from "@/components/PageHeader";
 
 import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
 import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
@@ -288,11 +289,23 @@ export default function BudgetsPage() {
   }
 
   return (
-    <Stack spacing={3}>
+    <Stack spacing={3} sx={{ p: 4 }}>
       <Stack spacing={1.5}>
-        <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: "-0.03em" }}>
-          Budgets
-        </Typography>
+        <PageHeader title="Budgets">
+          <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "8px" }}>
+            <MonthPickerControl monthKey={monthKey} onChange={setMonthKey} ariaLabelPrefix="Budgets " />
+            {!isCurrentMonth && (
+              <Button
+                onClick={goToCurrentMonth}
+                variant="text"
+                size="small"
+                sx={{ borderRadius: "8px", textTransform: "none", fontWeight: 600 }}
+              >
+                Today
+              </Button>
+            )}
+          </Box>
+        </PageHeader>
 
         {error && (
           <Snackbar
@@ -319,20 +332,6 @@ export default function BudgetsPage() {
             justifyContent: "space-between",
           }}
         >
-          <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "8px" }}>
-            <MonthPickerControl monthKey={monthKey} onChange={setMonthKey} ariaLabelPrefix="Budgets " />
-            {!isCurrentMonth && (
-              <Button
-                onClick={goToCurrentMonth}
-                variant="text"
-                size="small"
-                sx={{ borderRadius: "8px", textTransform: "none", fontWeight: 600 }}
-              >
-                Today
-              </Button>
-            )}
-          </Box>
-
           <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: "14px" }}>
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: 90, justifyContent: "flex-end" }}>
               {saveStatus === "saving" && (

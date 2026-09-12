@@ -116,14 +116,15 @@ export default function AuthenticatedLayout({
                 alignItems: "center",
                 gap: 1.25, // Space between logo and text
                 padding: 1.25, // Padding around the logo and text
+                cursor: "pointer",
               }}
+              onClick={() => router.push("/dashboard")}
             >
               <TelosLogo size={30} />
 
               <Typography
                 variant="h3"
                 sx={{
-                  fontFamily: "sans-serif",
                   fontWeight: 700,
                   fontSize: "1.9rem",
                   letterSpacing: "-0.04em",

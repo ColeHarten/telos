@@ -5,7 +5,6 @@ import {
   collection,
   doc,
   documentId,
-  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -14,7 +13,7 @@ import {
   where,
 } from "firebase/firestore";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AppSettings, AuthUser, BudgetLines } from "../types/types";
+import type { AuthUser, BudgetLines } from "../types/types";
 
 function getCurrentMonthKey() {
   const today = new Date();
@@ -37,7 +36,6 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
 
   const [budgetValues, setBudgetValues] = useState<Record<string, string>>({});
   const [budgetLines, setBudgetLines] = useState<BudgetLines>({});
-  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [budgetLoading, setBudgetLoading] = useState(false);
 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
@@ -105,54 +103,6 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
     return () => unsubscribe();
   }, [authLoading, user, selectedMonthKey]);
 
-  // Load (and lazily create) the user's app settings doc, live.
-  useEffect(() => {
-    if (authLoading) return;
-    if (!user) {
-      setSettings(null);
-      return;
-    }
-
-    const settingsRef = doc(db, "users", user.uid, "settings", "app");
-
-    const unsubscribe = onSnapshot(
-      settingsRef,
-      (snapshot) => {
-        if (!snapshot.exists()) {
-          (async () => {
-            const defaultSettings: AppSettings = {
-              currency: "USD",
-              defaultBudgetMonth: "current",
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            };
-
-            try {
-              await setDoc(settingsRef, defaultSettings);
-              setSettings(defaultSettings);
-            } catch (err) {
-              console.error(err);
-            }
-          })();
-          return;
-        }
-
-        const data = snapshot.data();
-        setSettings({
-          currency: (data.currency ?? "USD") as any,
-          defaultBudgetMonth: (data.defaultBudgetMonth ?? "current") as any,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt,
-        });
-      },
-      (err) => {
-        console.error(err);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [authLoading, user]);
-
   const saveBudget = useCallback(
     async (monthKey: string, lines: BudgetLines) => {
       if (!user) throw new Error("Not signed in");
@@ -212,33 +162,6 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [flushSave]);
-
-  const ensureUserProfile = useCallback(async () => {
-    if (!user) throw new Error("Not signed in");
-    await setDoc(
-      doc(db, "users", user.uid),
-      {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
-  }, [user]);
-
-  const updateSettings = useCallback(
-    async (next: Partial<AppSettings>) => {
-      if (!user) throw new Error("Not signed in");
-      await setDoc(
-        doc(db, "users", user.uid, "settings", "app"),
-        { ...next, updatedAt: serverTimestamp() },
-        { merge: true } as any
-      );
-    },
-    [user]
-  );
 
   // The only way budget values change: updates local state immediately (optimistic),
   // and schedules a debounced whole-document write.
@@ -311,9 +234,6 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
     flushSave,
     budgetLoading,
     error,
-    settings,
-    updateSettings,
-    ensureUserProfile,
     rangeBudgets,
     rangeLoading,
     rangeError,

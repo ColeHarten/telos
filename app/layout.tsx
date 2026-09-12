@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
+import { Manrope } from "next/font/google";
 import Providers from "./providers";
+
+const manrope = Manrope({
+  subsets: ["latin"],
+  variable: "--font-manrope",
+});
 
 export const metadata: Metadata = {
   title: "Telos: Money with purpose",
@@ -15,10 +21,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <head>
-        <link rel="icon" href="/favicon.ico?v=1.0" />
-      </head>
+    <html lang="en" className={manrope.variable}>
       <body>
         <Providers>{children}</Providers>
       </body>
