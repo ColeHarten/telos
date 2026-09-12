@@ -18,14 +18,13 @@ export async function POST(req: Request) {
       ...result,
     });
   } catch (err: any) {
+    // Log full details server-side only — never return stack traces or
+    // internal error messages to the client, since that leaks file paths
+    // and implementation details to anyone who can trigger a failed sync.
     console.error("[sync] FAILED:", err);
 
     return NextResponse.json(
-      {
-        error: "Sync failed",
-        message: err?.message,
-        stack: err?.stack,
-      },
+      { error: "Sync failed" },
       { status: 500 }
     );
   }
