@@ -18,7 +18,14 @@ function createFirebaseAdminApp() {
   try {
     serviceAccount = JSON.parse(rawKey);
   } catch (err) {
-    console.error("[Firebase Admin] Raw env value:", rawKey);
+    // Never log the raw env value — on parse failure it still contains the
+    // full private key material. Log length/shape only, enough to debug a
+    // bad escaping/truncation issue without leaking the secret.
+    console.error(
+      "[Firebase Admin] FIREBASE_SERVICE_ACCOUNT_KEY is not valid JSON.",
+      `length=${rawKey.length}`,
+      `startsWith='${rawKey.slice(0, 12)}...'`
+    );
     throw new Error(
       "[Firebase Admin] FIREBASE_SERVICE_ACCOUNT_KEY is not valid JSON"
     );
@@ -55,6 +62,8 @@ function createFirebaseAdminApp() {
       }),
     });
   } catch (err) {
+    // This branch is safe to log fully — `err` from initializeApp doesn't
+    // contain the raw key material, just SDK-level failure info.
     console.error("[Firebase Admin] initializeApp failed:", err);
     throw err;
   }
