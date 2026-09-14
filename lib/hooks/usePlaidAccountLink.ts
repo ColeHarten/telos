@@ -42,13 +42,31 @@ export default function usePlaidAccountLink({
       : authenticatedFetch("/api/plaid/create-link-token", { method: "POST" });
 
     fetchPromise
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.linkToken) setToken(data.linkToken);
+      .then(async (res) => {
+        // A non-2xx response still has a parseable JSON body (the routes
+        // return `{ error: ... }`), so this has to be checked explicitly —
+        // otherwise a failed request looks identical to "no token yet".
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? `Request failed with status ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (!data.linkToken) {
+          throw new Error("No link token returned.");
+        }
+
+        setToken(data.linkToken);
       })
       .catch((error) => {
         console.error(error);
         onLinkError?.("Could not prepare the bank connection.");
+      })
+      .finally(() => {
+        // Always reset, success or failure, so a transient error can be
+        // retried (e.g. the user re-opens the menu / clicks the button
+        // again) instead of leaving the trigger permanently disabled.
+        isFetching.current = false;
       });
   }, [isUpdateMode, onLinkError, token, updateModeItemId]);
 
