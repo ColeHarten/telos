@@ -42,6 +42,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import AddCategoryModal from "./AddCategoryModal";
 import PageHeader from "@/components/PageHeader";
+import IsolationWarningDialog from "@/components/IsolationWarningDialog";
 
 type KindFilter = "all" | CategoryKind;
 
@@ -63,6 +64,8 @@ export default function CategoriesPage() {
     addCategory,
     updateCategory,
     archiveCategory,
+    restoreCategory,
+    checkCategoryIsolation,
     reconcileContributionTransfers,
     categoriesLoading,
   } = useCategories(user, authLoading);
@@ -81,6 +84,15 @@ export default function CategoriesPage() {
 
   const [rowMenuAnchor, setRowMenuAnchor] = useState<HTMLElement | null>(null);
   const [rowMenuCategoryId, setRowMenuCategoryId] = useState<string | null>(null);
+
+  // Pre-archive warning flow — set once checkCategoryIsolation finds live
+  // references, cleared on cancel/confirm. isCheckingIsolation covers the
+  // brief async gap between clicking "Archive" and the check resolving, so
+  // the row menu doesn't feel unresponsive while it runs.
+  const [isolationCheckCategory, setIsolationCheckCategory] = useState<Category | null>(null);
+  const [isolationReasons, setIsolationReasons] = useState<string[]>([]);
+  const [isCheckingIsolation, setIsCheckingIsolation] = useState(false);
+  const [isConfirmingArchive, setIsConfirmingArchive] = useState(false);
 
   useEffect(() => {
     setError(null);
@@ -234,13 +246,9 @@ export default function CategoriesPage() {
     }
   }
 
-  async function handleArchiveCategory(categoryId: string) {
-    const categoryToArchive = categories.find((c) => c.id === categoryId);
-    if (isDependentTransferCategory(categoryToArchive)) {
-      setError("This transfer category is managed by its income category and cannot be archived separately.");
-      return;
-    }
-
+  // Actually performs the archive (used both for the "no references found"
+  // fast path and after the user confirms the warning dialog).
+  async function runArchiveCategory(categoryId: string) {
     try {
       setError(null);
       await archiveCategory(categoryId);
@@ -251,14 +259,62 @@ export default function CategoriesPage() {
     }
   }
 
+  async function handleArchiveCategory(categoryId: string) {
+    const categoryToArchive = categories.find((c) => c.id === categoryId);
+    if (!categoryToArchive) return;
+
+    if (isDependentTransferCategory(categoryToArchive)) {
+      setError("This transfer category is managed by its income category and cannot be archived separately.");
+      return;
+    }
+
+    setError(null);
+    setIsCheckingIsolation(true);
+    try {
+      const result = await checkCategoryIsolation(categoryId);
+      if (result.isIsolated) {
+        await runArchiveCategory(categoryId);
+      } else {
+        // Don't archive yet — show the user what's still connected and let
+        // them confirm. archiveCategory itself never blocks; this check is
+        // purely informational (see checkCategoryIsolation's doc comment).
+        setIsolationCheckCategory(categoryToArchive);
+        setIsolationReasons(result.reasons);
+      }
+    } catch (checkError) {
+      console.error(checkError);
+      setError("Could not check what's connected to this category before archiving.");
+    } finally {
+      setIsCheckingIsolation(false);
+    }
+  }
+
+  async function handleConfirmArchiveFromDialog() {
+    if (!isolationCheckCategory) return;
+    setIsConfirmingArchive(true);
+    await runArchiveCategory(isolationCheckCategory.id);
+    setIsConfirmingArchive(false);
+    setIsolationCheckCategory(null);
+    setIsolationReasons([]);
+  }
+
+  function handleCancelArchiveDialog() {
+    setIsolationCheckCategory(null);
+    setIsolationReasons([]);
+  }
+
   async function handleRestoreCategory(category: Category) {
     try {
       setError(null);
-      await updateCategory(category.id, {
+      // restoreCategory cascades to any dependent transfer categories that
+      // were archived alongside this one (see archiveCategory in
+      // useCategories.ts) — resending name/kind/estimatedMonthly matches
+      // the previous inline updateDoc call's behavior (a defensive no-op
+      // refresh of those fields on restore).
+      await restoreCategory(category, {
         name: category.name,
         kind: category.kind,
         estimatedMonthly: category.estimatedMonthly,
-        isArchived: false,
       });
     } catch (restoreError) {
       console.error(restoreError);
@@ -509,6 +565,16 @@ export default function CategoriesPage() {
         error={formError}
       />
 
+      <IsolationWarningDialog
+        open={isolationCheckCategory !== null}
+        entityLabel="category"
+        entityName={isolationCheckCategory?.name ?? ""}
+        reasons={isolationReasons}
+        isProcessing={isConfirmingArchive}
+        onCancel={handleCancelArchiveDialog}
+        onConfirm={handleConfirmArchiveFromDialog}
+      />
+
       <Menu anchorEl={rowMenuAnchor} open={Boolean(rowMenuAnchor)} onClose={handleCloseRowMenu} slotProps={{ paper: { sx: { mt: 1, borderRadius: 2, minWidth: 160, border: "1px solid", borderColor: "divider" } } }}>
         {rowMenuCategory && isDependentTransferCategory(rowMenuCategory) ? (
           <MenuItem disabled sx={{ gap: 1.5, py: 1.25 }}>
@@ -524,7 +590,11 @@ export default function CategoriesPage() {
               </MenuItem>
             )}
             {rowMenuCategory && !rowMenuCategory.isArchived ? (
-              <MenuItem onClick={() => { handleArchiveCategory(rowMenuCategory.id); handleCloseRowMenu(); }} sx={{ gap: 1.5, py: 1.25, color: "error.main" }}>
+              <MenuItem
+                onClick={() => { handleArchiveCategory(rowMenuCategory.id); handleCloseRowMenu(); }}
+                disabled={isCheckingIsolation}
+                sx={{ gap: 1.5, py: 1.25, color: "error.main" }}
+              >
                 <ArchiveRoundedIcon sx={{ fontSize: 18 }} />
                 <Typography variant="body2" sx={{ fontWeight: 500 }}>Archive</Typography>
               </MenuItem>

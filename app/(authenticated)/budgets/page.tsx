@@ -17,6 +17,7 @@ import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
 import ErrorRoundedIcon from "@mui/icons-material/ErrorRounded";
 import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
 import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import {
   Alert,
   Box,
@@ -37,6 +38,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
 
 type BudgetLineType = "income" | "expense" | "transfer";
@@ -160,6 +162,27 @@ export default function BudgetsPage() {
     }
     return map;
   }, [monthTransactions]);
+
+  // Money that landed on an archived category this month. actualByCategoryId
+  // (above) is keyed off the full, unfiltered `categories` list, but the
+  // budget groups below only ever iterate incomeCategories/expenseCategories
+  // (active only) — so without this, spending assigned to an archived
+  // category is computed and then simply never displayed anywhere, with no
+  // indication it's missing from the totals below.
+  const archivedCategoryActuals = useMemo(() => {
+    let total = 0;
+    let transactionCount = 0;
+    for (const tx of monthTransactions) {
+      if (!tx.categoryId) continue;
+      if (tx.categoryKind !== "income" && tx.categoryKind !== "expense") continue;
+      const category = categoriesById.get(tx.categoryId);
+      if (!category?.isArchived) continue;
+      const contribution = tx.categoryKind === "income" ? Math.max(0, -tx.amount) : Math.max(0, tx.amount);
+      total += contribution;
+      transactionCount += 1;
+    }
+    return { total, transactionCount };
+  }, [monthTransactions, categoriesById]);
 
   const budgetGroups: BudgetGroup[] = useMemo(
     () => [
@@ -393,6 +416,31 @@ export default function BudgetsPage() {
           </Grid>
         ))}
       </Grid>
+
+      {!isLoading && archivedCategoryActuals.total > 0 && (
+        <Alert
+          severity="warning"
+          icon={<WarningAmberRoundedIcon />}
+          sx={{ borderRadius: 3 }}
+          action={
+            <Button
+              component={Link}
+              href="/categories"
+              size="small"
+              color="inherit"
+              sx={{ textTransform: "none", fontWeight: 700, whiteSpace: "nowrap" }}
+            >
+              Review categories
+            </Button>
+          }
+        >
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            {formatCurrency(archivedCategoryActuals.total)} across {archivedCategoryActuals.transactionCount}{" "}
+            transaction{archivedCategoryActuals.transactionCount === 1 ? "" : "s"} this month is assigned to
+            archived categories and isn&apos;t included in the totals below.
+          </Typography>
+        </Alert>
+      )}
 
       {isLoading ? (
         <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, bgcolor: "background.paper" }}>

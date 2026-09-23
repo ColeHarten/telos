@@ -975,11 +975,18 @@ export default function TransactionsPage() {
                               <em>Unassigned</em>
                             </MenuItem>
                           )}
-                          {categories.map((category) => (
-                            <MenuItem key={category.id} value={category.id} sx={{ fontSize: "0.8rem" }}>
-                              {category.name}
-                            </MenuItem>
-                          ))}
+                          {categories
+                            // Archived categories stop being offered for new/changed
+                            // assignments — but a transaction already sitting on one
+                            // still needs its option present, or the Select would
+                            // render blank instead of the category's actual name.
+                            .filter((category) => !category.isArchived || category.id === tx.categoryId)
+                            .map((category) => (
+                              <MenuItem key={category.id} value={category.id} sx={{ fontSize: "0.8rem" }}>
+                                {category.name}
+                                {category.isArchived ? " (archived)" : ""}
+                              </MenuItem>
+                            ))}
                         </Select>
                       </TableCell>
 

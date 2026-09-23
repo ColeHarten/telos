@@ -111,6 +111,13 @@ function resolveTransferAccountId(category: Category): string | null {
  * expense, or transfer). transferAccountId is set alongside it whenever the
  * matched category is a transfer category — see resolveTransferAccountId.
  *
+ * Both the automation match and the learned-default match are skipped if
+ * the matched category has since been archived — an archived category
+ * shouldn't keep silently absorbing newly-synced transactions just because
+ * an old automation or learned mapping still points at it. Each tier falls
+ * through to the next when this happens (same as when the matched category
+ * no longer exists at all).
+ *
  * NOTE: field names here are categoryKind/categoryId to match Firestore
  * transaction docs and useTransactions.ts. (Previously this file and
  * syncService.ts used assignmentType/assignmentId, a stale name that meant
@@ -127,11 +134,13 @@ export async function applyRules<T extends {
 }>(transaction: T, context: RulesContext): Promise<T> {
   const merchantKey = normalizeMerchant(transaction.merchantName ?? transaction.rawName);
 
-  // 1. Manual automation always wins.
+  // 1. Manual automation always wins — unless the category it points at has
+  // since been archived, in which case fall through to tier 2 rather than
+  // keep assigning new transactions to a retired category.
   const automatedCategoryId = context.automations.get(merchantKey);
   if (automatedCategoryId) {
     const automatedCategory = context.categories.find((c) => c.id === automatedCategoryId);
-    if (automatedCategory) {
+    if (automatedCategory && !automatedCategory.isArchived) {
       return {
         ...transaction,
         categoryKind: automatedCategory.kind,
@@ -139,16 +148,18 @@ export async function applyRules<T extends {
         transferAccountId: resolveTransferAccountId(automatedCategory),
       };
     }
-    // Automation points at a category that no longer exists — fall through.
+    // Automation points at a category that no longer exists, or has been
+    // archived — fall through.
   }
 
-  // 2. Learned Plaid-category default.
+  // 2. Learned Plaid-category default — same archived-category fallthrough
+  // as tier 1 above.
   const detailedCode = transaction.category?.detailed;
   if (detailedCode) {
     const learnedCategoryId = context.plaidCategoryDefaults.get(detailedCode);
     if (learnedCategoryId) {
       const learnedCategory = context.categories.find((c) => c.id === learnedCategoryId);
-      if (learnedCategory) {
+      if (learnedCategory && !learnedCategory.isArchived) {
         return {
           ...transaction,
           categoryKind: learnedCategory.kind,
@@ -156,7 +167,8 @@ export async function applyRules<T extends {
           transferAccountId: resolveTransferAccountId(learnedCategory),
         };
       }
-      // Learned category was deleted since the stats accrued — fall through.
+      // Learned category was deleted, or archived, since the stats accrued
+      // — fall through.
     }
   }
 

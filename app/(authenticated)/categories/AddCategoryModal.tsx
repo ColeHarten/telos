@@ -254,12 +254,30 @@ export default function AddCategoryModal({
 
   function renderDeductionRow(row: Deduction & { index: number }) {
     const showAccountLink = row.type !== "tax";
+
+    // Resolved from the FULL accounts list, not just contributionEligibleAccounts
+    // (which excludes archived accounts / ones with contribution-eligibility
+    // turned off). A deduction can still be linked to an account that's since
+    // become ineligible — that link isn't cleared automatically (see
+    // IsolationWarningDialog / checkAccountIsolation) — and this field should
+    // keep showing it rather than silently rendering blank, which looked
+    // indistinguishable from "no link set."
     const linkedAccount = row.linkedAccountId
-      ? contributionEligibleAccounts.find((a) => a.id === row.linkedAccountId) ?? null
+      ? accounts.find((a) => a.id === row.linkedAccountId) ?? null
       : null;
-    const availableAccountsForRow = contributionEligibleAccounts.filter(
+    const linkedAccountIsIneligible =
+      linkedAccount !== null && !contributionEligibleAccounts.some((a) => a.id === linkedAccount.id);
+
+    const selectableAccountsForRow = contributionEligibleAccounts.filter(
       (a) => a.id === row.linkedAccountId || !linkedAccountIds.has(a.id)
     );
+    // Make sure the currently-linked account still appears as an option even
+    // when it's no longer eligible, so the Autocomplete can display it as
+    // selected instead of treating a real link as if it were unset.
+    const availableAccountsForRow =
+      linkedAccountIsIneligible && linkedAccount
+        ? [linkedAccount, ...selectableAccountsForRow]
+        : selectableAccountsForRow;
 
     return (
       <Box key={row.id} sx={{ px: 2, py: 1 }}>
@@ -303,28 +321,36 @@ export default function AddCategoryModal({
           </Tooltip>
         </Box>
 
-        {showAccountLink && contributionEligibleAccounts.length > 0 && (
-          <Autocomplete
-            size="small"
-            options={availableAccountsForRow}
-            getOptionLabel={(option) => option.name}
-            value={linkedAccount}
-            onChange={(_, newValue) => updateDeductionRow(row.index, { linkedAccountId: newValue ? newValue.id : null })}
-            disabled={isSaving}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                variant="standard"
-                placeholder="Link to a tracked account (optional)"
-                sx={{
-                  "& .MuiInput-root:before": { borderBottom: "none" },
-                  "& .MuiInput-root:after": { borderBottom: "none" },
-                  "& .MuiInput-root:hover:not(.Mui-disabled):before": { borderBottom: "none" },
-                }}
-              />
+        {showAccountLink && (contributionEligibleAccounts.length > 0 || linkedAccount) && (
+          <Box sx={{ maxWidth: 340 }}>
+            <Autocomplete
+              size="small"
+              options={availableAccountsForRow}
+              getOptionLabel={(option) => option.name}
+              value={linkedAccount}
+              onChange={(_, newValue) => updateDeductionRow(row.index, { linkedAccountId: newValue ? newValue.id : null })}
+              disabled={isSaving}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  variant="standard"
+                  placeholder="Link to a tracked account (optional)"
+                  sx={{
+                    "& .MuiInput-root:before": { borderBottom: "none" },
+                    "& .MuiInput-root:after": { borderBottom: "none" },
+                    "& .MuiInput-root:hover:not(.Mui-disabled):before": { borderBottom: "none" },
+                  }}
+                />
+              )}
+              sx={{ mt: 0.25 }}
+            />
+            {linkedAccountIsIneligible && (
+              <Typography variant="caption" sx={{ color: "#d97706", display: "block", mt: 0.25 }}>
+                This account is archived or no longer eligible for contributions — clear the link or restore
+                the account to change it.
+              </Typography>
             )}
-            sx={{ maxWidth: 340, mt: 0.25 }}
-          />
+          </Box>
         )}
       </Box>
     );

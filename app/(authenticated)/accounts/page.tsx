@@ -47,6 +47,7 @@ import ContributionEligibilityPromptDialog from "./ContributionEligibilityPrompt
 import { useEffect, useMemo, useState } from "react";
 import AccountFormDialog from "./AccountFormDialog";
 import DeleteAccountDialog from "./DeleteAccountDialog";
+import IsolationWarningDialog from "@/components/IsolationWarningDialog";
 import { accountTypeStyles } from "./accountTypes";
 import { PlaidConnectButton, PlaidReconnectButton } from "./plaidLinkButton";
 
@@ -109,6 +110,15 @@ export default function AccountsPage() {
 
   const [rowMenuAnchor, setRowMenuAnchor] = useState<HTMLElement | null>(null);
   const [rowMenuAccountId, setRowMenuAccountId] = useState<string | null>(null);
+
+  // Pre-archive warning flow — reuses the same checkAccountIsolation already
+  // used to gate permanent deletion, but here it's informational only: if
+  // it finds references, the user gets a confirmable warning instead of
+  // being blocked outright (archiving is reversible via "Restore").
+  const [isolationCheckAccount, setIsolationCheckAccount] = useState<Account | null>(null);
+  const [isolationReasons, setIsolationReasons] = useState<string[]>([]);
+  const [isCheckingIsolation, setIsCheckingIsolation] = useState(false);
+  const [isConfirmingArchive, setIsConfirmingArchive] = useState(false);
 
   useEffect(() => {
     setError(null);
@@ -224,7 +234,9 @@ export default function AccountsPage() {
     }
   };
 
-  async function handleArchiveAccount(accountId: string) {
+  // Actually performs the archive (used both for the "no references found"
+  // fast path and after the user confirms the warning dialog).
+  async function runArchiveAccount(accountId: string) {
     try {
       setError(null);
       await archiveAccount(accountId);
@@ -232,6 +244,43 @@ export default function AccountsPage() {
       console.error(archiveError);
       setError("Could not archive account.");
     }
+  }
+
+  async function handleArchiveAccount(accountId: string) {
+    setError(null);
+    setIsCheckingIsolation(true);
+    try {
+      const result = await checkAccountIsolation(accountId);
+      if (result.isIsolated) {
+        await runArchiveAccount(accountId);
+      } else {
+        // Don't archive yet — same checkAccountIsolation used to gate
+        // permanent deletion, but here it's a confirmable warning rather
+        // than a hard block (see IsolationWarningDialog).
+        const account = accounts.find((a) => a.id === accountId) ?? null;
+        setIsolationCheckAccount(account);
+        setIsolationReasons(result.reasons);
+      }
+    } catch (checkError) {
+      console.error(checkError);
+      setError("Could not check what's connected to this account before archiving.");
+    } finally {
+      setIsCheckingIsolation(false);
+    }
+  }
+
+  async function handleConfirmArchiveFromDialog() {
+    if (!isolationCheckAccount) return;
+    setIsConfirmingArchive(true);
+    await runArchiveAccount(isolationCheckAccount.id);
+    setIsConfirmingArchive(false);
+    setIsolationCheckAccount(null);
+    setIsolationReasons([]);
+  }
+
+  function handleCancelArchiveDialog() {
+    setIsolationCheckAccount(null);
+    setIsolationReasons([]);
   }
 
   async function handleRestoreAccount(account: Account) {
@@ -643,6 +692,16 @@ export default function AccountsPage() {
         }}
       />
 
+      <IsolationWarningDialog
+        open={isolationCheckAccount !== null}
+        entityLabel="account"
+        entityName={isolationCheckAccount?.name ?? ""}
+        reasons={isolationReasons}
+        isProcessing={isConfirmingArchive}
+        onCancel={handleCancelArchiveDialog}
+        onConfirm={handleConfirmArchiveFromDialog}
+      />
+
       <Snackbar
         open={deleteSuccessNotice}
         autoHideDuration={4000}
@@ -690,7 +749,11 @@ export default function AccountsPage() {
           </MenuItem>
         )}
         {rowMenuAccount && !rowMenuAccount.isArchived ? (
-          <MenuItem onClick={() => { handleArchiveAccount(rowMenuAccount.id); handleCloseRowMenu(); }} sx={{ gap: 1, color: "error.main" }}>
+          <MenuItem
+            onClick={() => { handleArchiveAccount(rowMenuAccount.id); handleCloseRowMenu(); }}
+            disabled={isCheckingIsolation}
+            sx={{ gap: 1, color: "error.main" }}
+          >
             <ArchiveRoundedIcon sx={{ fontSize: 16 }} /> Archive
           </MenuItem>
         ) : (
