@@ -728,8 +728,8 @@ export default function TransactionsPage() {
           <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <Box>
               <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Last Synced</Typography>
-              <Typography sx={{ fontWeight: 700, color: "#0f172a", mt: 0.5, fontSize: "1.25rem" }}>{lastSyncedDateLabel}</Typography>
-              {lastSyncedTimeLabel && (
+              <Typography sx={{ fontWeight: 700, color: "#0f172a", mt: 0.5, fontSize: "1.25rem" }}>{syncing ? "Syncing…" : lastSyncedDateLabel}</Typography>
+              {!syncing && lastSyncedTimeLabel && (
                 <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
                   {lastSyncedTimeLabel}
                 </Typography>

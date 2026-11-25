@@ -4,10 +4,8 @@ import { auth } from "@/lib/firebaseClient";
 import useAuth from "@/lib/hooks/useAuth";
 import { useSettings } from "@/lib/hooks/useSettings";
 import PageHeader from "@/components/PageHeader";
-import type { DefaultBudgetMonth } from "@/lib/types/types";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
-import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import {
   Alert,
   Box,
@@ -15,10 +13,6 @@ import {
   Card,
   CardContent,
   Divider,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
   Snackbar,
   Stack,
   Typography,
@@ -31,9 +25,9 @@ export default function SettingsPage() {
   const router = useRouter();
 
   const { user, authLoading } = useAuth();
-  const { settings, settingsLoading, error: loadError, updateSettings } = useSettings(user, authLoading);
+  // Also creates the user's settings doc on first visit.
+  const { error: loadError } = useSettings(user, authLoading);
 
-  const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   async function handleSignOut() {
@@ -104,43 +98,6 @@ export default function SettingsPage() {
           ) : (
             <Typography variant="body2" color="text.secondary">
               Loading account...
-            </Typography>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Preferences */}
-      <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-        <CardContent sx={{ p: 2.25 }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <Box
-              sx={{
-                width: 36,
-                height: 36,
-                borderRadius: 2,
-                bgcolor: "#f5f3ff",
-                color: "#7c3aed",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <TuneRoundedIcon sx={{ fontSize: 20 }} />
-            </Box>
-            <Typography variant="body1" sx={{ fontWeight: 700 }}>
-              Preferences
-            </Typography>
-          </Box>
-
-          <Divider sx={{ my: 2 }} />
-
-          {settingsLoading || !settings ? (
-            <Typography variant="body2" color="text.secondary">
-              Loading preferences...
-            </Typography>
-          ) : (
-            <Typography variant="h5">
-              TBU
             </Typography>
           )}
         </CardContent>

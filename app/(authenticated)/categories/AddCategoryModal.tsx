@@ -199,8 +199,6 @@ export default function AddCategoryModal({
     [grossSalary, deductions, payFrequency]
   );
 
-  const frequencyShortLabel = payFrequencyOptions.find((o) => o.value === payFrequency)?.shortLabel ?? "";
-
   function addDeductionRow(type: DeductionType, label = "", defaultPercent = 0) {
     setDeductions((prev) => [
       ...prev,

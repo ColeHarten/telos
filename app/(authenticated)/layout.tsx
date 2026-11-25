@@ -2,8 +2,9 @@
 
 import { auth } from "@/lib/firebaseClient";
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
-import BoltIcon from '@mui/icons-material/Bolt';
+import BoltIcon from "@mui/icons-material/Bolt";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
+import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutlined";
 import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
@@ -16,6 +17,7 @@ import {
   Container,
   Divider,
   Drawer,
+  IconButton,
   List,
   ListItemButton,
   ListItemIcon,
@@ -49,6 +51,7 @@ export default function AuthenticatedLayout({
 
   const [user, setUser] = useState<User | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
@@ -82,11 +85,130 @@ export default function AuthenticatedLayout({
     return null;
   }
 
+  const drawerContent = (
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        height: "100%",
+        p: 1.25,
+      }}
+    >
+      <Box>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1.25, // Space between logo and text
+            padding: 1.25, // Padding around the logo and text
+            cursor: "pointer",
+          }}
+          onClick={() => router.push("/dashboard")}
+        >
+          <TelosLogo size={30} />
+
+          <Typography
+            variant="h3"
+            sx={{
+              fontWeight: 700,
+              fontSize: "1.9rem",
+              letterSpacing: "-0.04em",
+              lineHeight: 1,
+              color: "text.primary",
+              userSelect: "none",
+            }}
+          >
+            Telos
+          </Typography>
+        </Box>
+
+        <Divider sx={{ mb: 1 }} />
+
+        <List sx={{ py: 0 }}>
+          {navItems.map((item) => (
+            <ListItemButton
+              key={item.href}
+              component={Link}
+              href={item.href}
+              onClick={() => setMobileOpen(false)}
+              selected={pathname === item.href}
+              sx={{
+                borderRadius: 2,
+                mb: 0.5,
+                minHeight: 40,
+                px: 1.5,
+                gap: 1,
+                justifyContent: "flex-start",
+                color: "text.secondary",
+                transition: "background-color 0.15s ease, color 0.15s ease",
+                "&:hover": {
+                  bgcolor: "grey.100",
+                },
+                "&.Mui-selected": {
+                  bgcolor: "#eff6ff",
+                  color: "#2563eb",
+                },
+                "&.Mui-selected:hover": {
+                  bgcolor: "#dbeafe",
+                },
+              }}
+            >
+              <ListItemIcon
+                sx={{
+                  minWidth: 0,
+                  color: "inherit",
+                }}
+              >
+                <item.icon fontSize="small" />
+              </ListItemIcon>
+
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: pathname === item.href ? 700 : 500,
+                }}
+              >
+                {item.label}
+              </Typography>
+            </ListItemButton>
+          ))}
+        </List>
+      </Box>
+
+      <Box>
+        <Divider sx={{ mb: 1.25 }} />
+
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+          <Avatar
+            src={user.photoURL ?? undefined}
+            alt={user.displayName ?? user.email ?? "User"}
+            sx={{ width: 32, height: 32 }}
+          />
+
+          <Box>
+            <Typography
+              variant="body2"
+              sx={{
+                px: 1.75,
+                color: "text.secondary",
+                wordBreak: "break-word",
+              }}
+            >
+              {user.displayName ?? user.email}
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
+    </Box>
+  );
+
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "grey.50" }}>
       <Drawer
         variant="permanent"
         sx={{
+          display: { xs: "none", md: "block" },
           width: drawerWidth,
           flexShrink: 0,
           zIndex: (theme) => theme.zIndex.drawer + 2,
@@ -100,133 +222,38 @@ export default function AuthenticatedLayout({
           },
         }}
       >
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "space-between",
-            height: "100%",
-            p: 1.25,
-          }}
-        >
-          <Box>
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: 1.25, // Space between logo and text
-                padding: 1.25, // Padding around the logo and text
-                cursor: "pointer",
-              }}
-              onClick={() => router.push("/dashboard")}
-            >
-              <TelosLogo size={30} />
+        {drawerContent}
+      </Drawer>
 
-              <Typography
-                variant="h3"
-                sx={{
-                  fontWeight: 700,
-                  fontSize: "1.9rem",
-                  letterSpacing: "-0.04em",
-                  lineHeight: 1,
-                  color: "text.primary",
-                  userSelect: "none",
-                }}
-              >
-                Telos
-              </Typography>
-            </Box>
-
-            <Divider sx={{ mb: 1 }} />
-
-            <List sx={{ py: 0 }}>
-              {navItems.map((item) => (
-                <ListItemButton
-                  key={item.href}
-                  component={Link}
-                  href={item.href}
-                  selected={pathname === item.href}
-                  sx={{
-                    borderRadius: 2,
-                    mb: 0.5,
-                    minHeight: 40,
-                    px: 1.5,
-                    gap: 1,
-                    justifyContent: "flex-start",
-                    color: "text.secondary",
-                    transition: "background-color 0.15s ease, color 0.15s ease",
-                    "&:hover": {
-                      bgcolor: "grey.100",
-                    },
-                    "&.Mui-selected": {
-                      bgcolor: "#eff6ff",
-                      color: "#2563eb",
-                    },
-                    "&.Mui-selected:hover": {
-                      bgcolor: "#dbeafe",
-                    },
-                  }}
-                >
-                  <ListItemIcon
-                    sx={{
-                      minWidth: 0,
-                      color: "inherit",
-                    }}
-                  >
-                    <item.icon fontSize="small" />
-                  </ListItemIcon>
-
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      fontWeight: pathname === item.href ? 700 : 500,
-                    }}
-                  >
-                    {item.label}
-                  </Typography>
-                </ListItemButton>
-              ))}
-            </List>
-          </Box>
-
-          <Box>
-            <Divider sx={{ mb: 1.25 }} />
-
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
-              <Avatar
-                src={user.photoURL ?? undefined}
-                alt={user.displayName ?? user.email ?? "User"}
-                sx={{ width: 32, height: 32 }}
-              />
-
-              <Box>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    px: 1.75,
-                    color: "text.secondary",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {user.displayName ?? user.email}
-                </Typography>
-              </Box>
-            </Box>
-          </Box>
-        </Box>
+      {/* Below md, the same navigation opens from the menu button. */}
+      <Drawer
+        variant="temporary"
+        open={mobileOpen}
+        onClose={() => setMobileOpen(false)}
+        sx={{
+          display: { xs: "block", md: "none" },
+          [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: "border-box" },
+        }}
+      >
+        {drawerContent}
       </Drawer>
 
       <Box
         component="main"
         sx={{
-          ml: `${drawerWidth}px`,
+          ml: { xs: 0, md: `${drawerWidth}px` },
           minHeight: "100vh",
           display: "flex",
           flexDirection: "column",
           bgcolor: "grey.50",
         }}
       >
-        <Toolbar />
+        <Toolbar sx={{ display: { xs: "none", md: "flex" } }} />
+        <Box sx={{ display: { xs: "flex", md: "none" }, alignItems: "center", px: 2, pt: 2 }}>
+          <IconButton aria-label="Open menu" edge="start" onClick={() => setMobileOpen(true)}>
+            <MenuRoundedIcon />
+          </IconButton>
+        </Box>
 
         <Container
           maxWidth="lg"
@@ -259,10 +286,6 @@ export default function AuthenticatedLayout({
             >
               <Typography variant="body2" color="text.secondary">
                 © 2026 Telos
-              </Typography>
-
-              <Typography variant="body2" color="text.secondary">
-                Phase 3: Automations and clean up
               </Typography>
             </Box>
           </Container>

@@ -80,13 +80,11 @@ export default function AccountsPage() {
   const addMenuOpen = Boolean(addMenuAnchor);
 
   const [contributionPromptAccounts, setContributionPromptAccounts] = useState<{ id: string; name: string }[]>([]);
-  const [contributionPromptSource, setContributionPromptSource] = useState<"plaid" | "manual" | null>(null);
   const [isSavingContributionPrompt, setIsSavingContributionPrompt] = useState(false);
   const [duplicateNotice, setDuplicateNotice] = useState(0);
 
   function closeContributionPrompt() {
     setContributionPromptAccounts([]);
-    setContributionPromptSource(null);
   }
 
   async function handleContributionPromptConfirm(selections: Record<string, boolean>) {
@@ -224,7 +222,6 @@ export default function AccountsPage() {
           isContributionEligible: formData.isContributionEligible,
         });
         setContributionPromptAccounts([{ id: newAccountId, name: formData.name.trim() }]);
-        setContributionPromptSource("manual");
       }
 
       setDialogOpen(false);
@@ -432,7 +429,6 @@ export default function AccountsPage() {
               <PlaidConnectButton
                 onAccountsLinked={(accounts, skippedDuplicateCount) => {
                   setContributionPromptAccounts(accounts.map((a) => ({ id: a.id, name: a.name })));
-                  setContributionPromptSource("plaid");
                   setDuplicateNotice(skippedDuplicateCount);
                 }}
                 onLinkError={(message) => setError(message)}

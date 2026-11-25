@@ -2,6 +2,20 @@
 
 Running log for the `production-hardening` branch: one section and one commit per stage.
 
+## Stage 4: Tests, CI, docs, and polish
+
+**New:** `vitest.config.ts`, `tests/` (unit tests, rules tests, and a `server-only` stub), `.github/workflows/ci.yml`, `docs/architecture.md`
+**Changed:** `package.json`, `tsconfig.json`, `eslint.config.mjs`, `README.md`, `app/(authenticated)/layout.tsx`, `app/(authenticated)/settings/page.tsx`, `app/login/page.tsx`, `app/(authenticated)/transactions/page.tsx`, `app/(authenticated)/categories/AddCategoryModal.tsx`, `app/(authenticated)/automations/page.tsx`
+**Removed:** `todo.md`, `automations.md` (moved into `docs/architecture.md`), `image.png`
+
+- Unit tests: budget math, `normalizeMerchant`, `resolveWinner`, `readVotes`, `applyRules`, `calculateWithholdings`, encryption (round trip, tamper, legacy format, and rotation), and the sync planner (repeat runs, no category overwrite, pending to posted, and uncategorized rerun).
+- Rules tests on the emulator: cross-user denial, `plaidItems` and `rateLimits` denial, transaction field limits, and account protections.
+- CI: install, lint, typecheck, unit tests, rules tests, and a build with placeholder public config.
+- Polish: footer phase text removed; Preferences card removed until it has content; below `md` the drawer opens from a menu button (desktop unchanged); Login redirects to the Dashboard when already signed in; Last Synced shows "Syncing…" during a sync; stray `tsconfig` entry removed; unused imports removed.
+- Lint: `react-hooks/set-state-in-effect` is a warning rather than an error. The flagged effects reset state when the user, month, or dialog changes, which is intended.
+
+Commands: `npm test`, `npm run test:rules` (needs Java 21), `npm run typecheck`, `npm run lint`.
+
 ## Stage 3: Calculations and data integrity
 
 **New:** `lib/budgetCalculations.ts`, `app/api/accounts/delete/route.ts`

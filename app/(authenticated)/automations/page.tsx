@@ -7,7 +7,6 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import SwapHorizRoundedIcon from "@mui/icons-material/SwapHorizRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
-import VerifiedUserRoundedIcon from "@mui/icons-material/VerifiedUserRounded";
 import {
   Avatar,
   Box,
