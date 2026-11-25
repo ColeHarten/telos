@@ -1,4 +1,6 @@
-import { adminDb } from "@/lib/firebaseAdmin";
+import "server-only";
+
+import { getAdminDb } from "@/lib/firebaseAdmin";
 import { normalizeMerchant } from "@/lib/merchant";
 import type { Automation, Category, CategoryKind } from "@/lib/types/types";
 import type { Transaction as PlaidTransaction } from "plaid";
@@ -36,7 +38,7 @@ const MIN_MARGIN = 2;
  * the signal isn't strong enough yet. Pure function — no I/O — so it's easy
  * to unit test independent of Firestore.
  */
-function resolveWinner(counts: Record<string, number>): string | null {
+export function resolveWinner(counts: Record<string, number>): string | null {
   const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   if (ranked.length === 0) return null;
 
@@ -55,9 +57,9 @@ function resolveWinner(counts: Record<string, number>): string | null {
 
 export async function buildRulesContext(uid: string): Promise<RulesContext> {
   const [categoriesSnap, automationsSnap, statsSnap] = await Promise.all([
-    adminDb.collection("users").doc(uid).collection("categories").get(),
-    adminDb.collection("users").doc(uid).collection("automations").get(),
-    adminDb.collection("users").doc(uid).collection("categoryPlaidStats").get(),
+    getAdminDb().collection("users").doc(uid).collection("categories").get(),
+    getAdminDb().collection("users").doc(uid).collection("automations").get(),
+    getAdminDb().collection("users").doc(uid).collection("categoryPlaidStats").get(),
   ]);
 
   const categories = categoriesSnap.docs.map(
@@ -117,12 +119,6 @@ function resolveTransferAccountId(category: Category): string | null {
  * an old automation or learned mapping still points at it. Each tier falls
  * through to the next when this happens (same as when the matched category
  * no longer exists at all).
- *
- * NOTE: field names here are categoryKind/categoryId to match Firestore
- * transaction docs and useTransactions.ts. (Previously this file and
- * syncService.ts used assignmentType/assignmentId, a stale name that meant
- * synced transactions were writing to fields the client never read — fixed
- * as part of this change; see syncService.ts.)
  */
 export async function applyRules<T extends {
   merchantName: string | null;

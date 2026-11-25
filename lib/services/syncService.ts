@@ -1,4 +1,6 @@
-import { adminDb } from "@/lib/firebaseAdmin";
+import "server-only";
+
+import { getAdminDb } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 import type { CategoryKind } from "@/lib/types/types";
 import type { DocumentReference, WriteBatch } from "firebase-admin/firestore";
@@ -7,10 +9,40 @@ import type {
   Transaction as PlaidTransaction,
 } from "plaid";
 import { syncTransactions, getPlaidErrorCode } from "./plaidService";
-import { decryptSecret } from "./encryption";
+import { decryptSecretWithStatus, encryptSecret } from "./encryption";
+import { errorFields, logWarn } from "./logging";
 import { applyRules, buildRulesContext } from "./ruleEngine";
 
 const MAX_BATCH_SIZE = 500;
+
+export function plaidItemsCollection(uid: string) {
+  return getAdminDb().collection("users").doc(uid).collection("plaidItems");
+}
+
+/** Sync status the browser can read: one doc per connection, same id as plaidItems. */
+export function plaidItemStatusCollection(uid: string) {
+  return getAdminDb().collection("users").doc(uid).collection("plaidItemStatus");
+}
+
+async function writeSyncSuccess(uid: string, itemId: string, institutionName: string | null): Promise<void> {
+  await plaidItemStatusCollection(uid).doc(itemId).set(
+    {
+      institutionName,
+      needsReauth: false,
+      lastSyncedAt: FieldValue.serverTimestamp(),
+      lastSyncError: null,
+      lastSyncErrorAt: null,
+    },
+    { merge: true }
+  );
+}
+
+async function writeSyncFailure(uid: string, itemId: string, errorCode: string, needsReauth: boolean): Promise<void> {
+  await plaidItemStatusCollection(uid).doc(itemId).set(
+    { needsReauth, lastSyncError: errorCode, lastSyncErrorAt: FieldValue.serverTimestamp() },
+    { merge: true }
+  );
+}
 
 /**
  * Shape of a Plaid Item document as stored in Firestore.
@@ -22,13 +54,6 @@ interface PlaidItemDoc {
   createdAt: number;
   institutionId: string | null;
   institutionName: string | null;
-  needsReauth?: boolean;
-  lastSyncError?: string;
-  lastSyncErrorAt?: number;
-  // Set whenever syncPlaidItem completes successfully for this item (server
-  // timestamp). Read client-side by useAccounts.ts to power the
-  // "Last Synced" display on the Transactions page — see 2.4.
-  lastSyncedAt?: FirebaseFirestore.Timestamp;
   // Plaid account_ids under this item that exchange-token identified as
   // duplicates of an already-linked account at link time, so they have no
   // corresponding Account doc. Every sync excludes their transactions too,
@@ -38,14 +63,6 @@ interface PlaidItemDoc {
 
 /**
  * Shape of a transaction document as stored in Firestore.
- *
- * categoryKind/categoryId replace the old cashflowId field. The read side
- * (useTransactions.ts) reads these two field names directly — every doc
- * written from here on out uses this shape.
- *
- * (These were previously named assignmentType/assignmentId here and in
- * ruleEngine.ts, which meant synced transactions were writing to fields
- * useTransactions.ts never read. Renamed to match the read side.)
  *
  * categoryKind/categoryId are `null` (not a sentinel string like the old
  * "unassigned") when a transaction hasn't been categorized. Firestore can't
@@ -113,7 +130,7 @@ interface SyncAllPlaidItemsResult {
 async function commitInChunks(ops: BatchOp[]): Promise<void> {
   for (let i = 0; i < ops.length; i += MAX_BATCH_SIZE) {
     const chunk = ops.slice(i, i + MAX_BATCH_SIZE);
-    const batch: WriteBatch = adminDb.batch();
+    const batch: WriteBatch = getAdminDb().batch();
 
     for (const op of chunk) {
       if (op.type === "set") {
@@ -133,13 +150,13 @@ export async function syncPlaidItem(
   uid: string,
   itemId: string
 ): Promise<SyncPlaidItemResult> {
-  const itemRef = adminDb.collection("users").doc(uid).collection("plaidItems").doc(itemId);
+  const itemRef = plaidItemsCollection(uid).doc(itemId);
   const itemSnap = await itemRef.get();
 
   if (!itemSnap.exists) throw new Error("Plaid item not found");
 
   const item = itemSnap.data() as PlaidItemDoc;
-  const accessToken = decryptSecret(item.accessToken);
+  const { plaintext: accessToken, needsReencryption } = decryptSecretWithStatus(item.accessToken);
   const skippedAccountIds = new Set(item.skippedDuplicateAccountIds ?? []);
 
   let cursor = item.cursor || "";
@@ -164,7 +181,7 @@ export async function syncPlaidItem(
   const filteredModified = modified.filter((tx) => !skippedAccountIds.has(tx.account_id));
   const filteredRemoved = removed.filter((tx) => !skippedAccountIds.has(tx.account_id));
 
-  const txRef = adminDb.collection("users").doc(uid).collection("transactions");
+  const txRef = getAdminDb().collection("users").doc(uid).collection("transactions");
   const ops: BatchOp[] = [];
   const rulesContext = await buildRulesContext(uid);
 
@@ -204,11 +221,9 @@ export async function syncPlaidItem(
   }
 
   await commitInChunks(ops);
-  // lastSyncedAt is a server timestamp — set only on a fully successful
-  // sync of this item (never on the ITEM_LOGIN_REQUIRED path in
-  // syncAllPlaidItems below), so it reflects the last time this item's
-  // transactions were actually refreshed rather than merely attempted.
-  await itemRef.update({ cursor, needsReauth: false, lastSyncedAt: FieldValue.serverTimestamp() });
+  // Re-encrypt a token stored in the old format or with the previous key.
+  await itemRef.update(needsReencryption ? { cursor, accessToken: encryptSecret(accessToken) } : { cursor });
+  await writeSyncSuccess(uid, itemId, item.institutionName ?? null);
 
   return {
     addedCount: filteredAdded.length,
@@ -220,11 +235,7 @@ export async function syncPlaidItem(
 export async function syncAllPlaidItems(
   uid: string
 ): Promise<SyncAllPlaidItemsResult> {
-  const itemsSnap = await adminDb
-    .collection("users")
-    .doc(uid)
-    .collection("plaidItems")
-    .get();
+  const itemsSnap = await plaidItemsCollection(uid).get();
 
   const total: SyncAllPlaidItemsResult = {
     added: 0,
@@ -242,19 +253,16 @@ export async function syncAllPlaidItems(
       total.removed += result.removedCount;
     } catch (err) {
       if (getPlaidErrorCode(err) === "ITEM_LOGIN_REQUIRED") {
-        // Expected, recoverable state — the item's credentials need
-        // refreshing via update-mode Link, not a code fix. Don't let one
-        // stale connection block syncing every other linked account.
-        console.warn(`[syncService] Item ${itemDoc.id} needs reauth (ITEM_LOGIN_REQUIRED) — skipping.`);
+        // Recoverable: the user reconnects through update-mode Link. One
+        // stale connection doesn't block syncing the others.
+        logWarn("sync", "Item needs reauth; skipping", { itemId: itemDoc.id });
         total.itemsNeedingReauth.push(itemDoc.id);
-        await itemDoc.ref
-          .update({ needsReauth: true, lastSyncError: "ITEM_LOGIN_REQUIRED", lastSyncErrorAt: Date.now() })
-          .catch((updateErr) => {
-            console.error(`[syncService] Failed to flag item ${itemDoc.id} as needing reauth:`, updateErr);
-          });
+        await writeSyncFailure(uid, itemDoc.id, "ITEM_LOGIN_REQUIRED", true).catch((updateErr: unknown) => {
+          logWarn("sync", "Could not flag item as needing reauth", { itemId: itemDoc.id, ...errorFields(updateErr) });
+        });
         continue;
       }
-      // Any other error is unexpected — surface it, same as before.
+      // Any other error is unexpected; surface it.
       throw err;
     }
   }

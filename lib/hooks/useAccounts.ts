@@ -46,7 +46,7 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [itemsNeedingReauth, setItemsNeedingReauth] = useState<Set<string>>(new Set());
-  // Most recent lastSyncedAt across all of the user's plaidItems docs, or
+  // Most recent lastSyncedAt across all of the user's plaidItemStatus docs, or
   // null if no item has ever completed a sync. Powers the "Last Synced"
   // card on the Transactions page — see syncService.ts's syncPlaidItem,
   // which is the only place lastSyncedAt is written.
@@ -114,16 +114,9 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
     };
   }, [authLoading, user]);
 
-  // Separate, small live listener on plaidItems — needsReauth is set there
-  // (by syncService.ts, when a sync hits ITEM_LOGIN_REQUIRED) and cleared
-  // there automatically on the next successful sync of that item.
-  // Kept on plaidItems rather than duplicated onto every Account doc under
-  // that item, so there's exactly one place this flag can drift from —
-  // account rows just look it up by plaidItemId.
-  //
-  // This listener also derives lastSyncedAt (the max across all items) for
-  // the same reason: it's per-Item state, not per-Account state, and a
-  // second onSnapshot here keeps it live without re-fetching accounts.
+  // Live listener on plaidItemStatus: one doc per bank connection, written by
+  // the sync job. needsReauth drives the reconnect prompt, and lastSyncedAt is
+  // the most recent across connections.
   useEffect(() => {
     if (authLoading) return;
 
@@ -133,7 +126,7 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
       return;
     }
 
-    const itemsQuery = collection(db, "users", user.uid, "plaidItems");
+    const itemsQuery = collection(db, "users", user.uid, "plaidItemStatus");
 
     const unsubscribeItems = onSnapshot(
       itemsQuery,

@@ -1,116 +1,131 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/services/auth";
+import { ApiError, badRequest, readJsonObject, requireString, withUser } from "@/lib/api/handler";
+import { getAdminDb } from "@/lib/firebaseAdmin";
+import { encryptSecret } from "@/lib/services/encryption";
+import { errorFields, logError, logWarn } from "@/lib/services/logging";
 import {
   exchangePublicToken,
   fetchAccounts,
   getInstitutionForItem,
-  mapPlaidAccountType,
   getNormalBalanceFromPlaid,
+  mapPlaidAccountType,
+  removeItem,
 } from "@/lib/services/plaidService";
-import { encryptSecret } from "@/lib/services/encryption";
-import { adminDb } from "@/lib/firebaseAdmin";
-import { syncPlaidItem } from "@/lib/services/syncService";
+import { RATE_LIMITS } from "@/lib/services/rateLimit";
+import { plaidItemsCollection, plaidItemStatusCollection, syncPlaidItem } from "@/lib/services/syncService";
 
-export async function POST(req: Request) {
-  try {
-    const user = await requireUser(req);
-    const { public_token } = await req.json();
+// The first sync runs before responding and can take several seconds.
+export const maxDuration = 60;
 
-    const exchange = await exchangePublicToken(public_token);
-    const accessToken = exchange.access_token;
-    const plaidItemId = exchange.item_id;
+type LinkedAccount = { id: string; name: string; accountType: string };
+type LinkResult = { accounts: LinkedAccount[]; skippedDuplicateCount: number };
 
-    const accounts = await fetchAccounts(accessToken);
-    const institution = await getInstitutionForItem(accessToken);
-    const institutionId = institution?.institutionId ?? null;
-
-    // --- Duplicate prevention ---------------------------------------------
-    // Re-linking an already-connected bank through normal Plaid Link (rather
-    // than update mode — see plaidLinkButton.tsx) mints a brand-new Item with
-    // brand-new account_ids for the same real-world accounts, so a naive
-    // "doc id = plaidAccountId" write would create a second Account doc per
-    // account. There's no stable cross-Item account identifier available
-    // here, so we dedupe on the best available proxy: (institution, mask)
-    // among the user's active, Plaid-linked accounts. Accounts with no mask
-    // are never treated as duplicates — wrongly calling something "new" is
-    // far less harmful than silently dropping a genuinely distinct account.
-    const existingAccountsSnap = await adminDb
-      .collection("users")
-      .doc(user.uid)
-      .collection("accounts")
-      .get();
-
-    const existingKeys = new Set<string>();
-    existingAccountsSnap.docs.forEach((d) => {
-      const data = d.data();
-      if (!data.plaidItemId || data.isArchived || !data.plaidMask) return;
-      existingKeys.add(`${data.plaidInstitutionId ?? ""}::${data.plaidMask}`);
-    });
-
-    const newAccounts = accounts.filter(
-      (acc) => !acc.mask || !existingKeys.has(`${institutionId ?? ""}::${acc.mask}`)
-    );
-    const duplicateAccounts = accounts.filter((acc) => !newAccounts.includes(acc));
-
-    if (newAccounts.length === 0) {
-      return NextResponse.json(
-        { error: "duplicate_accounts", message: "This bank account is already linked." },
-        { status: 409 }
-      );
-    }
-
-    const itemRef = adminDb
-      .collection("users")
-      .doc(user.uid)
-      .collection("plaidItems")
-      .doc(plaidItemId);
-
-    await itemRef.set({
-      accessToken: encryptSecret(accessToken),
-      itemId: plaidItemId,
-      cursor: "",
-      createdAt: Date.now(),
-      institutionId,
-      institutionName: institution?.institutionName ?? null,
-      skippedDuplicateAccountIds: duplicateAccounts.map((acc) => acc.account_id),
-    });
-
-    const accountsRef = adminDb.collection("users").doc(user.uid).collection("accounts");
-    const accountBatch = adminDb.batch();
-
-    for (const acc of newAccounts) {
-      accountBatch.set(accountsRef.doc(acc.account_id), {
-        name: acc.name,
-        accountType: mapPlaidAccountType(acc),
-        normalBalance: getNormalBalanceFromPlaid(acc),
-        startingBalance: acc.balances.current ?? 0,
-        currentBalance: acc.balances.current ?? 0,
-        isManual: false,
-        isArchived: false,
-        isContributionEligible: false,
-        plaidAccountId: acc.account_id,
-        plaidItemId: plaidItemId,
-        plaidInstitutionId: institutionId,
-        plaidMask: acc.mask ?? null,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-    }
-
-    await accountBatch.commit();
-    await syncPlaidItem(user.uid, plaidItemId);
-
-    return NextResponse.json({
-      success: true,
-      accounts: newAccounts.map((acc) => ({
-        id: acc.account_id,
-        name: acc.name,
-        accountType: mapPlaidAccountType(acc),
-      })),
-      skippedDuplicateCount: duplicateAccounts.length,
-    });
-  } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: "Exchange failed" }, { status: 500 });
+export const POST = withUser({ name: "exchange-token", rateLimit: RATE_LIMITS.exchangeToken }, async ({ req, user }) => {
+  const publicToken = requireString(await readJsonObject(req), "public_token", 256);
+  if (!publicToken.startsWith("public-")) {
+    throw badRequest('"public_token" is not a Plaid public token.');
   }
+
+  const exchange = await exchangePublicToken(publicToken);
+  const accessToken = exchange.access_token;
+  const itemId = exchange.item_id;
+
+  let result: LinkResult;
+  try {
+    result = await saveConnection(user.uid, itemId, accessToken);
+  } catch (err) {
+    // Nothing was saved, so the new Plaid item would be orphaned. Remove it.
+    await removeItem(accessToken).catch((removeErr: unknown) => {
+      logWarn("exchange-token", "Could not remove unsaved Plaid item", { itemId, ...errorFields(removeErr) });
+    });
+    throw err;
+  }
+
+  try {
+    await syncPlaidItem(user.uid, itemId);
+  } catch (err) {
+    // The connection is saved; the next sync picks up its transactions.
+    logError("exchange-token", err, { itemId, step: "initial-sync" });
+  }
+
+  return NextResponse.json({ success: true, ...result });
+});
+
+/**
+ * Saves the connection, its status doc, and its new accounts in one batch.
+ *
+ * Linking a bank again through normal Link (not update mode) creates a new
+ * item with new account ids, so accounts are deduped on (institution, mask)
+ * among active linked accounts. Accounts without a mask are always kept.
+ */
+async function saveConnection(uid: string, itemId: string, accessToken: string): Promise<LinkResult> {
+  const [accounts, institution] = await Promise.all([fetchAccounts(accessToken), getInstitutionForItem(accessToken)]);
+  const institutionId = institution?.institutionId ?? null;
+  const institutionName = institution?.institutionName ?? null;
+
+  const db = getAdminDb();
+  const accountsRef = db.collection("users").doc(uid).collection("accounts");
+
+  const existingSnap = await accountsRef.get();
+  const existingKeys = new Set<string>();
+  existingSnap.docs.forEach((d) => {
+    const data = d.data();
+    if (!data.plaidItemId || data.isArchived || !data.plaidMask) return;
+    existingKeys.add(`${data.plaidInstitutionId ?? ""}::${data.plaidMask}`);
+  });
+
+  const newAccounts = accounts.filter((acc) => !acc.mask || !existingKeys.has(`${institutionId ?? ""}::${acc.mask}`));
+  const duplicateAccounts = accounts.filter((acc) => !newAccounts.includes(acc));
+
+  if (newAccounts.length === 0) {
+    throw new ApiError(409, "duplicate_accounts", "This bank account is already linked.");
+  }
+
+  const now = Date.now();
+  const batch = db.batch();
+
+  batch.set(plaidItemsCollection(uid).doc(itemId), {
+    accessToken: encryptSecret(accessToken),
+    itemId,
+    cursor: "",
+    createdAt: now,
+    institutionId,
+    institutionName,
+    skippedDuplicateAccountIds: duplicateAccounts.map((acc) => acc.account_id),
+  });
+
+  batch.set(plaidItemStatusCollection(uid).doc(itemId), {
+    institutionName,
+    needsReauth: false,
+    lastSyncedAt: null,
+    lastSyncError: null,
+    lastSyncErrorAt: null,
+  });
+
+  for (const acc of newAccounts) {
+    const balance = acc.balances.current ?? 0;
+    batch.set(accountsRef.doc(acc.account_id), {
+      name: acc.name,
+      accountType: mapPlaidAccountType(acc),
+      normalBalance: getNormalBalanceFromPlaid(acc),
+      startingBalance: balance,
+      currentBalance: balance,
+      isManual: false,
+      isArchived: false,
+      isContributionEligible: false,
+      plaidAccountId: acc.account_id,
+      plaidItemId: itemId,
+      plaidInstitutionId: institutionId,
+      plaidMask: acc.mask ?? null,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  await batch.commit();
+
+  return {
+    accounts: newAccounts.map((acc) => ({ id: acc.account_id, name: acc.name, accountType: mapPlaidAccountType(acc) })),
+    skippedDuplicateCount: duplicateAccounts.length,
+  };
 }

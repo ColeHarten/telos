@@ -1,18 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/services/auth";
+import { withUser } from "@/lib/api/handler";
 import { createLinkToken } from "@/lib/services/plaidService";
+import { RATE_LIMITS } from "@/lib/services/rateLimit";
 
-export async function POST(req: Request) {
-  try {
-    const user = await requireUser(req);
-
-    const linkToken = await createLinkToken(user.uid);
-
-    return NextResponse.json({ linkToken });
-  } catch (err) {
-    return NextResponse.json(
-      { error: "Failed to create link token" },
-      { status: 401 }
-    );
-  }
-}
+export const POST = withUser({ name: "create-link-token", rateLimit: RATE_LIMITS.linkToken }, async ({ user }) => {
+  const linkToken = await createLinkToken(user.uid);
+  return NextResponse.json({ linkToken });
+});

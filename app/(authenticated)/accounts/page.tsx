@@ -286,14 +286,7 @@ export default function AccountsPage() {
   async function handleRestoreAccount(account: Account) {
     try {
       setError(null);
-      await updateAccount(account.id, {
-        name: account.name,
-        accountType: account.accountType,
-        normalBalance: account.normalBalance,
-        startingBalance: account.startingBalance,
-        currentBalance: account.currentBalance ?? account.startingBalance,
-        isArchived: false,
-      });
+      await updateAccount(account.id, { isArchived: false });
     } catch (restoreError) {
       console.error(restoreError);
       setError("Could not restore account.");
@@ -311,7 +304,7 @@ export default function AccountsPage() {
   }
 
   // Fires after a per-row reconnect succeeds. Doesn't need to touch local
-  // state — syncPlaidItem clears needsReauth on the plaidItems doc once the
+  // state — syncPlaidItem clears needsReauth on the connection's status doc once the
   // sync completes, and useAccounts' live listener on that collection picks
   // it up automatically, so the row's warning icon just disappears on its
   // own once the item is actually healthy again.

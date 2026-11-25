@@ -1,0 +1,84 @@
+rules_version = '2';
+
+// Deploy from the repo: npx firebase-tools deploy --only firestore:rules
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Fields whose values differ between the stored doc and the write.
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+
+      // No recursive wildcard under users/{uid}: Firestore allows a request
+      // if ANY matching rule allows it, so a catch-all would re-open
+      // plaidItems. Every subcollection is listed; anything else is denied.
+
+      // Encrypted Plaid access tokens and sync cursors. Admin SDK only.
+      match /plaidItems/{itemId} {
+        allow read, write: if false;
+      }
+
+      // Per-connection sync status, written by the server.
+      match /plaidItemStatus/{itemId} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+
+      // Written by the sync job. The browser may only change the assignment.
+      match /transactions/{transactionId} {
+        allow read: if isOwner(uid);
+        allow update: if isOwner(uid)
+          && changedKeys().hasOnly(['categoryKind', 'categoryId', 'transferAccountId', 'updatedAt']);
+      }
+
+      match /accounts/{accountId} {
+        allow read: if isOwner(uid);
+
+        // The browser creates manual accounts only; linked accounts come from the server.
+        allow create: if isOwner(uid)
+          && request.resource.data.isManual == true
+          && request.resource.data.get('plaidItemId', null) == null
+          && request.resource.data.get('plaidAccountId', null) == null;
+
+        // Plaid links, and balances on linked accounts, belong to the server.
+        allow update: if isOwner(uid)
+          && !changedKeys().hasAny(['isManual', 'plaidAccountId', 'plaidItemId', 'plaidInstitutionId', 'plaidInstitutionName', 'plaidMask'])
+          && (resource.data.get('isManual', true) == true
+              || !changedKeys().hasAny(['startingBalance', 'currentBalance', 'balanceUpdatedAt']));
+
+        allow delete: if isOwner(uid);
+      }
+
+      match /categories/{categoryId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && request.resource.data.get('kind', 'expense') in ['income', 'expense', 'transfer'];
+      }
+
+      match /settings/{settingsId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /budgets/{monthKey} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /automations/{merchantKey} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /categoryPlaidStats/{plaidCategoryCode} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // Top-level collections such as rateLimits have no rule, so browsers are denied.
+  }
+}

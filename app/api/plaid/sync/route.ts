@@ -1,31 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/services/auth";
+import { withUser } from "@/lib/api/handler";
+import { RATE_LIMITS } from "@/lib/services/rateLimit";
 import { syncAllPlaidItems } from "@/lib/services/syncService";
 
-export async function POST(req: Request) {
-  try {
-    console.log("[sync] starting");
+// A first sync can wait several seconds for Plaid to prepare transactions.
+export const maxDuration = 60;
 
-    const user = await requireUser(req);
-    console.log("[sync] user:", user?.uid);
-
-    const result = await syncAllPlaidItems(user.uid);
-
-    console.log("[sync] success");
-
-    return NextResponse.json({
-      success: true,
-      ...result,
-    });
-  } catch (err: any) {
-    // Log full details server-side only — never return stack traces or
-    // internal error messages to the client, since that leaks file paths
-    // and implementation details to anyone who can trigger a failed sync.
-    console.error("[sync] FAILED:", err);
-
-    return NextResponse.json(
-      { error: "Sync failed" },
-      { status: 500 }
-    );
-  }
-}
+export const POST = withUser({ name: "sync", rateLimit: RATE_LIMITS.sync }, async ({ user }) => {
+  const result = await syncAllPlaidItems(user.uid);
+  return NextResponse.json({ success: true, ...result });
+});

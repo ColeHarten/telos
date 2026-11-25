@@ -1,71 +1,101 @@
+import "server-only";
+
 import crypto from "crypto";
 
 /**
- * Encrypts/decrypts secrets before they touch Firestore — currently just
- * Plaid access tokens (see exchange-token/route.ts, syncService.ts,
- * create-update-link-token/route.ts). AES-256-GCM via Node's built-in
- * crypto module: authenticated encryption, so decrypt() throws on any
- * tampering or corruption instead of silently returning garbage — no
- * separate HMAC needed, unlike AES-CBC.
+ * AES-256-GCM encryption for secrets stored in Firestore (Plaid access
+ * tokens). GCM is authenticated, so decryption throws on any tampering.
  *
- * ENCRYPTION_KEY must be a base64-encoded 32-byte (256-bit) key, set as a
- * server-only env var (same pattern as PLAID_CLIENT_ID/PLAID_SECRET) —
- * never exposed to the client bundle. See the "how to generate + store
- * this" notes wherever this module is introduced.
+ * Stored format: "v1.<iv>.<authTag>.<ciphertext>", each part base64. The
+ * legacy unversioned "<iv>.<authTag>.<ciphertext>" still decrypts and is
+ * reported as needing re-encryption.
+ *
+ * Keys: ENCRYPTION_KEY (current) and the optional ENCRYPTION_KEY_PREVIOUS,
+ * kept during a rotation so values written with the old key still decrypt.
+ * Each is a base64-encoded 32-byte key: openssl rand -base64 32
  */
 
 const ALGORITHM = "aes-256-gcm";
-const IV_LENGTH = 12; // 96-bit nonce — the standard, recommended size for GCM
+const IV_LENGTH = 12;
+const AUTH_TAG_LENGTH = 16;
+const VERSION = "v1";
 
-function getKey(): Buffer {
-  const key = process.env.ENCRYPTION_KEY;
-  if (!key) {
-    throw new Error("ENCRYPTION_KEY is not set");
+type Parts = { iv: Buffer; authTag: Buffer; ciphertext: Buffer; isLegacy: boolean };
+
+function parseKey(name: string, value: string): Buffer {
+  const key = Buffer.from(value, "base64");
+  if (key.length !== 32) {
+    throw new Error(`${name} must decode to exactly 32 bytes, got ${key.length}. Generate one with: openssl rand -base64 32`);
   }
-  const buf = Buffer.from(key, "base64");
-  if (buf.length !== 32) {
-    throw new Error(
-      `ENCRYPTION_KEY must decode to exactly 32 bytes, got ${buf.length}. Generate one with: openssl rand -base64 32`
-    );
-  }
-  return buf;
+  return key;
 }
 
-/**
- * Encrypts a plaintext secret for storage. Returns a single string
- * (iv.authTag.ciphertext, each base64) — safe to store directly as one
- * Firestore field.
- */
+function getCurrentKey(): Buffer {
+  const value = process.env.ENCRYPTION_KEY;
+  if (!value) throw new Error("ENCRYPTION_KEY is not set");
+  return parseKey("ENCRYPTION_KEY", value);
+}
+
+function getPreviousKey(): Buffer | null {
+  const value = process.env.ENCRYPTION_KEY_PREVIOUS;
+  return value ? parseKey("ENCRYPTION_KEY_PREVIOUS", value) : null;
+}
+
+function parseStored(stored: string): Parts {
+  const segments = stored.split(".");
+  let encoded: string[];
+  let isLegacy: boolean;
+
+  if (segments.length === 4 && segments[0] === VERSION) {
+    encoded = segments.slice(1);
+    isLegacy = false;
+  } else if (segments.length === 3) {
+    encoded = segments;
+    isLegacy = true;
+  } else {
+    throw new Error("decryptSecret: unrecognized ciphertext format");
+  }
+
+  const [iv, authTag, ciphertext] = encoded.map((part) => Buffer.from(part, "base64"));
+  if (iv.length !== IV_LENGTH || authTag.length !== AUTH_TAG_LENGTH) {
+    throw new Error("decryptSecret: malformed iv or auth tag");
+  }
+  return { iv, authTag, ciphertext, isLegacy };
+}
+
+function decryptWithKey(key: Buffer, { iv, authTag, ciphertext }: Parts): string {
+  // A fixed tag length rejects truncated tags.
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+}
+
 export function encryptSecret(plaintext: string): string {
   const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv(ALGORITHM, getKey(), iv);
-
+  const cipher = crypto.createCipheriv(ALGORITHM, getCurrentKey(), iv, { authTagLength: AUTH_TAG_LENGTH });
   const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const authTag = cipher.getAuthTag(); // must be read after final()
-
-  return [iv, authTag, ciphertext].map((buf) => buf.toString("base64")).join(".");
+  const authTag = cipher.getAuthTag();
+  return [VERSION, iv.toString("base64"), authTag.toString("base64"), ciphertext.toString("base64")].join(".");
 }
 
-/**
- * Reverses encryptSecret. Throws if the value wasn't produced by
- * encryptSecret with the current ENCRYPTION_KEY — including if the
- * ciphertext or auth tag were altered, since GCM verifies integrity as
- * part of decryption.
- */
-export function decryptSecret(stored: string): string {
-  const parts = stored.split(".");
-  if (parts.length !== 3) {
-    throw new Error("decryptSecret: malformed input — expected iv.authTag.ciphertext");
+export type DecryptResult = {
+  plaintext: string;
+  /** True for the legacy format, or when only the previous key worked. */
+  needsReencryption: boolean;
+};
+
+export function decryptSecretWithStatus(stored: string): DecryptResult {
+  const parts = parseStored(stored);
+  const currentKey = getCurrentKey();
+  try {
+    return { plaintext: decryptWithKey(currentKey, parts), needsReencryption: parts.isLegacy };
+  } catch (err) {
+    const previousKey = getPreviousKey();
+    if (!previousKey) throw err;
+    return { plaintext: decryptWithKey(previousKey, parts), needsReencryption: true };
   }
-  const [ivB64, authTagB64, ciphertextB64] = parts;
+}
 
-  const decipher = crypto.createDecipheriv(ALGORITHM, getKey(), Buffer.from(ivB64, "base64"));
-  decipher.setAuthTag(Buffer.from(authTagB64, "base64"));
-
-  const plaintext = Buffer.concat([
-    decipher.update(Buffer.from(ciphertextB64, "base64")),
-    decipher.final(),
-  ]);
-
-  return plaintext.toString("utf8");
+export function decryptSecret(stored: string): string {
+  return decryptSecretWithStatus(stored).plaintext;
 }

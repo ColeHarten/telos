@@ -272,7 +272,7 @@ export default function TransactionsPage() {
     [dateRangePreset, customDateFrom, customDateTo]
   );
 
-  // Live "Last Synced" card content — sourced from useAccounts' plaidItems
+  // Live "Last Synced" card content — sourced from useAccounts' plaidItemStatus
   // listener (see syncService.ts's syncPlaidItem, the only writer of
   // lastSyncedAt), rather than a hardcoded placeholder date. Updates
   // automatically once a sync completes, since that listener is live.
@@ -369,7 +369,7 @@ export default function TransactionsPage() {
       setSyncSuccess(true);
       await refetchTransactions();
       // No need to manually refresh lastSyncedAt here — useAccounts' live
-      // plaidItems listener picks up the new lastSyncedAt as soon as
+      // plaidItemStatus listener picks up the new lastSyncedAt as soon as
       // syncPlaidItem writes it server-side.
     } catch (err: any) {
       setTransactionsError(err.message || "Sync error");

@@ -1,25 +1,54 @@
+import "server-only";
+
 import { Configuration, CountryCode, PlaidApi, PlaidEnvironments, Products } from "plaid";
 import type { AccountType, NormalBalance } from "@/lib/types/types";
+import { logInfo } from "./logging";
 
-const config = new Configuration({
-  basePath: PlaidEnvironments.sandbox,
-  baseOptions: {
-    headers: {
-      "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID!,
-      "PLAID-SECRET": process.env.PLAID_SECRET!,
-    },
-  },
-});
+const PLAID_CLIENT_NAME = "Telos";
+const PLAID_COUNTRY_CODES: CountryCode[] = [CountryCode.Us];
 
-export const plaidClient = new PlaidApi(config);
+type PlaidEnv = "sandbox" | "production";
+
+// PLAID_ENV picks the Plaid environment. It defaults to sandbox.
+function getPlaidEnv(): PlaidEnv {
+  const value = process.env.PLAID_ENV || "sandbox";
+  if (value !== "sandbox" && value !== "production") {
+    throw new Error(`PLAID_ENV must be "sandbox" or "production", got "${value}"`);
+  }
+  return value;
+}
+
+function requireEnv(name: "PLAID_CLIENT_ID" | "PLAID_SECRET"): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is not set`);
+  return value;
+}
+
+let client: PlaidApi | null = null;
+
+// Created on first use, so `next build` and tests don't need Plaid secrets.
+function getPlaidClient(): PlaidApi {
+  client ??= new PlaidApi(
+    new Configuration({
+      basePath: PlaidEnvironments[getPlaidEnv()],
+      baseOptions: {
+        headers: {
+          "PLAID-CLIENT-ID": requireEnv("PLAID_CLIENT_ID"),
+          "PLAID-SECRET": requireEnv("PLAID_SECRET"),
+        },
+      },
+    })
+  );
+  return client;
+}
 
 export async function createLinkToken(uid: string) {
-  const res = await plaidClient.linkTokenCreate({
+  const res = await getPlaidClient().linkTokenCreate({
     user: { client_user_id: uid },
-    client_name: "Budgeting App",
+    client_name: PLAID_CLIENT_NAME,
     language: "en",
     products: [Products.Transactions] as Products[],
-    country_codes: [CountryCode.Us] as CountryCode[],
+    country_codes: PLAID_COUNTRY_CODES,
   });
 
   return res.data.link_token;
@@ -32,11 +61,11 @@ export async function createLinkToken(uid: string) {
 // problem. Passing access_token instead of products is what puts Link into
 // update mode; products is omitted since it's not accepted in this mode.
 export async function createUpdateModeLinkToken(uid: string, accessToken: string) {
-  const res = await plaidClient.linkTokenCreate({
+  const res = await getPlaidClient().linkTokenCreate({
     user: { client_user_id: uid },
-    client_name: "Budgeting App",
+    client_name: PLAID_CLIENT_NAME,
     language: "en",
-    country_codes: [CountryCode.Us] as CountryCode[],
+    country_codes: PLAID_COUNTRY_CODES,
     access_token: accessToken,
   });
 
@@ -44,7 +73,7 @@ export async function createUpdateModeLinkToken(uid: string, accessToken: string
 }
 
 export async function exchangePublicToken(publicToken: string) {
-  const res = await plaidClient.itemPublicTokenExchange({
+  const res = await getPlaidClient().itemPublicTokenExchange({
     public_token: publicToken,
   });
 
@@ -52,7 +81,7 @@ export async function exchangePublicToken(publicToken: string) {
 }
 
 export async function fetchAccounts(accessToken: string) {
-  const res = await plaidClient.accountsGet({
+  const res = await getPlaidClient().accountsGet({
     access_token: accessToken,
   });
 
@@ -75,7 +104,7 @@ export { getPlaidErrorCode };
 export async function syncTransactions(accessToken: string, cursor?: string) {
   for (let attempt = 0; attempt <= PRODUCT_NOT_READY_RETRY_DELAYS_MS.length; attempt++) {
     try {
-      const res = await plaidClient.transactionsSync({
+      const res = await getPlaidClient().transactionsSync({
         access_token: accessToken,
         cursor: cursor || "",
       });
@@ -84,7 +113,7 @@ export async function syncTransactions(accessToken: string, cursor?: string) {
       const isProductNotReady = getPlaidErrorCode(err) === "PRODUCT_NOT_READY";
       const isLastAttempt = attempt === PRODUCT_NOT_READY_RETRY_DELAYS_MS.length;
       if (!isProductNotReady || isLastAttempt) throw err;
-      console.log(`[plaidService] PRODUCT_NOT_READY, retrying in ${PRODUCT_NOT_READY_RETRY_DELAYS_MS[attempt]}ms (attempt ${attempt + 1})`);
+      logInfo("plaid", "PRODUCT_NOT_READY; retrying", { delayMs: PRODUCT_NOT_READY_RETRY_DELAYS_MS[attempt], attempt: attempt + 1 });
       await new Promise((resolve) => setTimeout(resolve, PRODUCT_NOT_READY_RETRY_DELAYS_MS[attempt]));
     }
   }
@@ -93,7 +122,7 @@ export async function syncTransactions(accessToken: string, cursor?: string) {
 }
 
 export async function getInstitutionForItem(accessToken: string) {
-  const itemResponse = await plaidClient.itemGet({
+  const itemResponse = await getPlaidClient().itemGet({
     access_token: accessToken,
   });
 
@@ -105,9 +134,9 @@ export async function getInstitutionForItem(accessToken: string) {
   }
 
   const institutionResponse =
-    await plaidClient.institutionsGetById({
+    await getPlaidClient().institutionsGetById({
       institution_id: institutionId,
-      country_codes: [CountryCode.Us] as CountryCode[],
+      country_codes: PLAID_COUNTRY_CODES,
     });
 
   return {
@@ -177,7 +206,7 @@ export function getNormalBalanceFromPlaid(
 // account tied to a given Plaid connection). Irreversible on Plaid's side —
 // the user would need to re-link via Plaid Link to reconnect this bank.
 export async function removeItem(accessToken: string) {
-  const res = await plaidClient.itemRemove({
+  const res = await getPlaidClient().itemRemove({
     access_token: accessToken,
   });
 

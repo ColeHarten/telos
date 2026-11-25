@@ -1,18 +1,27 @@
-import { adminAuth } from "@/lib/firebaseAdmin";
+import "server-only";
 
-export async function requireUser(req: Request) {
-  const authHeader = req.headers.get("authorization");
+import type { DecodedIdToken } from "firebase-admin/auth";
+import { getAdminAuth } from "@/lib/firebaseAdmin";
 
-  if (!authHeader?.startsWith("Bearer ")) {
-    throw new Error("Missing Authorization header");
+/** The request has no valid Firebase ID token. API routes map this to 401. */
+export class AuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthError";
   }
+}
 
-  const token = authHeader.substring("Bearer ".length);
+export async function requireUser(req: Request): Promise<DecodedIdToken> {
+  const header = req.headers.get("authorization");
+  const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
+  if (!token) throw new AuthError("Missing bearer token");
 
+  // Created outside the try so configuration errors surface as 500s, not 401s.
+  const firebaseAuth = getAdminAuth();
   try {
-    const decoded = await adminAuth.verifyIdToken(token);
-    return decoded; // contains uid
-  } catch (err) {
-    throw new Error("Invalid token");
+    // checkRevoked rejects tokens for disabled or signed-out-everywhere users.
+    return await firebaseAuth.verifyIdToken(token, true);
+  } catch {
+    throw new AuthError("Invalid, expired, or revoked token");
   }
 }

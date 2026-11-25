@@ -1,50 +1,35 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/services/auth";
-import { removeItem } from "@/lib/services/plaidService";
+import { readJsonObject, requireId, withUser } from "@/lib/api/handler";
+import { getAdminDb } from "@/lib/firebaseAdmin";
 import { decryptSecret } from "@/lib/services/encryption";
-import { adminDb } from "@/lib/firebaseAdmin";
+import { errorFields, logWarn } from "@/lib/services/logging";
+import { removeItem } from "@/lib/services/plaidService";
+import { RATE_LIMITS } from "@/lib/services/rateLimit";
+import { plaidItemsCollection, plaidItemStatusCollection } from "@/lib/services/syncService";
 
-export async function POST(req: Request) {
-  try {
-    const user = await requireUser(req);
-    const { itemId } = await req.json();
+// Revokes Plaid's access to a bank connection and deletes its records.
+export const POST = withUser({ name: "disconnect-item", rateLimit: RATE_LIMITS.disconnect }, async ({ req, user }) => {
+  const itemId = requireId(await readJsonObject(req), "itemId");
 
-    if (!itemId) {
-      return NextResponse.json({ error: "Missing itemId" }, { status: 400 });
-    }
+  const itemRef = plaidItemsCollection(user.uid).doc(itemId);
+  const itemSnap = await itemRef.get();
 
-    const itemRef = adminDb
-      .collection("users")
-      .doc(user.uid)
-      .collection("plaidItems")
-      .doc(itemId);
-
-    const itemSnap = await itemRef.get();
-    if (!itemSnap.exists) {
-      // Already gone — nothing to disconnect. Treat as success so the
-      // caller's account deletion isn't blocked by a stale reference.
-      return NextResponse.json({ success: true });
-    }
-
+  if (itemSnap.exists) {
     const { accessToken } = itemSnap.data() as { accessToken: string };
-
     try {
       await removeItem(decryptSecret(accessToken));
     } catch (err) {
-      // Plaid may already consider the item revoked (e.g. the user pulled
-      // access from their bank's side) — don't let that block cleaning up
-      // our own records.
-      console.warn(`[disconnect-item] Plaid itemRemove failed for ${itemId}, continuing to clean up locally:`, err);
+      // Plaid may already have revoked the item; our records are removed either way.
+      logWarn("disconnect-item", "Plaid itemRemove failed; removing local records", { itemId, ...errorFields(err) });
     }
-
-    await itemRef.delete();
-
-    return NextResponse.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    return NextResponse.json(
-      { error: "Failed to disconnect Plaid item" },
-      { status: 500 }
-    );
   }
-}
+
+  // A connection that is already gone still succeeds, so a stale reference
+  // can't block deleting an account.
+  const batch = getAdminDb().batch();
+  batch.delete(itemRef);
+  batch.delete(plaidItemStatusCollection(user.uid).doc(itemId));
+  await batch.commit();
+
+  return NextResponse.json({ success: true });
+});
