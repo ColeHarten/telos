@@ -20,6 +20,7 @@ export type IsolationCheck = {
   isIsolated: boolean;
   reasons: string[];
   hasActivePlaidConnection: boolean;
+  hasTransactionHistory?: boolean;
 };
 
 interface DeleteAccountDialogProps {
@@ -131,8 +132,8 @@ export default function DeleteAccountDialog({
             </Typography>
             {checkResult?.hasActivePlaidConnection && (
                 <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                    This account is still connected to your bank via Plaid. Deleting it will also disconnect
-                    that bank connection.
+                    This account is still connected to your bank. Deleting it stops syncing it, and disconnects
+                    the bank if no other account uses it.
                 </Alert>
             )}
             <Typography variant="body2" color="text.secondary">

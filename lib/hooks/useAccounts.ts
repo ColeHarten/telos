@@ -4,7 +4,6 @@ import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { db } from "@/lib/firebaseClient";
 import {
   collection,
-  deleteDoc,
   doc,
   getDocs,
   limit,
@@ -27,6 +26,8 @@ export type AccountIsolationCheck = {
   // deleteAccount), so the UI can warn the user about that without treating
   // it as something they need to fix first.
   hasActivePlaidConnection: boolean;
+  // Informational only. Deleting an account also deletes its own transactions.
+  hasTransactionHistory: boolean;
 };
 
 // Best-effort conversion of a Firestore-Timestamp-like value (or a raw
@@ -238,9 +239,6 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
       const originSnap = await getDocs(
         query(collection(db, "users", user.uid, "transactions"), where("accountId", "==", accountId), limit(1))
       );
-      if (!originSnap.empty) {
-        reasons.push("This account has transaction history.");
-      }
 
       // Transactions categorized as a transfer into this account. Queried
       // by transferAccountId (the resolved destination account,
@@ -280,70 +278,41 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
         isIsolated: reasons.length === 0,
         reasons,
         hasActivePlaidConnection: Boolean(target?.plaidItemId),
+        hasTransactionHistory: !originSnap.empty,
       };
     },
     [user, accounts]
   );
 
-  /**
-   * If `plaidItemId` isn't referenced by any other account (any status,
-   * excluding the one being deleted), tells the server to revoke Plaid's
-   * access to it and delete the plaidItems doc. If another account still
-   * shares this Item, does nothing — that account's connection must stay
-   * alive.
-   */
-  const disconnectPlaidItemIfOrphaned = useCallback(
-    async (plaidItemId: string, excludingAccountId: string) => {
-      const stillInUse = accounts.some(
-        (a) => a.id !== excludingAccountId && a.plaidItemId === plaidItemId
-      );
-      if (stillInUse) return;
-
-      const res = await authenticatedFetch("/api/plaid/disconnect-item", {
-        method: "POST",
-        body: JSON.stringify({ itemId: plaidItemId }),
-      });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.message ?? body.error ?? "Could not disconnect the linked bank account.");
-      }
-    },
-    [accounts]
-  );
+  /** Disconnects a bank. Its accounts become manual accounts that keep their history. */
+  const disconnectBank = useCallback(async (plaidItemId: string) => {
+    const res = await authenticatedFetch("/api/plaid/disconnect-item", {
+      method: "POST",
+      body: JSON.stringify({ itemId: plaidItemId }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.message ?? body.error ?? "Could not disconnect the bank.");
+    }
+  }, []);
 
   /**
-   * Permanently deletes an account. Only ever succeeds for an archived,
-   * fully-isolated account — re-verifies both here (not just in the UI)
-   * since this is destructive and irreversible.
-   *
-   * If the account is still linked to Plaid, deletion also disconnects that
-   * bank connection (unless a sibling account shares the same Item, in
-   * which case only this account's doc is removed — see
-   * disconnectPlaidItemIfOrphaned).
+   * Permanently deletes an archived account and its own transactions. The
+   * server re-checks that nothing else still links to it.
    */
   const deleteAccount = useCallback(
     async (id: string) => {
       if (!user) throw new Error("Not signed in");
-
-      const target = accounts.find((a) => a.id === id);
-      if (!target) throw new Error("Account not found.");
-      if (!target.isArchived) {
-        throw new Error("Only archived accounts can be permanently deleted.");
+      const res = await authenticatedFetch("/api/accounts/delete", {
+        method: "POST",
+        body: JSON.stringify({ accountId: id }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message ?? body.error ?? "Could not delete this account.");
       }
-
-      const { isIsolated, reasons } = await checkAccountIsolation(id);
-      if (!isIsolated) {
-        throw new Error(`This account can't be deleted yet: ${reasons.join(" ")}`);
-      }
-
-      if (target.plaidItemId) {
-        await disconnectPlaidItemIfOrphaned(target.plaidItemId, id);
-      }
-
-      await deleteDoc(doc(db, "users", user.uid, "accounts", id));
     },
-    [user, accounts, checkAccountIsolation, disconnectPlaidItemIfOrphaned]
+    [user]
   );
 
   return {
@@ -357,6 +326,7 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
     archiveAccount,
     checkAccountIsolation,
     deleteAccount,
+    disconnectBank,
   };
 }
 

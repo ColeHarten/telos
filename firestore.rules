@@ -53,7 +53,8 @@ service cloud.firestore {
           && (resource.data.get('isManual', true) == true
               || !changedKeys().hasAny(['startingBalance', 'currentBalance', 'balanceUpdatedAt']));
 
-        allow delete: if isOwner(uid);
+        // Deleting an account also deletes its transactions, so it runs on the server.
+        allow delete: if false;
       }
 
       match /categories/{categoryId} {

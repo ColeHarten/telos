@@ -12,6 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useState } from "react";
+import { getCurrentMonthKey, shiftMonthKey } from "@/lib/budgetCalculations";
 
 const MONTH_SHORT_LABELS = [
   "Jan",
@@ -42,24 +43,7 @@ export function formatMonthLabel(monthKey: string) {
   }).format(date);
 }
 
-export function getCurrentMonthKey() {
-  const today = new Date();
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
-    2,
-    "0"
-  )}`;
-}
-
-// Shifts a "YYYY-MM" key by a number of months (negative goes back).
-export function shiftMonthKey(monthKey: string, delta: number) {
-  const [year, month] = monthKey.split("-").map(Number);
-  const date = new Date(year, month - 1 + delta, 1);
-
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-    2,
-    "0"
-  )}`;
-}
+export { getCurrentMonthKey, shiftMonthKey };
 
 type MonthPickerControlProps = {
   monthKey: string;

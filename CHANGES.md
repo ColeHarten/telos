@@ -2,6 +2,19 @@
 
 Running log for the `production-hardening` branch: one section and one commit per stage.
 
+## Stage 3: Calculations and data integrity
+
+**New:** `lib/budgetCalculations.ts`, `app/api/accounts/delete/route.ts`
+**Changed:** `app/(authenticated)/dashboard/page.tsx`, `app/(authenticated)/budgets/page.tsx`, `app/(authenticated)/accounts/page.tsx`, `app/(authenticated)/accounts/DeleteAccountDialog.tsx`, `app/(authenticated)/transactions/page.tsx`, `app/(authenticated)/categories/AddCategoryModal.tsx`, `components/MonthPickerControl.tsx`, `lib/hooks/useBudget.ts`, `lib/hooks/useCategories.ts`, `lib/hooks/useAccounts.ts`, `lib/services/syncService.ts`, `lib/services/rateLimit.ts`, `app/api/plaid/disconnect-item/route.ts`, `firestore.rules`
+
+- Shared budget math: month helpers, category actuals net of refunds (floored at 0 per category), an archived-category bucket, transfer actuals, cash flow without transfers (categorized ones plus uncategorized Plaid transfers and credit-card payments), and net worth that falls back to starting balance. Dashboard and Budgets both use it.
+- Budgets save each edited line as its own merged field. A snapshot from another tab never replaces lines with unsaved local edits.
+- Paycheck transfer categories are reconciled in one batch and renamed when the deduction label changes.
+- Archived accounts: the destination and deduction pickers keep a linked archived account, labeled "(archived)". The Transactions account filter resets when its account is archived. The duplicate-name check uses active accounts only.
+- Disconnect bank (server): revokes the Plaid item, deletes its records, and converts its accounts to manual accounts with history kept and balance frozen.
+- Permanent delete (server): archived accounts only. Deletes the account and its own transactions. Still blocked by inbound transfers and by category or deduction links. A linked account stops syncing first.
+- Rules: account deletes are server-only. Deploy with `npx firebase-tools deploy --only firestore:rules`.
+
 ## Stage 2: Sync engine and data freshness
 
 ### New files

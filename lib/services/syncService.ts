@@ -6,7 +6,7 @@ import type { RemovedTransaction, Transaction as PlaidTransaction } from "plaid"
 import { getAdminDb } from "@/lib/firebaseAdmin";
 import { decryptSecretWithStatus, encryptSecret } from "./encryption";
 import { errorFields, logError, logWarn } from "./logging";
-import { fetchAccounts, getPlaidErrorCode, syncTransactions } from "./plaidService";
+import { fetchAccounts, getPlaidErrorCode, removeItem, syncTransactions } from "./plaidService";
 import { applyRules, buildRulesContext } from "./ruleEngine";
 import { planSync, type Assignment, type WriteOp } from "./syncPlanner";
 
@@ -298,4 +298,37 @@ export async function syncAllPlaidItems(uid: string): Promise<SyncAllResult> {
   }
 
   return total;
+}
+
+/**
+ * Revokes Plaid's access to a connection, deletes its records, and converts
+ * its accounts to manual accounts (history kept, balance frozen). A connection
+ * that is already gone still succeeds. Returns the number of accounts converted.
+ */
+export async function disconnectPlaidItem(uid: string, itemId: string): Promise<number> {
+  const db = getAdminDb();
+  const itemRef = plaidItemsCollection(uid).doc(itemId);
+  const itemSnap = await itemRef.get();
+
+  if (itemSnap.exists) {
+    const { accessToken } = itemSnap.data() as PlaidItemDoc;
+    try {
+      await removeItem(decryptSecretWithStatus(accessToken).plaintext);
+    } catch (err) {
+      // Plaid may already have revoked the item; local records are removed either way.
+      logWarn("disconnect-item", "Plaid itemRemove failed; removing local records", { itemId, ...errorFields(err) });
+    }
+  }
+
+  const accounts = await db.collection("users").doc(uid).collection("accounts").where("plaidItemId", "==", itemId).get();
+  const now = Date.now();
+  const batch = db.batch();
+  batch.delete(itemRef);
+  batch.delete(plaidItemStatusCollection(uid).doc(itemId));
+  accounts.docs.forEach((d) =>
+    batch.update(d.ref, { isManual: true, plaidItemId: null, plaidAccountId: null, updatedAt: now })
+  );
+  await batch.commit();
+
+  return accounts.size;
 }

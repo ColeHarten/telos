@@ -6,7 +6,7 @@ import useAuth from "@/lib/hooks/useAuth";
 import useBudget from "@/lib/hooks/useBudget";
 import useCategories from "@/lib/hooks/useCategories";
 import useTransactions from "@/lib/hooks/useTransactions";
-import type { Transaction } from "@/lib/types/types";
+import { archivedCategoryActuals, categoryActuals, transferActualsByAccount } from "@/lib/budgetCalculations";
 import { formatCurrency } from "@/lib/utils";
 import PageHeader from "@/components/PageHeader";
 
@@ -66,10 +66,6 @@ function parseBudgetInput(value: string) {
   }
 
   return parsed;
-}
-
-function isInMonth(dateStr: string, monthKey: string) {
-  return dateStr.startsWith(monthKey);
 }
 
 function getProgress(planned: number, actual: number) {
@@ -136,53 +132,19 @@ export default function BudgetsPage() {
     [categories]
   );
 
-  const monthTransactions = useMemo<Transaction[]>(
-    () => transactions.filter((tx) => isInMonth(tx.date, monthKey)),
-    [transactions, monthKey]
+  // Category actuals for the month, net of refunds.
+  const actualByCategoryId = useMemo(
+    () => categoryActuals(transactions, categoriesById, monthKey),
+    [transactions, categoriesById, monthKey]
   );
 
-  const actualByCategoryId = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const tx of monthTransactions) {
-      if (!tx.categoryId) continue;
-      if (tx.categoryKind !== "income" && tx.categoryKind !== "expense") continue;
-      const category = categoriesById.get(tx.categoryId);
-      if (!category) continue;
-      const contribution = tx.categoryKind === "income" ? Math.max(0, -tx.amount) : Math.max(0, tx.amount);
-      map.set(tx.categoryId, (map.get(tx.categoryId) ?? 0) + contribution);
-    }
-    return map;
-  }, [monthTransactions, categoriesById]);
+  const actualByAccountId = useMemo(() => transferActualsByAccount(transactions, monthKey), [transactions, monthKey]);
 
-    const actualByAccountId = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const tx of monthTransactions) {
-      if (tx.categoryKind !== "transfer" || !tx.transferAccountId) continue;
-      map.set(tx.transferAccountId, (map.get(tx.transferAccountId) ?? 0) + Math.abs(tx.amount));
-    }
-    return map;
-  }, [monthTransactions]);
-
-  // Money that landed on an archived category this month. actualByCategoryId
-  // (above) is keyed off the full, unfiltered `categories` list, but the
-  // budget groups below only ever iterate incomeCategories/expenseCategories
-  // (active only) — so without this, spending assigned to an archived
-  // category is computed and then simply never displayed anywhere, with no
-  // indication it's missing from the totals below.
-  const archivedCategoryActuals = useMemo(() => {
-    let total = 0;
-    let transactionCount = 0;
-    for (const tx of monthTransactions) {
-      if (!tx.categoryId) continue;
-      if (tx.categoryKind !== "income" && tx.categoryKind !== "expense") continue;
-      const category = categoriesById.get(tx.categoryId);
-      if (!category?.isArchived) continue;
-      const contribution = tx.categoryKind === "income" ? Math.max(0, -tx.amount) : Math.max(0, tx.amount);
-      total += contribution;
-      transactionCount += 1;
-    }
-    return { total, transactionCount };
-  }, [monthTransactions, categoriesById]);
+  // Money on archived categories, which the budget lines below don't show.
+  const archivedActuals = useMemo(
+    () => archivedCategoryActuals(transactions, categoriesById, actualByCategoryId, monthKey),
+    [transactions, categoriesById, actualByCategoryId, monthKey]
+  );
 
   const budgetGroups: BudgetGroup[] = useMemo(
     () => [
@@ -417,7 +379,7 @@ export default function BudgetsPage() {
         ))}
       </Grid>
 
-      {!isLoading && archivedCategoryActuals.total > 0 && (
+      {!isLoading && archivedActuals.total > 0 && (
         <Alert
           severity="warning"
           icon={<WarningAmberRoundedIcon />}
@@ -435,8 +397,8 @@ export default function BudgetsPage() {
           }
         >
           <Typography variant="body2" sx={{ fontWeight: 600 }}>
-            {formatCurrency(archivedCategoryActuals.total)} across {archivedCategoryActuals.transactionCount}{" "}
-            transaction{archivedCategoryActuals.transactionCount === 1 ? "" : "s"} this month is assigned to
+            {formatCurrency(archivedActuals.total)} across {archivedActuals.transactionCount}{" "}
+            transaction{archivedActuals.transactionCount === 1 ? "" : "s"} this month is assigned to
             archived categories and isn&apos;t included in the totals below.
           </Typography>
         </Alert>

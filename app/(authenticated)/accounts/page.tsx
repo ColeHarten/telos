@@ -21,12 +21,17 @@ import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import UnarchiveRoundedIcon from "@mui/icons-material/UnarchiveRounded";
 import DeleteForeverRoundedIcon from "@mui/icons-material/DeleteForeverRounded";
+import LinkOffRoundedIcon from "@mui/icons-material/LinkOffRounded";
 import {
   Alert,
   Avatar,
   Box,
   Button,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   Menu,
   MenuItem,
@@ -55,13 +60,16 @@ type ViewFilter = "active" | "archived";
 
 export default function AccountsPage() {
   const { user, authLoading } = useAuth();  
-  const { accounts, accountsLoading, itemsNeedingReauth, addManualAccount, updateAccount, archiveAccount, checkAccountIsolation, deleteAccount } = useAccounts(user, authLoading);
+  const { accounts, accountsLoading, itemsNeedingReauth, addManualAccount, updateAccount, archiveAccount, checkAccountIsolation, deleteAccount, disconnectBank } = useAccounts(user, authLoading);
 
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [deleteDialogAccount, setDeleteDialogAccount] = useState<Account | null>(null);
   const [deleteSuccessNotice, setDeleteSuccessNotice] = useState(false);
+
+  const [disconnectDialogAccount, setDisconnectDialogAccount] = useState<Account | null>(null);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedEditingAccount, setSelectedEditingAccount] = useState<Account | null>(null);
@@ -178,6 +186,7 @@ export default function AccountsPage() {
 
     const isDuplicate = accounts.some(
       (a) =>
+        !a.isArchived &&
         a.id !== selectedEditingAccount?.id &&
         a.name.trim().toLowerCase() === normalizedName
     );
@@ -284,6 +293,26 @@ export default function AccountsPage() {
     } catch (restoreError) {
       console.error(restoreError);
       setError("Could not restore account.");
+    }
+  }
+
+  const disconnectAccountCount = disconnectDialogAccount?.plaidItemId
+    ? accounts.filter((a) => a.plaidItemId === disconnectDialogAccount.plaidItemId).length
+    : 0;
+
+  async function handleConfirmDisconnect() {
+    const itemId = disconnectDialogAccount?.plaidItemId;
+    if (!itemId) return;
+    try {
+      setIsDisconnecting(true);
+      setError(null);
+      await disconnectBank(itemId);
+    } catch (disconnectError) {
+      console.error(disconnectError);
+      setError(disconnectError instanceof Error ? disconnectError.message : "Could not disconnect the bank.");
+    } finally {
+      setIsDisconnecting(false);
+      setDisconnectDialogAccount(null);
     }
   }
 
@@ -699,6 +728,32 @@ export default function AccountsPage() {
         }}
       />
 
+      <Dialog open={disconnectDialogAccount !== null} onClose={isDisconnecting ? undefined : () => setDisconnectDialogAccount(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem" }}>Disconnect bank?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: "#334155" }}>
+            {disconnectAccountCount === 1
+              ? "This account becomes a manual account."
+              : `All ${disconnectAccountCount} accounts from this bank become manual accounts.`}{" "}
+            Transaction history is kept, and balances stop updating. You can link the bank again later.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
+          <Button onClick={() => setDisconnectDialogAccount(null)} disabled={isDisconnecting} sx={{ textTransform: "none", fontWeight: 700 }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmDisconnect}
+            color="error"
+            variant="contained"
+            disabled={isDisconnecting}
+            sx={{ textTransform: "none", fontWeight: 700 }}
+          >
+            {isDisconnecting ? "Disconnecting..." : "Disconnect"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <IsolationWarningDialog
         open={isolationCheckAccount !== null}
         entityLabel="account"
@@ -769,6 +824,17 @@ export default function AccountsPage() {
               <UnarchiveRoundedIcon sx={{ fontSize: 16 }} /> Restore
             </MenuItem>
           )
+        )}
+        {rowMenuAccount?.plaidItemId && (
+          <MenuItem
+            onClick={() => {
+              setDisconnectDialogAccount(rowMenuAccount);
+              handleCloseRowMenu();
+            }}
+            sx={{ gap: 1 }}
+          >
+            <LinkOffRoundedIcon sx={{ fontSize: 16 }} /> Disconnect bank
+          </MenuItem>
         )}
         {rowMenuAccount && rowMenuAccount.isArchived && (
           <MenuItem

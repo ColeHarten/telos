@@ -77,6 +77,10 @@ const QUICK_ADD_OPTIONS: Record<DeductionType, { label: string; defaultPercent: 
   ],
 };
 
+function accountOptionLabel(account: Account): string {
+  return account.isArchived ? `${account.name} (archived)` : account.name;
+}
+
 function KindDot({ color }: { color: string }) {
   return <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: color, flexShrink: 0 }} />;
 }
@@ -123,7 +127,8 @@ export default function AddCategoryModal({
   const [deductionValueDrafts, setDeductionValueDrafts] = useState<Record<string, string>>({});
 
   const isEditing = editingCategory !== null;
-  const activeAccounts = accounts.filter((a) => !a.isArchived);
+  // Active accounts, plus the current destination if it was archived later.
+  const transferAccountOptions = accounts.filter((a) => !a.isArchived || a.id === transferAccountId);
 
   // Accounts selectable as a deduction's contribution destination.
   const contributionEligibleAccounts = useMemo(
@@ -326,7 +331,7 @@ export default function AddCategoryModal({
             <Autocomplete
               size="small"
               options={availableAccountsForRow}
-              getOptionLabel={(option) => option.name}
+              getOptionLabel={accountOptionLabel}
               value={linkedAccount}
               onChange={(_, newValue) => updateDeductionRow(row.index, { linkedAccountId: newValue ? newValue.id : null })}
               disabled={isSaving}
@@ -534,9 +539,9 @@ export default function AddCategoryModal({
             <Box>
               <Autocomplete
                 size="small"
-                options={activeAccounts}
-                getOptionLabel={(option) => option.name}
-                value={activeAccounts.find((a) => a.id === transferAccountId) ?? null}
+                options={transferAccountOptions}
+                getOptionLabel={accountOptionLabel}
+                value={transferAccountOptions.find((a) => a.id === transferAccountId) ?? null}
                 onChange={(_, newValue) => {
                   setTransferAccountId(newValue ? newValue.id : "");
                   setDestinationError(null);

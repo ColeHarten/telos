@@ -346,13 +346,17 @@ export function useCategories(user: AuthUser | null, authLoading: boolean) {
     ) => {
       if (!user) throw new Error("Not signed in");
 
+      const categoriesRef = collection(db, "users", user.uid, "categories");
       const existingByDeductionId = new Map(
         categories
           .filter((c) => c.sourceIncomeCategoryId === incomeCategoryId && c.sourceDeductionId)
           .map((c) => [c.sourceDeductionId as string, c])
       );
-
       const linkedDeductionIds = new Set(deductionBreakdown.map((d) => d.deductionId));
+
+      // One batch, so a failure never leaves half the transfers updated.
+      const batch = writeBatch(db);
+      const removedIds: string[] = [];
 
       for (const entry of deductionBreakdown) {
         const deduction = deductions.find((d) => d.id === entry.deductionId);
@@ -360,29 +364,48 @@ export function useCategories(user: AuthUser | null, authLoading: boolean) {
         const existing = existingByDeductionId.get(entry.deductionId);
 
         if (existing) {
-          await updateCategory(existing.id, {
+          // Renamed too, so it follows the deduction's label.
+          batch.update(doc(categoriesRef, existing.id), {
+            name,
             estimatedMonthly: entry.monthlyAmount,
             transferAccountId: entry.linkedAccountId,
+            updatedAt: serverTimestamp(),
           });
         } else {
-          await addCategory({
+          batch.set(doc(categoriesRef), {
             name,
             kind: "transfer",
             estimatedMonthly: entry.monthlyAmount,
+            description: "",
             transferAccountId: entry.linkedAccountId,
+            paycheckDetails: null,
             sourceIncomeCategoryId: incomeCategoryId,
             sourceDeductionId: entry.deductionId,
+            sortOrder: Date.now(),
+            isDefault: false,
+            isArchived: false,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
           });
         }
       }
 
       for (const [deductionId, category] of existingByDeductionId) {
         if (!linkedDeductionIds.has(deductionId)) {
-          await deleteCategory(category.id);
+          batch.delete(doc(categoriesRef, category.id));
+          removedIds.push(category.id);
         }
       }
+
+      await batch.commit();
+
+      for (const id of removedIds) {
+        await pruneCategoryVotes(user.uid, id).catch((err: unknown) => {
+          console.error("[useCategories] Could not prune learning votes:", err);
+        });
+      }
     },
-    [user, categories, addCategory, updateCategory, deleteCategory]
+    [user, categories]
   );
 
   return {

@@ -15,6 +15,7 @@ export const RATE_LIMITS = {
   linkToken: { bucket: "link-token", limit: 10, windowSeconds: 60 },
   exchangeToken: { bucket: "exchange-token", limit: 5, windowSeconds: 60 },
   disconnect: { bucket: "disconnect", limit: 10, windowSeconds: 60 },
+  deleteAccount: { bucket: "delete-account", limit: 10, windowSeconds: 60 },
 } satisfies Record<string, RateLimitRule>;
 
 export type RateLimitResult = { allowed: true } | { allowed: false; retryAfterSeconds: number };

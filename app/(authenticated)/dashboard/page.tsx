@@ -1,6 +1,15 @@
 "use client";
 
-import { MonthPickerControl, formatMonthLabel, getCurrentMonthKey, shiftMonthKey } from "@/components/MonthPickerControl";
+import { MonthPickerControl, formatMonthLabel } from "@/components/MonthPickerControl";
+import {
+  accountBalance,
+  archivedCategoryActuals,
+  categoryActuals,
+  getCurrentMonthKey,
+  monthCashFlow,
+  monthKeysEndingAt,
+  netWorth as computeNetWorth,
+} from "@/lib/budgetCalculations";
 import useAccounts from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
 import useBudget from "@/lib/hooks/useBudget";
@@ -18,10 +27,6 @@ import type { Account, BudgetLine, Transaction } from "@/lib/types/types";
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function isInMonth(dateStr: string, monthKey: string) {
-  return dateStr.startsWith(monthKey);
-}
 
 function isWithinLast30Days(dateStr: string) {
   const transactionDate = new Date(`${dateStr}T00:00:00`);
@@ -101,19 +106,7 @@ export default function DashboardPage() {
   const activeCategories = useMemo(() => categories.filter((c) => !c.isArchived), [categories]);
 
   // Net worth -----------------------------------------------------------------
-  const netWorth = useMemo(() => {
-    const live = accounts.filter((a) => !a.isArchived);
-    let cash = 0;
-    let investments = 0;
-    let debt = 0;
-    for (const account of live) {
-      const balance = account.currentBalance ?? 0;
-      if (account.normalBalance === "liability") debt += balance;
-      else if (account.accountType === "cash") cash += balance;
-      else investments += balance;
-    }
-    return { total: cash + investments - debt, cash, investments, debt, assets: cash + investments };
-  }, [accounts]);
+  const netWorth = useMemo(() => computeNetWorth(accounts), [accounts]);
 
   // Budget lines for the selected month ----------------------------------------
   const budgetLines = useMemo(() => {
@@ -131,26 +124,17 @@ export default function DashboardPage() {
     return map;
   }, [budgetLines]);
 
-  // Transactions scoped to the selected month ------------------------------------
-  const monthTransactions = useMemo<Transaction[]>(
-    () => transactions.filter((tx) => isInMonth(tx.date, monthKey)),
-    [transactions, monthKey]
+  // Category actuals for the month, net of refunds.
+  const actualByCategoryId = useMemo(
+    () => categoryActuals(transactions, categoriesById, monthKey),
+    [transactions, categoriesById, monthKey]
   );
 
-  // categoryKind is a CategoryKind directly ("income" | "expense" | "transfer");
-  // "uncategorized" is represented by categoryKind being undefined, not a string.
-  const actualByCategoryId = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const tx of monthTransactions) {
-      if (!tx.categoryId) continue;
-      if (tx.categoryKind !== "income" && tx.categoryKind !== "expense") continue;
-      const category = categoriesById.get(tx.categoryId);
-      if (!category) continue;
-      const contribution = tx.categoryKind === "income" ? Math.max(0, -tx.amount) : Math.max(0, tx.amount);
-      map.set(tx.categoryId, (map.get(tx.categoryId) ?? 0) + contribution);
-    }
-    return map;
-  }, [monthTransactions, categoriesById]);
+  // Archived categories still count toward the month's totals.
+  const archivedActuals = useMemo(
+    () => archivedCategoryActuals(transactions, categoriesById, actualByCategoryId, monthKey),
+    [transactions, categoriesById, actualByCategoryId, monthKey]
+  );
 
   // Budget snapshot — totals only. The full category-by-category breakdown
   // lives on the Budgets page; this card intentionally doesn't repeat it.
@@ -161,9 +145,10 @@ export default function DashboardPage() {
 
   const heroTotals = useMemo(() => {
     const planned = expenseCategoryIds.reduce((sum, id) => sum + (plannedByCategoryId.get(id) ?? 0), 0);
-    const actual = expenseCategoryIds.reduce((sum, id) => sum + (actualByCategoryId.get(id) ?? 0), 0);
+    const actual =
+      archivedActuals.expense + expenseCategoryIds.reduce((sum, id) => sum + (actualByCategoryId.get(id) ?? 0), 0);
     return { planned, actual, pct: planned > 0 ? Math.min(1, actual / planned) : actual > 0 ? 1 : 0 };
-  }, [expenseCategoryIds, plannedByCategoryId, actualByCategoryId]);
+  }, [expenseCategoryIds, plannedByCategoryId, actualByCategoryId, archivedActuals]);
 
   const incomeCategoryIds = useMemo(
     () => activeCategories.filter((c) => c.kind === "income").map((c) => c.id),
@@ -176,31 +161,21 @@ export default function DashboardPage() {
   );
 
   const incomeActual = useMemo(
-    () => incomeCategoryIds.reduce((sum, id) => sum + (actualByCategoryId.get(id) ?? 0), 0),
-    [incomeCategoryIds, actualByCategoryId]
+    () => archivedActuals.income + incomeCategoryIds.reduce((sum, id) => sum + (actualByCategoryId.get(id) ?? 0), 0),
+    [incomeCategoryIds, actualByCategoryId, archivedActuals]
   );
 
   const netThisMonth = incomeActual - heroTotals.actual;
 
-  // Cash flow trend (actual, last 6 months) ----------------------------------------
-  const cashFlowTrend = useMemo(() => {
-    const months: string[] = [];
-    let cursor = monthKey;
-    for (let i = 0; i < 6; i += 1) {
-      months.unshift(cursor);
-      cursor = shiftMonthKey(cursor, -1);
-    }
-    return months.map((key) => {
-      let inflow = 0;
-      let outflow = 0;
-      for (const tx of transactions) {
-        if (!isInMonth(tx.date, key)) continue;
-        if (tx.amount < 0) inflow += Math.abs(tx.amount);
-        else outflow += tx.amount;
-      }
-      return { label: formatShortMonthLabel(key), net: inflow - outflow, inflow, outflow };
-    });
-  }, [transactions, monthKey]);
+  // Cash flow trend (actual, last 6 months), excluding transfers.
+  const cashFlowTrend = useMemo(
+    () =>
+      monthKeysEndingAt(monthKey, 6).map((key) => ({
+        label: formatShortMonthLabel(key),
+        ...monthCashFlow(transactions, key),
+      })),
+    [transactions, monthKey]
+  );
 
   const currentMonthCashFlow = cashFlowTrend[cashFlowTrend.length - 1] ?? { inflow: 0, outflow: 0, net: 0 };
 
@@ -437,7 +412,7 @@ export default function DashboardPage() {
                           </Box>
                           <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "12px" }}>
                             <Typography variant="body2" sx={{ fontWeight: 600, color: account.normalBalance === "liability" ? NEGATIVE : INK }}>
-                              {account.normalBalance === "liability" ? "-" : ""}{formatCurrency(Math.abs(account.currentBalance ?? 0))}
+                              {account.normalBalance === "liability" ? "-" : ""}{formatCurrency(Math.abs(accountBalance(account)))}
                             </Typography>
                           </Box>
                         </Box>

@@ -268,7 +268,7 @@ export default function TransactionsPage() {
     categoryLabel: string;
   } | null>(null);
 
-  // Only offer active (non-archived) accounts in the account filter menu
+  // Active accounts only. Archiving the selected account resets the filter to All Accounts.
   const selectableAccounts = useMemo(() => accounts.filter((account) => !account.isArchived), [accounts]);
   const selectedAccount = useMemo(
     () => selectableAccounts.find((account) => account.id === selectedAccountId) ?? null,
@@ -304,7 +304,7 @@ export default function TransactionsPage() {
     const toTime = effectiveDateTo ? parseDateValue(effectiveDateTo) : null;
 
     return transactions.filter((transaction) => {
-      if (selectedAccountId && transaction.originAccId !== selectedAccountId) return false;
+      if (selectedAccount && transaction.originAccId !== selectedAccount.id) return false;
 
       const transactionTime = parseDateValue(transaction.date);
       if (fromTime !== null && transactionTime !== null && transactionTime < fromTime) return false;
@@ -312,7 +312,7 @@ export default function TransactionsPage() {
 
       return true;
     });
-  }, [transactions, selectedAccountId, effectiveDateFrom, effectiveDateTo]);
+  }, [transactions, selectedAccount, effectiveDateFrom, effectiveDateTo]);
 
   // List-only filters: search, status, amount. These narrow down the table
   // for finding specific transactions but should not move the summary cards.
@@ -335,7 +335,7 @@ export default function TransactionsPage() {
       return true;
     });
   }, [scopedTransactions, searchTerm, statusFilter, flowFilter, minAmount, maxAmount]);
-  const hasActiveFilters = Boolean(searchTerm || hasDateRange || statusFilter !== "all" || flowFilter !== "all" || minAmount || maxAmount || selectedAccountId);
+  const hasActiveFilters = Boolean(searchTerm || hasDateRange || statusFilter !== "all" || flowFilter !== "all" || minAmount || maxAmount || selectedAccount);
 
   // Summary metrics recompute from the top-tier scope only (account + date range),
   // so list-only filters like search/status/amount don't move the cards.
@@ -536,7 +536,7 @@ export default function TransactionsPage() {
         }}
       >
         <MenuItem
-          selected={selectedAccountId === null}
+          selected={selectedAccount === null}
           onClick={() => {
             setSelectedAccountId(null);
             setAccountMenuAnchorEl(null);
@@ -544,7 +544,7 @@ export default function TransactionsPage() {
           sx={{ fontWeight: 600, fontSize: "0.85rem" }}
         >
           <ListItemText>All Accounts</ListItemText>
-          {selectedAccountId === null && (
+          {selectedAccount === null && (
             <ListItemIcon sx={{ minWidth: "auto", ml: 1 }}>
               <CheckRoundedIcon sx={{ fontSize: 18, color: "#2563eb" }} />
             </ListItemIcon>
