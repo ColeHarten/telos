@@ -51,6 +51,26 @@ export function resolveWinner(counts: Record<string, number>): string | null {
   return topId;
 }
 
+/**
+ * Learning votes from a categoryPlaidStats doc: { categoryId: count }. Reads
+ * the nested `counts` map and the old literal "counts.<id>" fields that
+ * earlier versions wrote by mistake.
+ */
+export function readVotes(data: Record<string, unknown>): Record<string, number> {
+  const votes: Record<string, number> = {};
+  const add = (categoryId: string, value: unknown) => {
+    if (typeof value === "number" && value > 0 && categoryId) votes[categoryId] = (votes[categoryId] ?? 0) + value;
+  };
+  const nested = data.counts;
+  if (nested && typeof nested === "object") {
+    for (const [categoryId, value] of Object.entries(nested as Record<string, unknown>)) add(categoryId, value);
+  }
+  for (const [field, value] of Object.entries(data)) {
+    if (field.startsWith("counts.")) add(field.slice("counts.".length), value);
+  }
+  return votes;
+}
+
 // ---------------------------------------------------------------------------
 // Context building
 // ---------------------------------------------------------------------------
@@ -74,8 +94,7 @@ export async function buildRulesContext(uid: string): Promise<RulesContext> {
 
   const plaidCategoryDefaults = new Map<string, string>();
   statsSnap.docs.forEach((d) => {
-    const data = d.data() as { counts?: Record<string, number> };
-    const winner = resolveWinner(data.counts ?? {});
+    const winner = resolveWinner(readVotes(d.data()));
     if (winner) plaidCategoryDefaults.set(d.id, winner);
   });
 
@@ -120,14 +139,14 @@ function resolveTransferAccountId(category: Category): string | null {
  * through to the next when this happens (same as when the matched category
  * no longer exists at all).
  */
-export async function applyRules<T extends {
+export function applyRules<T extends {
   merchantName: string | null;
   rawName: string;
   category: PlaidTransaction["personal_finance_category"] | null;
   categoryKind: CategoryKind | null;
   categoryId: string | null;
   transferAccountId: string | null;
-}>(transaction: T, context: RulesContext): Promise<T> {
+}>(transaction: T, context: RulesContext): T {
   const merchantKey = normalizeMerchant(transaction.merchantName ?? transaction.rawName);
 
   // 1. Manual automation always wins — unless the category it points at has

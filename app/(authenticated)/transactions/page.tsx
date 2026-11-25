@@ -6,7 +6,6 @@ import useAuth from "@/lib/hooks/useAuth";
 import { useCategories } from "@/lib/hooks/useCategories";
 import useAutomations from "@/lib/hooks/useAutomations";
 import useTransactions from "@/lib/hooks/useTransactions";
-import type { Category, CategoryKind } from "@/lib/types/types";
 import AutomationPromptDialog from "./automationsPromptDialog";
 import PageHeader from "@/components/PageHeader";
 
@@ -14,7 +13,6 @@ import PageHeader from "@/components/PageHeader";
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
-import FileUploadOutlinedIcon from "@mui/icons-material/FileUploadOutlined";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowLeftIcon from "@mui/icons-material/KeyboardArrowLeft";
@@ -208,6 +206,26 @@ function formatDateRangeButtonLabel(preset: DateRangePreset, customFrom: string,
   return DATE_RANGE_PRESETS.find((option) => option.value === preset)?.label ?? "All Time";
 }
 
+type SyncResponse = {
+  message?: string;
+  itemsNeedingReauth?: string[];
+  itemsFailed?: string[];
+};
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+// A sync can succeed for some banks and not others; this says which need attention.
+function describeSyncProblems(body: SyncResponse | null): string | null {
+  const reauth = body?.itemsNeedingReauth?.length ?? 0;
+  const failed = body?.itemsFailed?.length ?? 0;
+  const parts: string[] = [];
+  if (reauth) parts.push(`${plural(reauth, "bank needs", "banks need")} to be reconnected on the Accounts page`);
+  if (failed) parts.push(`${plural(failed, "bank", "banks")} couldn't sync; try again in a few minutes`);
+  return parts.length ? `${parts.join(". ")}.` : null;
+}
+
 export default function TransactionsPage() {
   const { user, authLoading } = useAuth();
   const { accounts = [], lastSyncedAt } = useAccounts(user, authLoading);
@@ -216,7 +234,8 @@ export default function TransactionsPage() {
     transactionsLoading,
     transactionsError,
     setTransactionsError,
-    refetchTransactions,
+    hasOlderTransactions,
+    loadOlderTransactions,
     updateTransactionAssignment,
   } = useTransactions(user, authLoading, accounts);
 
@@ -272,10 +291,7 @@ export default function TransactionsPage() {
     [dateRangePreset, customDateFrom, customDateTo]
   );
 
-  // Live "Last Synced" card content — sourced from useAccounts' plaidItemStatus
-  // listener (see syncService.ts's syncPlaidItem, the only writer of
-  // lastSyncedAt), rather than a hardcoded placeholder date. Updates
-  // automatically once a sync completes, since that listener is live.
+  // Live "Last Synced": the most recent sync across connections, from useAccounts.
   const { dateLabel: lastSyncedDateLabel, timeLabel: lastSyncedTimeLabel } = useMemo(
     () => formatLastSynced(lastSyncedAt),
     [lastSyncedAt]
@@ -364,15 +380,15 @@ export default function TransactionsPage() {
 
     try {
       const res = await authenticatedFetch("/api/plaid/sync", { method: "POST" });
-      if (!res.ok) throw new Error("Sync operation failed");
+      const body = (await res.json().catch(() => null)) as SyncResponse | null;
+      if (!res.ok) throw new Error(body?.message ?? "Sync failed. Please try again.");
 
-      setSyncSuccess(true);
-      await refetchTransactions();
-      // No need to manually refresh lastSyncedAt here — useAccounts' live
-      // plaidItemStatus listener picks up the new lastSyncedAt as soon as
-      // syncPlaidItem writes it server-side.
-    } catch (err: any) {
-      setTransactionsError(err.message || "Sync error");
+      // New transactions and Last Synced arrive through the live listeners.
+      const problem = describeSyncProblems(body);
+      if (problem) setTransactionsError(problem);
+      else setSyncSuccess(true);
+    } catch (err) {
+      setTransactionsError(err instanceof Error ? err.message : "Sync failed. Please try again.");
     } finally {
       setSyncing(false);
     }
@@ -1108,6 +1124,14 @@ export default function TransactionsPage() {
             </Stack>
           </Stack>
         </Paper>
+      )}
+
+      {hasOlderTransactions && (
+        <Box sx={{ display: "flex", justifyContent: "center" }}>
+          <Button variant="text" onClick={loadOlderTransactions} sx={{ textTransform: "none", fontWeight: 600 }}>
+            Load older transactions
+          </Button>
+        </Box>
       )}
 
       <AutomationPromptDialog

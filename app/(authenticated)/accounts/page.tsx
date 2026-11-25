@@ -77,14 +77,8 @@ export default function AccountsPage() {
   const [duplicateNotice, setDuplicateNotice] = useState(0);
 
   function closeContributionPrompt() {
-    const source = contributionPromptSource;
     setContributionPromptAccounts([]);
     setContributionPromptSource(null);
-    // Plaid's initial sync writes transactions server-side, and useTransactions
-    // only fetches once on mount, so a reload is the simplest way to pick those
-    // up. Manual account creation and every isContributionEligible update below
-    // are already live via useAccounts' onSnapshot listener — nothing to force.
-    if (source === "plaid") window.location.reload();
   }
 
   async function handleContributionPromptConfirm(selections: Record<string, boolean>) {
@@ -316,6 +310,25 @@ export default function AccountsPage() {
     }
   }
 
+  // Syncs every bank, which also refreshes balances; the account listener shows them.
+  const [refreshing, setRefreshing] = useState(false);
+  async function handleRefreshBalances() {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const res = await authenticatedFetch("/api/plaid/sync", { method: "POST" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { message?: string } | null;
+        setError(body?.message ?? "Could not refresh balances.");
+      }
+    } catch (refreshError) {
+      console.error(refreshError);
+      setError("Could not refresh balances.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   const rowMenuAccount = accounts.find((a) => a.id === rowMenuAccountId) ?? null;
 
   return (
@@ -326,7 +339,8 @@ export default function AccountsPage() {
           <Button
             variant="outlined"
             startIcon={<SyncRoundedIcon sx={{ color: "#2563eb", fontSize: 18 }} />}
-            onClick={() => window.location.reload()}
+            onClick={handleRefreshBalances}
+            disabled={refreshing}
             sx={{
               borderColor: "#bfdbfe",
               color: "#2563eb",

@@ -15,8 +15,27 @@ import {
   limit,
   query,
   where,
+  FieldPath,
+  deleteField,
 } from "firebase/firestore";
 import type { AuthUser, Category, CategoryKind, Deduction, PaycheckDetails } from "../types/types";
+
+// Removes a deleted category's learning votes, in both the nested format and
+// the old literal "counts.<id>" fields.
+async function pruneCategoryVotes(uid: string, categoryId: string): Promise<void> {
+  const snap = await getDocs(collection(db, "users", uid, "categoryPlaidStats"));
+  const batch = writeBatch(db);
+  let writes = 0;
+  snap.docs.forEach((d) => {
+    const data = d.data();
+    const counts = data.counts as Record<string, unknown> | undefined;
+    const hasVote = Boolean(counts && categoryId in counts) || `counts.${categoryId}` in data;
+    if (!hasVote) return;
+    batch.update(d.ref, new FieldPath("counts", categoryId), deleteField(), new FieldPath(`counts.${categoryId}`), deleteField());
+    writes += 1;
+  });
+  if (writes > 0) await batch.commit();
+}
 
 type AddCategoryPayload = {
   name: string;
@@ -293,6 +312,9 @@ export function useCategories(user: AuthUser | null, authLoading: boolean) {
     async (id: string) => {
       if (!user) throw new Error("Not signed in");
       await deleteDoc(doc(db, "users", user.uid, "categories", id));
+      await pruneCategoryVotes(user.uid, id).catch((err: unknown) => {
+        console.error("[useCategories] Could not prune learning votes:", err);
+      });
     },
     [user]
   );

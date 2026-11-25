@@ -2,6 +2,72 @@
 
 Running log for the `production-hardening` branch: one section and one commit per stage.
 
+## Stage 2: Sync engine and data freshness
+
+### New files
+
+| File | What it does |
+|---|---|
+| `lib/services/syncPlanner.ts` | Pure function that turns Plaid's added, modified, and removed lists plus the existing docs into writes. No I/O, so Stage 4 can unit test it. |
+
+### Changed files
+
+- **`lib/services/syncService.ts`** (rewritten):
+  - **Categories are never overwritten.** A transaction Plaid sends again only gets its Plaid fields updated. Rules run only on uncategorized transactions.
+  - **Pending to posted:** a posted transaction inherits the category set on its pending version (Plaid's `pending_transaction_id`).
+  - **Modified transactions** now update amount, date, names, pending, Plaid category, and account. Before, only amount, name, and pending were updated.
+  - **One sync per bank at a time:** a 2-minute lease on each connection. A second sync that starts meanwhile skips that bank instead of writing duplicates.
+  - **Restarts pagination** from the saved cursor when Plaid reports that data changed mid-sync.
+  - **One failing bank no longer stops the others.** Each failure is recorded on that bank's status doc.
+  - **Balances refresh on every sync** (`currentBalance`, `balanceUpdatedAt`).
+- **`lib/services/ruleEngine.ts`:** learned categories now work. Votes were saved as literal `counts.<id>` field names, which the server never read; both formats are read now, so existing votes count. `applyRules` is synchronous.
+- **`app/api/plaid/exchange-token/route.ts`:**
+  - Responds as soon as the bank and accounts are saved, and runs the first sync in the background with `after()`.
+  - Duplicate check now includes archived accounts (409 says to restore instead), and matches accounts without a mask on institution, name, and type.
+- **`app/api/plaid/sync/route.ts`** (unchanged file): the response now also lists `itemsFailed` and `itemsInProgress`.
+- **`lib/hooks/useTransactions.ts`:**
+  - Live listener over the last 24 months instead of a one-time read of everything, plus `loadOlderTransactions`.
+  - Votes are saved as a nested map.
+  - `refetchTransactions` is removed.
+- **`lib/hooks/useCategories.ts`:** hard-deleting a category removes its learning votes.
+- **`app/(authenticated)/transactions/page.tsx`:**
+  - A "Load older transactions" button appears when there is older history.
+  - The sync result names banks that need reconnecting or failed.
+  - The real server message is shown, for example on a 429.
+  - Removed the `any` and two unused imports.
+- **`app/(authenticated)/accounts/page.tsx`:** "Refresh Balances" runs a sync instead of reloading the page, and linking a bank no longer reloads the page.
+
+### Environment
+
+No changes. `package.json` is unchanged.
+
+### Apply
+
+Same as Stage 1, with `telos-stage2.zip` and `/tmp/telos-stage2`:
+
+```bash
+cd ~/telos && git checkout production-hardening && git pull
+rm -rf /tmp/telos-stage2 && mkdir -p /tmp/telos-stage2
+unzip -q ~/Downloads/telos-stage2.zip -d /tmp/telos-stage2
+# same EXCLUDES=( ... ) as Stage 1, plus your local files:
+EXCLUDES+=( --exclude '/firestore.indexes.json' )
+rsync -av --delete "${EXCLUDES[@]}" /tmp/telos-stage2/ ./
+npm install && npm run build
+git add -A && git commit -m "Stage 2: sync engine and data freshness"
+```
+
+No rules change in this stage.
+
+### Verify
+
+Use Plaid's dynamic sandbox user, `user_transactions_dynamic` (any password).
+
+1. Link it. The Accounts page returns quickly, and transactions appear on the Transactions page within a few seconds without a refresh.
+2. Categorize a pending transaction, then fire a new-transactions webhook from the Plaid dashboard (or wait) and sync. When it posts, the posted copy keeps your category.
+3. Press Sync twice quickly (or in two tabs). No duplicate rows and no lost categories.
+4. Accounts, then Refresh Balances: balances update and the page does not reload.
+5. Correct the category of 3+ transactions that share a Plaid category to the same one. New transactions with that Plaid category are then auto-assigned on sync.
+
 ## Stage 1: Security and server foundation
 
 ### New files

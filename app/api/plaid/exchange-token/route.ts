@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { ApiError, badRequest, readJsonObject, requireString, withUser } from "@/lib/api/handler";
 import { getAdminDb } from "@/lib/firebaseAdmin";
 import { encryptSecret } from "@/lib/services/encryption";
-import { errorFields, logError, logWarn } from "@/lib/services/logging";
+import { errorFields, logWarn } from "@/lib/services/logging";
 import {
   exchangePublicToken,
   fetchAccounts,
@@ -12,9 +12,9 @@ import {
   removeItem,
 } from "@/lib/services/plaidService";
 import { RATE_LIMITS } from "@/lib/services/rateLimit";
-import { plaidItemsCollection, plaidItemStatusCollection, syncPlaidItem } from "@/lib/services/syncService";
+import { plaidItemsCollection, plaidItemStatusCollection, syncItemAndRecord } from "@/lib/services/syncService";
 
-// The first sync runs before responding and can take several seconds.
+// The first sync runs after the response is sent and can take several seconds.
 export const maxDuration = 60;
 
 type LinkedAccount = { id: string; name: string; accountType: string };
@@ -41,23 +41,30 @@ export const POST = withUser({ name: "exchange-token", rateLimit: RATE_LIMITS.ex
     throw err;
   }
 
-  try {
-    await syncPlaidItem(user.uid, itemId);
-  } catch (err) {
-    // The connection is saved; the next sync picks up its transactions.
-    logError("exchange-token", err, { itemId, step: "initial-sync" });
-  }
+  // Respond now; transactions arrive through the live listener once this
+  // sync finishes. Failures are recorded on the connection's status doc.
+  after(() => syncItemAndRecord(user.uid, itemId));
 
   return NextResponse.json({ success: true, ...result });
 });
 
-/**
- * Saves the connection, its status doc, and its new accounts in one batch.
- *
- * Linking a bank again through normal Link (not update mode) creates a new
- * item with new account ids, so accounts are deduped on (institution, mask)
- * among active linked accounts. Accounts without a mask are always kept.
- */
+type ExistingAccount = {
+  plaidItemId?: string | null;
+  plaidInstitutionId?: string | null;
+  plaidMask?: string | null;
+  name?: string;
+  accountType?: string;
+  isArchived?: boolean;
+};
+
+// Linking a bank again through normal Link (not update mode) creates a new
+// item with new account ids, so accounts are matched on institution and mask,
+// or on institution, name, and type when Plaid gives no mask.
+function matchKey(institutionId: string | null, mask: string | null | undefined, name: string, accountType: string): string {
+  return mask ? `${institutionId ?? ""}::mask::${mask}` : `${institutionId ?? ""}::name::${name}::${accountType}`;
+}
+
+/** Saves the connection, its status doc, and its new accounts in one batch. */
 async function saveConnection(uid: string, itemId: string, accessToken: string): Promise<LinkResult> {
   const [accounts, institution] = await Promise.all([fetchAccounts(accessToken), getInstitutionForItem(accessToken)]);
   const institutionId = institution?.institutionId ?? null;
@@ -66,19 +73,30 @@ async function saveConnection(uid: string, itemId: string, accessToken: string):
   const db = getAdminDb();
   const accountsRef = db.collection("users").doc(uid).collection("accounts");
 
-  const existingSnap = await accountsRef.get();
-  const existingKeys = new Set<string>();
-  existingSnap.docs.forEach((d) => {
-    const data = d.data();
-    if (!data.plaidItemId || data.isArchived || !data.plaidMask) return;
-    existingKeys.add(`${data.plaidInstitutionId ?? ""}::${data.plaidMask}`);
+  // Archived accounts count too, so re-linking doesn't create a second copy
+  // of an account that should be restored instead.
+  const existing = new Map<string, { isArchived: boolean }>();
+  (await accountsRef.get()).docs.forEach((d) => {
+    const data = d.data() as ExistingAccount;
+    if (!data.plaidItemId || !data.name || !data.accountType) return;
+    const key = matchKey(data.plaidInstitutionId ?? null, data.plaidMask, data.name, data.accountType);
+    existing.set(key, { isArchived: Boolean(data.isArchived) || existing.get(key)?.isArchived === true });
   });
 
-  const newAccounts = accounts.filter((acc) => !acc.mask || !existingKeys.has(`${institutionId ?? ""}::${acc.mask}`));
-  const duplicateAccounts = accounts.filter((acc) => !newAccounts.includes(acc));
+  const duplicateOf = (acc: (typeof accounts)[number]) =>
+    existing.get(matchKey(institutionId, acc.mask, acc.name, mapPlaidAccountType(acc)));
+  const newAccounts = accounts.filter((acc) => !duplicateOf(acc));
+  const duplicateAccounts = accounts.filter((acc) => duplicateOf(acc));
 
   if (newAccounts.length === 0) {
-    throw new ApiError(409, "duplicate_accounts", "This bank account is already linked.");
+    const anyArchived = duplicateAccounts.some((acc) => duplicateOf(acc)?.isArchived);
+    throw new ApiError(
+      409,
+      "duplicate_accounts",
+      anyArchived
+        ? "This bank account is already linked but archived. Restore it on the Accounts page instead."
+        : "This bank account is already linked."
+    );
   }
 
   const now = Date.now();
@@ -110,6 +128,7 @@ async function saveConnection(uid: string, itemId: string, accessToken: string):
       normalBalance: getNormalBalanceFromPlaid(acc),
       startingBalance: balance,
       currentBalance: balance,
+      balanceUpdatedAt: now,
       isManual: false,
       isArchived: false,
       isContributionEligible: false,
