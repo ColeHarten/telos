@@ -1,91 +1,119 @@
-# Telos architecture
+# Architecture
 
-## Overview
+How Telos is put together. Start with the picture, then the folder map.
 
-- **Browser:** pages read and write Firestore directly through hooks in `lib/hooks/` (`useAccounts`, `useCategories`, `useBudget`, `useTransactions`, `useAutomations`, `useSettings`). Everything is scoped under `users/{uid}`.
-- **Server:** API routes in `app/api/` do everything that needs a secret or must not be trusted to the browser: Plaid calls, token encryption, sync, disconnecting a bank, and deleting an account. Every route goes through `withUser` (`lib/api/handler.ts`), which verifies the Firebase ID token, applies a rate limit, validates the body, and returns errors as `{ error, message }`.
-- **Rules:** `firestore.rules` lists every collection explicitly. Anything not listed is denied.
-- **Pure logic** sits apart from I/O so it can be unit tested: `lib/services/syncPlanner.ts`, `lib/budgetCalculations.ts`, `lib/paycheck/paycheck.ts`, `lib/merchant.ts`, and the scoring functions in `lib/services/ruleEngine.ts`.
+## The big picture
 
-## Data model
+```mermaid
+flowchart LR
+  subgraph Browser
+    Pages["Pages<br/>app/(authenticated)/"]
+    Hooks["Hooks<br/>lib/hooks/"]
+  end
 
-All under `users/{uid}/`.
+  subgraph Server["Next.js server (Vercel)"]
+    Routes["API routes<br/>app/api/"]
+    Services["Services<br/>lib/services/"]
+  end
 
-| Collection | Written by | Browser access |
+  Firestore[("Firestore<br/>users/{uid}/...")]
+  Plaid["Plaid"]
+  Auth["Firebase Auth<br/>(Google)"]
+
+  Pages --> Hooks
+  Hooks -- "read and write,<br/>checked by firestore.rules" --> Firestore
+  Hooks -- "ID token" --> Routes
+  Routes --> Services
+  Services -- "Admin SDK" --> Firestore
+  Services --> Plaid
+  Pages --> Auth
+```
+
+There are two paths to the database:
+
+1. **Browser to Firestore, directly.** Pages use hooks that read and write Firestore with the Firebase web SDK. Most reads are live listeners, so changes made anywhere (another tab, a sync on the server) show up without a refresh. `firestore.rules` limits what the browser may do.
+2. **Browser to API route to Firestore.** Anything that needs a secret or can't be trusted to the browser goes through an API route: every Plaid call, token encryption, sync, disconnecting a bank, and permanently deleting an account. Routes use the Firebase Admin SDK, which bypasses the rules.
+
+### Who owns what
+
+| Data | Written by | Why |
 |---|---|---|
-| `plaidItems/{itemId}` | Server | None. Holds the encrypted access token, sync cursor, sync lease, and skipped account ids. |
-| `plaidItemStatus/{itemId}` | Server | Read. `needsReauth`, `lastSyncedAt`, `lastSyncError`, `institutionName`. |
-| `accounts/{accountId}` | Both | Create manual accounts only. Plaid fields and linked-account balances are server-only. Delete is server-only. Linked account ids equal Plaid's `account_id`. |
-| `transactions/{transactionId}` | Server | Read, and update `categoryKind`, `categoryId`, `transferAccountId`, `updatedAt` only. Ids equal Plaid's `transaction_id`. |
-| `categories/{categoryId}` | Browser | Owner, with `kind` validated (`income`, `expense`, `transfer`). |
-| `budgets/{YYYY-MM}` | Browser | Owner. `lines` maps a line id (`category_<id>` or `account_<id>`) to its planned amount. |
-| `automations/{merchantKey}` | Browser | Owner. Merchant to category rules. |
-| `categoryPlaidStats/{plaidDetailedCode}` | Browser | Owner. Learning votes, `counts: { categoryId: n }`. |
-| `settings/*` | Browser | Owner. |
+| Plaid connections and access tokens | Server only | Secrets. The browser can't even read them. |
+| Transactions | Server, except the category fields | They come from Plaid. You only choose the category. |
+| Linked accounts' balances and Plaid fields | Server only | They come from Plaid. |
+| Manual accounts, categories, budgets, automations, and settings | Browser | Your own data, protected by owner checks in the rules. |
 
-The top-level `rateLimits` collection holds per-user, per-route counters and is server-only.
+Full details are in [Data model](data-model.md) and [Security](security.md).
 
-## Plaid linking
+## Folder map
 
-1. `create-link-token` returns a Link token (`create-update-link-token` for reconnecting).
-2. `exchange-token` exchanges the public token, saves the encrypted access token, a status doc, and the new accounts in one batch, then responds. The first sync runs afterwards in `after()`.
-3. Duplicates: accounts are matched on institution and mask, or on institution, name, and type when there is no mask. Archived accounts count, so the user is told to restore instead of getting a second copy. A link that adds nothing is removed at Plaid.
+```
+app/
+  (authenticated)/       Signed-in pages. layout.tsx holds the nav and the sign-in guard.
+    dashboard/  accounts/  categories/  budgets/  transactions/  automations/  settings/
+  api/                   Server routes (see api-reference.md)
+    plaid/               create-link-token, create-update-link-token, exchange-token, sync, disconnect-item
+    accounts/delete/     Permanent account delete
+  login/                 Google sign-in page
+  layout.tsx, providers.tsx, page.tsx (redirects to /dashboard), not-found.tsx
 
-## Sync pipeline
+components/              Shared UI: page header, month picker, logo, archive warning dialog
 
-`/api/plaid/sync` calls `syncAllPlaidItems`, which syncs each connection independently (`lib/services/syncService.ts`):
+lib/
+  hooks/                 Browser data access, one hook per area
+                         useAuth, useAccounts, useCategories, useBudget, useTransactions,
+                         useAutomations, useSettings, usePlaidAccountLink
+  services/              Server logic
+                         plaidService, syncService, syncPlanner, ruleEngine,
+                         encryption, auth, rateLimit, logging
+  api/handler.ts         withUser wrapper used by every route
+  budgetCalculations.ts  Shared budget, cash-flow, and net-worth math
+  paycheck/paycheck.ts   Net pay and deduction math
+  merchant.ts            normalizeMerchant, shared by browser and server
+  types/types.ts         Shared types
+  firebaseClient.ts      Browser Firebase SDK
+  firebaseAdmin.ts       Admin SDK, created on first use
+  authenticatedFetch.ts  fetch() that adds the user's ID token
 
-1. **Lease.** A 2-minute lease on the `plaidItems` doc, taken in a Firestore transaction. If another sync holds it, the connection is reported as in progress and skipped.
-2. **Fetch.** `transactions/sync` pages from the stored cursor. On `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION` it restarts from the starting cursor (up to 3 times).
-3. **Plan.** `planSync` turns Plaid's added, modified, and removed lists plus the existing docs into writes:
-   - A new transaction gets the rules applied. A posted transaction copies the category from its pending version (`pending_transaction_id`).
-   - An existing transaction gets its Plaid fields updated. Its category is never overwritten; rules rerun only if it is still uncategorized.
-   - Removed transactions are deleted.
-   - Transactions on skipped accounts are ignored.
-4. **Commit** in batches, then refresh balances with `accountsGet`, then save the new cursor (re-encrypting the token if needed) and the status doc.
-5. **Errors** are recorded on that connection's status doc. `ITEM_LOGIN_REQUIRED` and similar set `needsReauth`. Other connections keep syncing, and the response lists connections that need reauth, failed, or were in progress.
+tests/                   unit/ (Vitest) and rules/ (Firestore emulator)
+firestore.rules          Database access rules, deployed from the repo
+firestore.indexes.json   Composite indexes
+firebase.json            Firebase CLI and emulator config
+.github/workflows/ci.yml CI pipeline
+```
 
-**Disconnect** (`/api/plaid/disconnect-item`) removes the item at Plaid, deletes its `plaidItems` and status docs, and converts its accounts to manual accounts: history is kept and the balance is frozen.
+## Design choices
 
-**Delete** (`/api/accounts/delete`) works on archived accounts only. It is blocked while transactions transfer into the account or a category or paycheck deduction links to it. It stops syncing the account first (disconnecting the bank if no other account uses it, otherwise adding the account to the item's skip list), then deletes the account's transactions and the account.
+**Pure logic is kept apart from I/O.** The parts most likely to have bugs are plain functions with no database or network calls, so they can be unit tested:
 
-## Encryption
+| File | What it decides |
+|---|---|
+| `lib/services/syncPlanner.ts` | Which transaction docs to create, update, or delete for a batch of Plaid changes |
+| `lib/services/ruleEngine.ts` (`applyRules`, `resolveWinner`, `readVotes`) | Which category a new transaction gets |
+| `lib/budgetCalculations.ts` | Budget actuals, cash flow, and net worth |
+| `lib/paycheck/paycheck.ts` | Net pay and deduction amounts |
+| `lib/merchant.ts` | The merchant key used by automations |
 
-`lib/services/encryption.ts` uses AES-256-GCM with a random 12-byte IV and a 16-byte tag. Stored format: `v1.<iv>.<tag>.<ciphertext>`, base64 parts. The older unversioned three-part format still decrypts.
+**Server modules can't leak into the browser.** Every file in `lib/services/` except the pure `syncPlanner.ts`, plus `lib/api/handler.ts` and `lib/firebaseAdmin.ts`, starts with `import "server-only"`, so the build fails if a page imports one.
 
-Key rotation: set the new key as `ENCRYPTION_KEY` and the old one as `ENCRYPTION_KEY_PREVIOUS`. Tokens that only decrypt with the old key, or are in the old format, are re-encrypted with the new key on that connection's next sync. Once every connection has synced, remove `ENCRYPTION_KEY_PREVIOUS`.
+**Server clients are created on first use.** The Admin SDK and the Plaid client read their environment variables when first called, not at import. `next build` and the tests run without any secrets.
 
-## Categorization
+**Every API route has the same shape.** `withUser` (`lib/api/handler.ts`) checks the sign-in token, applies the rate limit, and turns errors into `{ error, message }`. A route body only does its own job.
 
-Rules run on the server during sync, in `applyRules` (`lib/services/ruleEngine.ts`). The browser only records the user's choices.
+**Live listeners over manual refetching.** Hooks subscribe to Firestore. After a sync or a link, the server writes and the page updates by itself.
 
-| Tier | Source | Rule |
-|---|---|---|
-| 1 | Automations | Merchant key to category. Always wins. |
-| 2 | Learned Plaid defaults | Plaid's `detailed` category code to the category the user has picked most. |
-| none | Needs Review | Left uncategorized. |
+**Category choices are never overwritten.** Sync only fills in categories that are empty. See [Plaid and sync](plaid-and-sync.md).
 
-A tier whose category was deleted or archived falls through to the next.
+## Request walkthrough: pressing Sync
 
-**Merchant keys.** `normalizeMerchant` (`lib/merchant.ts`) lowercases, strips non-alphanumerics, and collapses spaces. It is used both when the browser creates an automation and when the server matches one, on `merchantName ?? rawName`. If the two ever normalized differently, automations would silently stop matching.
+1. The Transactions page calls `authenticatedFetch("/api/plaid/sync")`, which attaches the user's Firebase ID token.
+2. `withUser` verifies the token (401 if bad), checks the rate limit (429 if over), and calls the route.
+3. The route calls `syncAllPlaidItems(uid)`, which syncs each bank in turn (see [Plaid and sync](plaid-and-sync.md)).
+4. The server writes transactions, balances, and each bank's status doc.
+5. The page's live listeners pick up the new data. The route's response only reports problems, such as a bank that needs reconnecting.
 
-**Automations.** After a manual categorization, the Transactions page offers to create one. The doc id is the merchant key, so there is at most one rule per merchant, and creating another overwrites it.
+## What's not built yet
 
-**Learned defaults.** Every manual categorization adds a vote to `categoryPlaidStats/{detailedCode}.counts.{categoryId}`. `resolveWinner` picks a category only with at least 3 votes and a lead of at least 2 over the runner-up. `readVotes` also reads the literal `counts.<id>` fields that earlier versions wrote by mistake. Hard-deleting a category prunes its votes.
+These are planned for the move to production Plaid: webhooks (automatic sync), the OAuth redirect page some banks need, Plaid's production application, a privacy policy and terms, and a delete-my-account option.
 
-**Paycheck transfers.** An income category can carry paycheck deductions. Each non-tax deduction linked to an account gets an auto-created transfer category (`sourceIncomeCategoryId`, `sourceDeductionId`), reconciled in one batch whenever the income category is saved: updated and renamed, created, or deleted.
-
-## Budget math
-
-`lib/budgetCalculations.ts`, shared by the Dashboard and Budgets pages:
-
-- **Category actuals** net refunds against spending (and reversals against income) per category per month, floored at 0. Plaid amounts are positive for money out.
-- **Archived categories** are totaled separately, so their money is not lost from reports.
-- **Cash flow** excludes transfers: anything categorized as a transfer, plus uncategorized transactions Plaid labels `TRANSFER_IN`, `TRANSFER_OUT`, or `LOAN_PAYMENTS_CREDIT_CARD_PAYMENT`.
-- **Net worth** covers active accounts, using the current balance or, failing that, the starting balance.
-
-Budget lines are saved one field at a time with a merge, so edits from two tabs never overwrite each other.
-
-## Out of scope for now
-
-Production Plaid (webhooks, OAuth redirect, Plaid's production application), editing automations in place, showing learned defaults in the UI, vote decay, a Plaid-primary fallback tier, and multi-currency.
+Also out of scope for now: editing automations in place, showing learned defaults in the UI, vote decay, multi-currency, and error monitoring such as Sentry.
