@@ -108,8 +108,8 @@ export default function AccountFormDialog({
         },
       }}
     >
-      <DialogTitle sx={{ fontWeight: 700, pt: 2.5 }}>
-        {isEditing ? "Edit Account" : "Add New Account"}
+      <DialogTitle sx={{ pt: 2.5 }}>
+        {isEditing ? "Edit account" : "Add account"}
       </DialogTitle>
 
       <DialogContent>
@@ -136,14 +136,14 @@ export default function AccountFormDialog({
               disabled={isSaving}
             >
               <MenuItem value="cash">Cash</MenuItem>
-              <MenuItem value="credit_card">Credit Card</MenuItem>
+              <MenuItem value="credit_card">Credit card</MenuItem>
               <MenuItem value="investment">Investment</MenuItem>
               <MenuItem value="retirement">Retirement</MenuItem>
               <MenuItem value="loan">Loan</MenuItem>
               <MenuItem value="property">Property</MenuItem>
               <MenuItem value="crypto">Crypto</MenuItem>
-              <MenuItem value="other_asset">Other Asset</MenuItem>
-              <MenuItem value="other_liability">Other Liability</MenuItem>
+              <MenuItem value="other_asset">Other asset</MenuItem>
+              <MenuItem value="other_liability">Other liability</MenuItem>
             </Select>
           </FormControl>
 
@@ -193,17 +193,17 @@ export default function AccountFormDialog({
         </Stack>
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5 }}>
-        <Button onClick={onClose} disabled={isSaving} sx={{ textTransform: "none", fontWeight: 700 }}>
+      <DialogActions>
+        <Button onClick={onClose} disabled={isSaving}>
           Cancel
         </Button>
         <Button
           type="submit"
           variant="contained"
           disabled={isSaving}
-          sx={{ height: 36, borderRadius: 2, textTransform: "none", fontWeight: 700, px: 3 }}
+          sx={{ height: 36, px: 3 }}
         >
-          {isEditing ? "Save Changes" : "Add Account"}
+          {isEditing ? "Save changes" : "Add account"}
         </Button>
       </DialogActions>
     </Dialog>

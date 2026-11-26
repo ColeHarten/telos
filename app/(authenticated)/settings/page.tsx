@@ -15,6 +15,7 @@ import {
   Card,
   CardContent,
   Divider,
+  Skeleton,
   Snackbar,
   Stack,
   Typography,
@@ -76,7 +77,7 @@ export default function SettingsPage() {
   const displayedError = saveError ?? loadError;
 
   return (
-    <Stack spacing={2.25} sx={{ p: 4 }}>
+    <Stack spacing={3}>
       <PageHeader title="Settings" />
 
       {displayedError && (
@@ -84,22 +85,16 @@ export default function SettingsPage() {
           open
           autoHideDuration={5000}
           onClose={() => setSaveError(null)}
-          anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
         >
-          <Alert
-            severity="error"
-            variant="filled"
-            onClose={() => setSaveError(null)}
-            sx={{ borderRadius: 2, fontWeight: 600 }}
-          >
+          <Alert severity="error" variant="filled" onClose={() => setSaveError(null)}>
             {displayedError}
           </Alert>
         </Snackbar>
       )}
 
       {/* Account */}
-      <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-        <CardContent sx={{ p: 2.25 }}>
+      <Card>
+        <CardContent sx={{ p: { xs: 2, md: 2.5 }, "&:last-child": { pb: { xs: 2, md: 2.5 } } }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <Box
               sx={{
@@ -107,7 +102,7 @@ export default function SettingsPage() {
                 height: 36,
                 borderRadius: 2,
                 bgcolor: "#eff6ff",
-                color: "#2563eb",
+                color: "primary.main",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -134,16 +129,17 @@ export default function SettingsPage() {
               <Typography variant="body2">{user.email}</Typography>
             </Box>
           ) : (
-            <Typography variant="body2" color="text.secondary">
-              Loading account...
-            </Typography>
+            <Stack spacing={0.5}>
+              <Skeleton width={240} />
+              <Skeleton width={200} />
+            </Stack>
           )}
         </CardContent>
       </Card>
 
       {/* Export */}
-      <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3 }}>
-        <CardContent sx={{ p: 2.25 }}>
+      <Card>
+        <CardContent sx={{ p: { xs: 2, md: 2.5 }, "&:last-child": { pb: { xs: 2, md: 2.5 } } }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <Box
               sx={{
@@ -174,9 +170,9 @@ export default function SettingsPage() {
             startIcon={<DownloadRoundedIcon />}
             onClick={handleExport}
             disabled={!user || exporting}
-            sx={{ mt: 2, height: 40, px: 3, borderRadius: 2, textTransform: "none", fontWeight: 700 }}
+            sx={{ mt: 2 }}
           >
-            {exporting ? "Preparing..." : "Export transactions (CSV)"}
+            {exporting ? "Preparing…" : "Export transactions (CSV)"}
           </Button>
         </CardContent>
       </Card>
@@ -187,9 +183,8 @@ export default function SettingsPage() {
           variant="outlined"
           startIcon={<LogoutRoundedIcon />}
           onClick={handleSignOut}
-          sx={{ height: 40, px: 3, borderRadius: 2, textTransform: "none", fontWeight: 700 }}
         >
-          Sign Out
+          Sign out
         </Button>
       </Box>
     </Stack>

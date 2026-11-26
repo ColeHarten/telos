@@ -2,6 +2,33 @@
 
 Running log for the `production-hardening` branch: one section and one commit per stage.
 
+## Stage 9: UI cleanup
+
+One look across the app. The UI only: no data, sync, or Firestore rules changes, no new dependencies, and no new indexes.
+
+### Added
+- **One theme** (`app/theme.ts`): Tailwind's slate grays with the same blue accent, soft shadows, 8px buttons and inputs, 12px cards, 16px dialogs, segmented tabs, and default styles for menus, chips, tooltips, alerts, tables, and snackbars. Buttons use sentence case from the theme, so the 67 one-off overrides are gone, and the common hex colors are theme tokens.
+- **One page frame:** the signed-in layout owns each page's padding (16px on phones, 32px on desktop) and maximum width. Pages no longer set their own padding, background, or full-screen height.
+- **Menu:** Dashboard, Transactions, Budgets, and Accounts first, with Categories, Rules, and Settings under Setup, and a new Categories icon. The sync chip and your name sit at the bottom; your name opens Settings and Sign out. The footer and the desktop top bar are gone.
+- **Phones:** a tab bar along the bottom for the main pages, with More for the rest, and a slim top bar with the sync chip. Dialogs open as bottom sheets, and messages sit above the tab bar.
+- **Shared pieces:** `PageHeader` (with an optional line under the title), `StatStrip` (a page's totals in one card), `EmptyState` (an icon, a sentence, and a button), `LoadingSkeleton` (placeholder rows and cards), and `TransactionAmount`.
+- **Numbers:** one currency format (`formatCurrency`, always with cents), `formatTransactionAmount` ("+$1,200.00" or "-$45.00"), and `formatSignedCurrency`. Digits line up in columns, amounts are right-aligned, money in is green, and red is kept for overspending and errors.
+- **Transactions:** the account and date buttons sit in the header and set the summary (money in, money out, and net). Tabs, search, and Filters share one row, and active filters show as chips with Clear all. The list is grouped under day headings (Today, Yesterday, Mon, Nov 24), 50 at a time with Show more. Pending shows as a tag by the name.
+- `lib/dateGroups.ts` (`dateHeading`, `groupByDate`), with `utils.test.ts` and `dateGroups.test.ts`.
+
+### Changed
+- **Transactions:** the Sync button and Last Synced card are gone; the sync chip does both. Page numbers and the page-size picker are replaced by Show more.
+- **Summaries** on Accounts, Budgets, and Categories are one strip instead of separate cards with icons.
+- **Dashboard:** spending is no longer red, the budget bar turns red only when spending passes the plan, the lists show merchant logos and signed amounts, and Recent transactions links to Transactions (it linked to Accounts).
+- **Budgets:** Expenses use the accent color, and an expense line's bar turns red only when it passes its plan.
+- **Rules:** the explanation sits under the title, and rules are one list in one card.
+- **Wording:** sentence case for labels, buttons, tabs, and menus ("Add account", "Net worth", "Needs review"), and "…" for work in progress.
+- **Loading and empty states:** placeholder shapes instead of "Loading..." text and spinners, and one empty-state style on every page.
+
+### Notes
+- Nothing to deploy beyond the app itself.
+- `docs/`: Using Telos, Plaid and sync, Architecture, Getting started, Operations, Testing, and the docs index updated for this stage.
+
 ## Stage 8: UX polish
 
 The last stage before go-live, in the same look. No new dependencies, no Firestore rules changes, and no new indexes.

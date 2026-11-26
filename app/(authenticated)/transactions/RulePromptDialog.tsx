@@ -46,8 +46,8 @@ export default function RulePromptDialog({
   }
 
   return (
-    <Dialog open={open} onClose={saving ? undefined : onDismiss} maxWidth="xs" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
-      <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem" }}>Always categorize this way?</DialogTitle>
+    <Dialog open={open} onClose={saving ? undefined : onDismiss} maxWidth="xs" fullWidth>
+      <DialogTitle>Always categorize this way?</DialogTitle>
       <DialogContent>
         <DialogContentText sx={{ fontSize: "0.9rem" }}>
           Create a rule: when the merchant is <strong>{merchantLabel}</strong>, set the category to{" "}
@@ -68,16 +68,14 @@ export default function RulePromptDialog({
           />
         )}
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={onDismiss} disabled={saving} sx={{ textTransform: "none", fontWeight: 600 }}>
+      <DialogActions>
+        <Button onClick={onDismiss} disabled={saving}>
           Not now
         </Button>
         <Button
           onClick={handleConfirm}
           variant="contained"
-          disableElevation
           disabled={saving}
-          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
         >
           {saving ? "Saving…" : "Create rule"}
         </Button>

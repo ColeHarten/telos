@@ -11,24 +11,22 @@ import { Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, 
 export function LinkConfirmDialog({ link }: { link: PlaidAccountLink }) {
   return (
     <Dialog open={link.confirmation !== null} onClose={link.cancelConfirmation} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem" }}>Already connected</DialogTitle>
+      <DialogTitle>Already connected</DialogTitle>
       <DialogContent>
-        <Typography variant="body2" sx={{ color: "#334155" }}>
+        <Typography variant="body2" sx={{ color: "grey.700" }}>
           {link.confirmation?.message}
         </Typography>
-        <Typography variant="body2" sx={{ color: "#334155", mt: 1.5 }}>
+        <Typography variant="body2" sx={{ color: "grey.700", mt: 1.5 }}>
           Continuing uses one of your Plaid connections.
         </Typography>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
-        <Button onClick={link.cancelConfirmation} sx={{ textTransform: "none", fontWeight: 700 }}>
+      <DialogActions>
+        <Button onClick={link.cancelConfirmation}>
           Cancel
         </Button>
         <Button
           onClick={link.confirmDifferentLogin}
           variant="contained"
-          disableElevation
-          sx={{ textTransform: "none", fontWeight: 700, bgcolor: "#2563eb", "&:hover": { bgcolor: "#1d4ed8" } }}
         >
           This is a different login
         </Button>
@@ -49,7 +47,7 @@ export function PlaidReconnectButton({ itemId, onLinkError }: PlaidReconnectButt
   return (
     <Tooltip title={link.label}>
       <span>
-        <IconButton size="small" onClick={link.onClick} disabled={link.disabled} sx={{ p: 0.25, color: "#dc2626" }}>
+        <IconButton size="small" onClick={link.onClick} disabled={link.disabled} sx={{ p: 0.25, color: "error.main" }}>
           <SyncProblemRoundedIcon sx={{ fontSize: 15 }} />
         </IconButton>
       </span>

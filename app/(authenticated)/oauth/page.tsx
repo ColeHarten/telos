@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { LinkConfirmDialog } from "../accounts/plaidLinkButton";
 
-const backButtonSx = { textTransform: "none", fontWeight: 700, alignSelf: "flex-start" } as const;
+const backButtonSx = { fontWeight: 700, alignSelf: "flex-start" } as const;
 
 /** Reopens Link with the saved token after an OAuth bank sends the user back. */
 function ResumeLink({ session }: { session: SavedLinkSession }) {
@@ -29,10 +29,10 @@ function ResumeLink({ session }: { session: SavedLinkSession }) {
   });
 
   return (
-    <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
+    <Paper variant="outlined" sx={{ p: 3 }}>
       {error ? (
         <Stack spacing={2}>
-          <Alert severity="error" sx={{ borderRadius: 2.5 }}>
+          <Alert severity="error">
             {error}
           </Alert>
           <Button onClick={backToAccounts} sx={backButtonSx}>
@@ -43,7 +43,7 @@ function ResumeLink({ session }: { session: SavedLinkSession }) {
         <Stack spacing={2}>
           <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
             <CircularProgress size={20} />
-            <Typography variant="body2" sx={{ color: "#334155" }}>
+            <Typography variant="body2" sx={{ color: "grey.700" }}>
               Finishing your bank connection...
             </Typography>
           </Stack>
@@ -74,14 +74,14 @@ export default function OAuthPage() {
   const [session] = useState<SavedLinkSession | null>(() => readLinkSession());
 
   return (
-    <Stack spacing={3} sx={{ p: 4, bgcolor: "#f8fafc", minHeight: "100vh" }}>
+    <Stack spacing={3}>
       <PageHeader title="Connecting your bank" />
       {session ? (
         <ResumeLink session={session} />
       ) : (
-        <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
+        <Paper variant="outlined" sx={{ p: 3 }}>
           <Stack spacing={2}>
-            <Alert severity="warning" sx={{ borderRadius: 2.5 }}>
+            <Alert severity="warning">
               This bank connection can&apos;t be resumed in this browser. Start it again from Accounts.
             </Alert>
             <Button href="/accounts" sx={backButtonSx}>

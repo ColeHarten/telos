@@ -1,5 +1,7 @@
 "use client";
 
+import EmptyState from "@/components/EmptyState";
+import { ListSkeleton } from "@/components/LoadingSkeleton";
 import PageHeader from "@/components/PageHeader";
 import { planRuleApplication } from "@/lib/categorization";
 import useAccounts from "@/lib/hooks/useAccounts";
@@ -11,18 +13,19 @@ import type { Account, Category, Rule } from "@/lib/types/types";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
 import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
+import BoltOutlinedIcon from "@mui/icons-material/BoltOutlined";
 import EastRoundedIcon from "@mui/icons-material/EastRounded";
 import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
 import {
   Alert,
   Box,
   Button,
-  Chip,
   IconButton,
   Menu,
   MenuItem,
   Paper,
   Snackbar,
+  Stack,
   Switch,
   Tooltip,
   Typography,
@@ -74,72 +77,71 @@ export default function RulesPage() {
   }
 
   return (
-    <Box sx={{ p: 4, bgcolor: "#f8fafc", minHeight: "100vh" }}>
-      <PageHeader title="Rules" sx={{ mb: 2 }}>
-        <Button
-          variant="contained"
-          disableElevation
-          startIcon={<AddRoundedIcon sx={{ fontSize: 18 }} />}
-          onClick={() => openEditor(null)}
-          sx={{ bgcolor: "#2563eb", textTransform: "none", fontWeight: 600, fontSize: "0.85rem", borderRadius: 2, "&:hover": { bgcolor: "#1d4ed8" } }}
-        >
+    <Stack spacing={3}>
+      <PageHeader
+        title="Rules"
+        description="Rules categorize, rename, or hide new transactions as they sync. They run top to bottom, and the first rule that matches applies. Categories you choose yourself are never changed unless you say so."
+      >
+        <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => openEditor(null)} sx={{ whiteSpace: "nowrap", flexShrink: 0 }}>
           New rule
         </Button>
       </PageHeader>
 
-      <Typography sx={{ color: "#64748b", fontSize: "0.9rem", mb: 3, maxWidth: 760 }}>
-        Rules categorize, rename, or hide new transactions as they sync. They run top to bottom, and the first rule that
-        matches applies. Categories you choose yourself are never changed unless you say so.
-      </Typography>
-
       {rulesError && (
-        <Alert severity="error" onClose={() => setRulesError(null)} sx={{ borderRadius: 3, mb: 2 }}>
+        <Alert severity="error" onClose={() => setRulesError(null)}>
           {rulesError}
         </Alert>
       )}
 
-      <Box sx={{ display: "flex", alignItems: "center", gap: "10px", mb: 2 }}>
-        <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "1.15rem" }}>Your rules</Typography>
-        <Chip size="small" label={rules.length} sx={{ height: 24, fontSize: "0.8rem", fontWeight: 600, bgcolor: "#f1f5f9", color: "#475569" }} />
-      </Box>
-
-      <Box sx={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      <Paper variant="outlined" sx={{ overflow: "hidden" }}>
         {rulesLoading ? (
-          <Paper variant="outlined" sx={{ p: 4, borderRadius: 3, borderColor: "#e2e8f0", textAlign: "center" }}>
-            <Typography sx={{ color: "#94a3b8", fontSize: "0.9rem" }}>Loading rules…</Typography>
-          </Paper>
+          <ListSkeleton rows={3} />
         ) : rules.length === 0 ? (
-          <Paper variant="outlined" sx={{ p: 4, borderRadius: 3, borderColor: "#e2e8f0", textAlign: "center" }}>
-            <Typography sx={{ color: "#94a3b8", fontSize: "0.9rem" }}>
-              No rules yet. Create one here, or categorize a transaction and choose Create rule.
-            </Typography>
-          </Paper>
+          <EmptyState
+            icon={<BoltOutlinedIcon />}
+            title="No rules yet"
+            description="Create one here, or categorize a transaction and choose Create rule."
+            action={
+              <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => openEditor(null)}>
+                New rule
+              </Button>
+            }
+          />
         ) : (
           rules.map((rule, index) => (
-            <Paper
+            <Box
               key={rule.id}
-              variant="outlined"
               sx={{
                 display: "flex",
                 alignItems: "center",
-                gap: 2,
+                gap: { xs: 1, sm: 2 },
                 px: 2,
                 py: 1.5,
-                borderRadius: 3,
-                borderColor: "#e2e8f0",
-                opacity: rule.enabled ? 1 : 0.6,
-                "&:hover": { borderColor: "#cbd5e1" },
+                borderTop: index === 0 ? "none" : "1px solid",
+                borderColor: "divider",
+                "&:hover": { bgcolor: "grey.50" },
               }}
             >
               <Tooltip title={rule.enabled ? "On" : "Off"}>
                 <Switch size="small" checked={rule.enabled} onChange={(event) => setRuleEnabled(rule.id, event.target.checked)} />
               </Tooltip>
-              <Box sx={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
-                <Typography sx={{ fontWeight: 600, color: "#0f172a", fontSize: "0.9rem" }}>
+              <Box
+                sx={{
+                  flex: 1,
+                  minWidth: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  columnGap: 1.5,
+                  rowGap: 0.25,
+                  flexWrap: "wrap",
+                  opacity: rule.enabled ? 1 : 0.55,
+                }}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
                   {describeConditions(rule, accountsById)}
                 </Typography>
-                <EastRoundedIcon sx={{ fontSize: 16, color: "#cbd5e1" }} />
-                <Typography sx={{ fontWeight: 600, color: "#2563eb", fontSize: "0.9rem" }}>
+                <EastRoundedIcon sx={{ fontSize: 16, color: "grey.300" }} />
+                <Typography variant="body2" sx={{ fontWeight: 600, color: "primary.main" }}>
                   {describeActions(rule, categoriesById)}
                 </Typography>
               </Box>
@@ -157,10 +159,10 @@ export default function RulesPage() {
               <IconButton size="small" aria-label="Rule actions" onClick={(event) => setMenu({ anchor: event.currentTarget, rule })}>
                 <MoreVertRoundedIcon fontSize="small" />
               </IconButton>
-            </Paper>
+            </Box>
           ))
         )}
-      </Box>
+      </Paper>
 
       <Menu anchorEl={menu?.anchor ?? null} open={menu !== null} onClose={() => setMenu(null)}>
         <MenuItem
@@ -168,7 +170,6 @@ export default function RulesPage() {
             if (menu) openEditor(menu.rule);
             setMenu(null);
           }}
-          sx={{ fontSize: "0.85rem" }}
         >
           Edit
         </MenuItem>
@@ -177,7 +178,6 @@ export default function RulesPage() {
             if (menu) openApply(menu.rule);
             setMenu(null);
           }}
-          sx={{ fontSize: "0.85rem" }}
         >
           Apply to past transactions…
         </MenuItem>
@@ -186,7 +186,7 @@ export default function RulesPage() {
             if (menu) void deleteRule(menu.rule.id);
             setMenu(null);
           }}
-          sx={{ fontSize: "0.85rem", color: "error.main" }}
+          sx={{ color: "error.main" }}
         >
           Delete
         </MenuItem>
@@ -214,11 +214,11 @@ export default function RulesPage() {
         onApply={handleApply}
       />
 
-      <Snackbar open={notice !== null} autoHideDuration={4000} onClose={() => setNotice(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }}>
-        <Alert severity="success" variant="filled" onClose={() => setNotice(null)} sx={{ borderRadius: 2.5 }}>
+      <Snackbar open={notice !== null} autoHideDuration={4000} onClose={() => setNotice(null)}>
+        <Alert severity="success" variant="filled" onClose={() => setNotice(null)}>
           {notice}
         </Alert>
       </Snackbar>
-    </Box>
+    </Stack>
   );
 }

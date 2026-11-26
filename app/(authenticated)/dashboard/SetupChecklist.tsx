@@ -41,7 +41,7 @@ export default function SetupChecklist({ steps }: { steps: SetupStep[] }) {
   const doneCount = steps.filter((step) => step.done).length;
   const allDone = doneCount === steps.length;
 
-  // Once everything is done, it stays gone even if Needs Review fills up again.
+  // Once everything is done, it stays gone even if Needs review fills up again.
   useEffect(() => {
     if (allDone) saveHidden();
   }, [allDone]);
@@ -54,18 +54,18 @@ export default function SetupChecklist({ steps }: { steps: SetupStep[] }) {
   }
 
   return (
-    <Card variant="outlined" sx={{ borderRadius: "14px", borderColor: "#e7eaef", bgcolor: "#fff", boxShadow: "none" }}>
-      <CardContent sx={{ p: "24px" }}>
+    <Card>
+      <CardContent sx={{ p: { xs: 2, md: 2.5 }, "&:last-child": { pb: { xs: 1.5, md: 2 } } }}>
         <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 2, flexWrap: "wrap" }}>
-          <Typography sx={{ fontWeight: 600, fontSize: "1.1rem", color: "#0f172a", letterSpacing: "-0.01em" }}>Get set up</Typography>
-          <Typography variant="body2" sx={{ color: "#64748b" }}>
+          <Typography component="h2" sx={{ fontWeight: 700, fontSize: "1rem", letterSpacing: "-0.01em" }}>Get set up</Typography>
+          <Typography variant="body2" sx={{ color: "text.secondary" }}>
             {doneCount} of {steps.length} done
           </Typography>
         </Box>
         <LinearProgress
           variant="determinate"
           value={(doneCount / steps.length) * 100}
-          sx={{ mt: 1.5, mb: 2, height: 6, borderRadius: 3, bgcolor: "#f1f5f9", "& .MuiLinearProgress-bar": { borderRadius: 3, bgcolor: "#2563eb" } }}
+          sx={{ mt: 1.5, mb: 1.5, height: 6 }}
         />
 
         <Box sx={{ display: "flex", flexDirection: "column" }}>
@@ -77,19 +77,20 @@ export default function SetupChecklist({ steps }: { steps: SetupStep[] }) {
                 alignItems: "center",
                 gap: 1.5,
                 py: 1.25,
-                borderTop: index === 0 ? "none" : "1px solid #f1f5f9",
+                borderTop: index === 0 ? "none" : "1px solid",
+                borderColor: "grey.100",
               }}
             >
               {step.done ? (
-                <CheckCircleRoundedIcon sx={{ color: "#16a34a", fontSize: 22 }} />
+                <CheckCircleRoundedIcon sx={{ color: "success.main", fontSize: 22 }} />
               ) : (
-                <RadioButtonUncheckedRoundedIcon sx={{ color: "#cbd5e1", fontSize: 22 }} />
+                <RadioButtonUncheckedRoundedIcon sx={{ color: "grey.300", fontSize: 22 }} />
               )}
               <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography sx={{ fontWeight: 600, fontSize: "0.9rem", color: step.done ? "#64748b" : "#0f172a" }}>
+                <Typography sx={{ fontWeight: 600, fontSize: "0.9rem", color: step.done ? "text.secondary" : "text.primary" }}>
                   {step.label}
                 </Typography>
-                <Typography variant="caption" sx={{ color: "#94a3b8", display: "block" }}>
+                <Typography variant="caption" sx={{ color: "text.secondary", display: "block" }}>
                   {step.detail}
                 </Typography>
               </Box>
@@ -99,7 +100,7 @@ export default function SetupChecklist({ steps }: { steps: SetupStep[] }) {
                   href={step.href}
                   size="small"
                   variant="outlined"
-                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, borderColor: "#bfdbfe", color: "#2563eb", flexShrink: 0 }}
+                  sx={{ flexShrink: 0 }}
                 >
                   Start
                 </Button>
@@ -109,7 +110,7 @@ export default function SetupChecklist({ steps }: { steps: SetupStep[] }) {
         </Box>
 
         <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 1 }}>
-          <Button onClick={hide} size="small" sx={{ textTransform: "none", fontWeight: 600, color: "#64748b" }}>
+          <Button onClick={hide} size="small" color="inherit" sx={{ color: "text.secondary" }}>
             Hide checklist
           </Button>
         </Box>

@@ -1,13 +1,11 @@
 "use client";
 
-import { syncStatusCaption } from "@/lib/connections";
-import { runSync } from "@/lib/plaidSync";
 import { isTransfer, needsReview } from "@/lib/budgetCalculations";
+import { dateHeading, groupByDate } from "@/lib/dateGroups";
 import { useAccounts } from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
 import { useCategories } from "@/lib/hooks/useCategories";
 import useRules, { type RuleDraft } from "@/lib/hooks/useRules";
-import useSyncRunning from "@/lib/hooks/useSyncRunning";
 import useTransactions from "@/lib/hooks/useTransactions";
 import {
   draftRuleFor,
@@ -22,6 +20,7 @@ import {
 } from "@/lib/categorization";
 import { plaidCategoryLabel } from "@/lib/plaidCategories";
 import type { Account, Rule, Transaction } from "@/lib/types/types";
+import { formatCurrency, formatSignedCurrency } from "@/lib/utils";
 import { categoryNote } from "./categoryNote";
 import RulePromptDialog from "./RulePromptDialog";
 import TransactionDrawer from "./TransactionDrawer";
@@ -29,30 +28,29 @@ import ApplyRuleDialog from "../rules/ApplyRuleDialog";
 import RuleDialog from "../rules/RuleDialog";
 import { describeActions, describeConditions } from "../rules/ruleText";
 import CategoryPicker from "@/components/CategoryPicker";
+import EmptyState from "@/components/EmptyState";
+import { ListSkeleton } from "@/components/LoadingSkeleton";
 import MerchantAvatar from "@/components/MerchantAvatar";
 import PageHeader from "@/components/PageHeader";
+import StatStrip from "@/components/StatStrip";
+import TransactionAmount from "@/components/TransactionAmount";
 
 // Icons
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
 import BoltIcon from "@mui/icons-material/Bolt";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
+import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
-import KeyboardArrowLeftIcon from "@mui/icons-material/KeyboardArrowLeft";
-import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
-import NorthEastIcon from "@mui/icons-material/NorthEast";
+import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import SearchIcon from "@mui/icons-material/Search";
-import SouthWestIcon from "@mui/icons-material/SouthWest";
-import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
-import SyncIcon from "@mui/icons-material/Sync";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 
 import {
   Alert,
-  Avatar,
   Box,
   Button,
   Checkbox,
@@ -61,12 +59,10 @@ import {
   Divider,
   IconButton,
   InputAdornment,
-  ListItemIcon,
   ListItemText,
   Menu,
   MenuItem,
   Paper,
-  Select,
   Snackbar,
   Stack,
   Tab,
@@ -82,57 +78,36 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { Fragment, useMemo, useState } from "react";
 
-const DEFAULT_PAGE_SIZE = 10;
-const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
-const MAX_VISIBLE_PAGES = 5;
+// Transactions shown at first, and added by each Show more.
+const PAGE_STEP = 50;
 
 type StatusFilter = "all" | "pending" | "posted";
 type DateRangePreset = "all" | "7d" | "30d" | "mtd" | "ytd" | "ltm" | "custom";
 // "credit" = money coming in (i.e. tx.amount < 0 in this schema)
 // "debit" = money going out (i.e. tx.amount > 0 in this schema)
-// "review" = waiting in Needs Review
+// "review" = waiting in Needs review
 type FlowFilter = "all" | "credit" | "debit" | "review";
 
 const FLOW_FILTER_TABS: { value: FlowFilter; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "credit", label: "Money In" },
-  { value: "debit", label: "Money Out" },
-  { value: "review", label: "Needs Review" },
+  { value: "credit", label: "Money in" },
+  { value: "debit", label: "Money out" },
+  { value: "review", label: "Needs review" },
 ];
 
 const DATE_RANGE_PRESETS: { value: DateRangePreset; label: string }[] = [
-  { value: "all", label: "All Time" },
-  { value: "mtd", label: "This Month" },
-  { value: "ytd", label: "This Year" },
-  { value: "custom", label: "Custom Range" },
+  { value: "all", label: "All time" },
+  { value: "mtd", label: "This month" },
+  { value: "ytd", label: "This year" },
+  { value: "custom", label: "Custom range" },
 ];
-
-function buildPaginationItems(currentPage: number, totalPages: number) {
-  if (totalPages <= MAX_VISIBLE_PAGES) {
-    return Array.from({ length: totalPages }, (_, index) => index + 1);
-  }
-
-  if (currentPage <= 3) {
-    return [1, 2, 3, "...", totalPages];
-  }
-
-  if (currentPage >= totalPages - 2) {
-    return [1, "...", totalPages - 2, totalPages - 1, totalPages];
-  }
-
-  return [1, "...", currentPage, "...", totalPages];
-}
 
 function parseDateValue(dateValue: string) {
   const parsed = new Date(`${dateValue}T00:00:00`);
   return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
-}
-
-function formatMoney(value: number) {
-  const sign = value < 0 ? "-" : "";
-  return `${sign}$${Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatShortDate(value: string) {
@@ -141,21 +116,6 @@ function formatShortDate(value: string) {
   } catch {
     return value;
   }
-}
-
-// Formats the live lastSyncedAt Date from useAccounts into the same
-// "Mon D, YYYY" / "h:mm AM" split the "Last Synced" card renders. Returns
-// null for both when there's no sync yet, so the card can fall back to
-// "Never synced" instead of showing a stale placeholder date.
-function formatLastSynced(lastSyncedAt: Date | null): { dateLabel: string; timeLabel: string | null } {
-  if (!lastSyncedAt) {
-    return { dateLabel: "Never synced", timeLabel: null };
-  }
-
-  return {
-    dateLabel: lastSyncedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-    timeLabel: lastSyncedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
-  };
 }
 
 // Local (not UTC) YYYY-MM-DD, matching the format used by <input type="date"> and stored transaction dates.
@@ -194,38 +154,22 @@ function computePresetRange(preset: DateRangePreset): { from: string; to: string
 
 function formatDateRangeButtonLabel(preset: DateRangePreset, customFrom: string, customTo: string) {
   if (preset === "custom") {
-    if (!customFrom && !customTo) return "Custom Range";
-    if (customFrom && customTo) return `${formatShortDate(customFrom)} - ${formatShortDate(customTo)}`;
+    if (!customFrom && !customTo) return "Custom range";
+    if (customFrom && customTo) return `${formatShortDate(customFrom)} – ${formatShortDate(customTo)}`;
     if (customFrom) return `From ${formatShortDate(customFrom)}`;
     return `Until ${formatShortDate(customTo)}`;
   }
 
-  return DATE_RANGE_PRESETS.find((option) => option.value === preset)?.label ?? "All Time";
+  return DATE_RANGE_PRESETS.find((option) => option.value === preset)?.label ?? "All time";
 }
-
-type SyncResponse = {
-  message?: string;
-  itemsNeedingReauth?: string[];
-  itemsFailed?: string[];
-};
 
 function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
-// A sync can succeed for some banks and not others; this says which need attention.
-function describeSyncProblems(body: SyncResponse | null): string | null {
-  const reauth = body?.itemsNeedingReauth?.length ?? 0;
-  const failed = body?.itemsFailed?.length ?? 0;
-  const parts: string[] = [];
-  if (reauth) parts.push(`${plural(reauth, "bank needs", "banks need")} to be reconnected on the Accounts page`);
-  if (failed) parts.push(`${plural(failed, "bank", "banks")} couldn't sync; try again in a few minutes`);
-  return parts.length ? `${parts.join(". ")}.` : null;
-}
-
 export default function TransactionsPage() {
   const { user, authLoading } = useAuth();
-  const { accounts = [], lastSyncedAt, connections } = useAccounts(user, authLoading);
+  const { accounts = [] } = useAccounts(user, authLoading);
   const {
     transactions = [],
     transactionsLoading,
@@ -241,18 +185,13 @@ export default function TransactionsPage() {
   const { rules, createRule } = useRules(user, authLoading);
   const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const accountsById = useMemo(() => new Map<string, Account>(accounts.map((account) => [account.id, account])), [accounts]);
-  const syncRunning = useSyncRunning();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"), { noSsr: true });
 
-  const [syncing, setSyncing] = useState(false);
-  const [syncSuccess, setSyncSuccess] = useState(false);
   const [filtersAnchorEl, setFiltersAnchorEl] = useState<null | HTMLElement>(null);
   const [accountMenuAnchorEl, setAccountMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [dateRangeAnchorEl, setDateRangeAnchorEl] = useState<null | HTMLElement>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [searchTerm, setSearchTerm] = useState("");
   const [dateRangePreset, setDateRangePreset] = useState<DateRangePreset>("all");
   const [customDateFrom, setCustomDateFrom] = useState("");
@@ -295,7 +234,7 @@ export default function TransactionsPage() {
   });
   const [applying, setApplying] = useState<{ key: number; open: boolean; rule: Rule | null }>({ key: 0, open: false, rule: null });
 
-  // Active accounts only. Archiving the selected account resets the filter to All Accounts.
+  // Active accounts only. Archiving the selected account resets the filter to All accounts.
   const selectableAccounts = useMemo(() => accounts.filter((account) => !account.isArchived), [accounts]);
   const selectedAccount = useMemo(
     () => selectableAccounts.find((account) => account.id === selectedAccountId) ?? null,
@@ -317,14 +256,6 @@ export default function TransactionsPage() {
     () => formatDateRangeButtonLabel(dateRangePreset, customDateFrom, customDateTo),
     [dateRangePreset, customDateFrom, customDateTo]
   );
-
-  // Live "Last Synced": the bank synced longest ago, so a stuck bank isn't hidden by the others.
-  const { dateLabel: lastSyncedDateLabel, timeLabel: lastSyncedTimeLabel } = useMemo(
-    () => formatLastSynced(lastSyncedAt),
-    [lastSyncedAt]
-  );
-  // Under Last Synced: banks that need attention, or an import still running.
-  const syncCaption = syncStatusCaption(connections);
 
   // Top-tier filters: account + date range. These scope both the summary cards
   // and the list below, mirroring how account selection already works.
@@ -402,36 +333,21 @@ export default function TransactionsPage() {
     };
   }, [scopedTransactions]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / pageSize));
-  const currentPageSafe = Math.min(currentPage, totalPages);
-  const paginatedTransactions = filteredTransactions.slice((currentPageSafe - 1) * pageSize, currentPageSafe * pageSize);
-  const paginationItems = buildPaginationItems(currentPageSafe, totalPages);
+  // Show more: the first PAGE_STEP, then PAGE_STEP more each time. Changing a
+  // filter starts over, because the count is kept per filter combination.
+  const filterKey = [searchTerm, effectiveDateFrom, effectiveDateTo, statusFilter, flowFilter, minAmount, maxAmount, selectedAccountId].join("|");
+  const [shown, setShown] = useState<{ key: string; count: number }>({ key: "", count: PAGE_STEP });
+  const visibleCount = shown.key === filterKey ? shown.count : PAGE_STEP;
+  const visibleTransactions = useMemo(() => filteredTransactions.slice(0, visibleCount), [filteredTransactions, visibleCount]);
+  const groups = useMemo(() => groupByDate(visibleTransactions), [visibleTransactions]);
   const filtersOpen = Boolean(filtersAnchorEl);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, effectiveDateFrom, effectiveDateTo, statusFilter, flowFilter, minAmount, maxAmount, selectedAccountId, pageSize]);
-
-  async function handleSync() {
-    setSyncing(true);
-    setTransactionsError(null);
-
-    try {
-      const body = await runSync();
-
-      // New transactions and Last Synced arrive through the live listeners.
-      const problem = describeSyncProblems(body);
-      if (problem) setTransactionsError(problem);
-      else setSyncSuccess(true);
-    } catch (err) {
-      setTransactionsError(err instanceof Error ? err.message : "Sync failed. Please try again.");
-    } finally {
-      setSyncing(false);
-    }
+  function showMore() {
+    setShown({ key: filterKey, count: visibleCount + PAGE_STEP });
   }
 
   /**
-   * Applies your category pick ("" clears it, back to Needs Review), then
+   * Applies your category pick ("" clears it, back to Needs review), then
    * offers a rule for the merchant, unless the change failed or an enabled
    * rule already gives this merchant that category.
    */
@@ -490,7 +406,7 @@ export default function TransactionsPage() {
     if (saved > 0) setNotice(`Rule created and applied to ${saved} past ${saved === 1 ? "transaction" : "transactions"}.`);
   }
 
-  // Plaid's less confident guesses, waiting in Needs Review.
+  // Plaid's less confident guesses, waiting in Needs review.
   const suggestionUpdates = useMemo(() => planAcceptSuggestions(transactions, categoriesById), [transactions, categoriesById]);
 
   /** Accepts one suggestion as your own pick, which also feeds merchant memory. */
@@ -511,8 +427,8 @@ export default function TransactionsPage() {
   const isLoading = authLoading || transactionsLoading;
 
   // ---- Selection
-  const pageIds = paginatedTransactions.map((tx) => tx.id);
-  const pageSelectedCount = pageIds.filter((id) => selectedIds.has(id)).length;
+  const shownIds = visibleTransactions.map((tx) => tx.id);
+  const shownSelectedCount = shownIds.filter((id) => selectedIds.has(id)).length;
   const allSelectedHidden = selectedTransactions.length > 0 && selectedTransactions.every((tx) => tx.hidden);
 
   function toggleSelected(id: string) {
@@ -524,11 +440,11 @@ export default function TransactionsPage() {
     });
   }
 
-  function togglePage() {
+  function toggleShown() {
     setSelectedIds((current) => {
       const next = new Set(current);
-      const selectAll = pageIds.some((id) => !next.has(id));
-      for (const id of pageIds) {
+      const selectAll = shownIds.some((id) => !next.has(id));
+      for (const id of shownIds) {
         if (selectAll) next.add(id);
         else next.delete(id);
       }
@@ -598,121 +514,85 @@ export default function TransactionsPage() {
   const excludeOwnTransfer = (tx: Transaction) => (category: { kind: string; transferAccountId?: string | null }) =>
     category.kind === "transfer" && category.transferAccountId === tx.originAccId;
 
-  function formatAmount(tx: Transaction) {
-    return tx.amount > 0 ? `(${tx.amount.toFixed(2)})` : Math.abs(tx.amount).toFixed(2);
+  // ---- Active filters, shown as chips you can clear one at a time.
+  const amountFilterLabel =
+    minAmount && maxAmount
+      ? `${formatCurrency(Number(minAmount))} to ${formatCurrency(Number(maxAmount))}`
+      : minAmount
+        ? `At least ${formatCurrency(Number(minAmount))}`
+        : `Up to ${formatCurrency(Number(maxAmount))}`;
+  const activeFilters: { key: string; label: string; onClear: () => void }[] = [];
+  if (selectedAccount) {
+    activeFilters.push({ key: "account", label: selectedAccount.name, onClear: () => setSelectedAccountId(null) });
+  }
+  if (hasDateRange) {
+    activeFilters.push({ key: "date", label: dateRangeLabel, onClear: clearDateRange });
+  }
+  if (statusFilter !== "all") {
+    activeFilters.push({ key: "status", label: statusFilter === "pending" ? "Pending only" : "Posted only", onClear: () => setStatusFilter("all") });
+  }
+  if (minAmount || maxAmount) {
+    activeFilters.push({
+      key: "amount",
+      label: amountFilterLabel,
+      onClear: () => {
+        setMinAmount("");
+        setMaxAmount("");
+      },
+    });
   }
 
-  const formatDateString = (dateInput: string) => {
-    try {
-      return new Date(dateInput + "T00:00:00").toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      });
-    } catch {
-      return dateInput;
-    }
-  };
+  function clearDateRange() {
+    setDateRangePreset("all");
+    setCustomDateFrom("");
+    setCustomDateTo("");
+  }
 
-  const startItem = filteredTransactions.length === 0 ? 0 : (currentPageSafe - 1) * pageSize + 1;
-  const endItem = Math.min(currentPageSafe * pageSize, filteredTransactions.length);
+  function clearAllFilters() {
+    setSelectedAccountId(null);
+    clearDateRange();
+    setStatusFilter("all");
+    setMinAmount("");
+    setMaxAmount("");
+    setSearchTerm("");
+  }
 
   return (
-    <Stack spacing={3} sx={{ p: 4, bgcolor: "#f8fafc", minHeight: "100vh" }}>
-
-      {/* 1. Header Toolbar Actions */}
+    <Stack spacing={3}>
       <PageHeader title="Transactions">
-        <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", flexWrap: "wrap", rowGap: 1.5 }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
           <Button
             variant="outlined"
-            endIcon={<KeyboardArrowDownIcon sx={{ fontSize: 18 }} />}
-            startIcon={<AccountBalanceOutlinedIcon sx={{ color: "#0284c7", fontSize: 18 }} />}
+            startIcon={<AccountBalanceOutlinedIcon />}
+            endIcon={<KeyboardArrowDownIcon />}
             onClick={(event) => setAccountMenuAnchorEl(event.currentTarget)}
-            sx={{
-              borderColor: selectedAccount ? "#bfdbfe" : "#e2e8f0",
-              color: selectedAccount ? "#2563eb" : "#334155",
-              textTransform: "none",
-              fontWeight: 600,
-              fontSize: "0.85rem",
-              borderRadius: 2,
-              bgcolor: selectedAccount ? "#eff6ff" : "#fff",
-              px: 1.75,
-              py: 0.85,
-              boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.04)",
-              maxWidth: 220,
-              "&:hover": { borderColor: "#cbd5e1", bgcolor: selectedAccount ? "#eff6ff" : "#f8fafc" },
-            }}
+            sx={[filterButtonSx(selectedAccount !== null), { maxWidth: { xs: "50%", sm: 240 } }]}
           >
             <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {selectedAccount ? selectedAccount.name : "All Accounts"}
+              {selectedAccount ? selectedAccount.name : "All accounts"}
             </Box>
           </Button>
 
           <Button
             variant="outlined"
-            endIcon={<KeyboardArrowDownIcon sx={{ fontSize: 18 }} />}
-            startIcon={<CalendarMonthOutlinedIcon sx={{ color: "#0284c7", fontSize: 18 }} />}
+            startIcon={<CalendarMonthOutlinedIcon />}
+            endIcon={<KeyboardArrowDownIcon />}
             onClick={(event) => setDateRangeAnchorEl(event.currentTarget)}
-            sx={{
-              borderColor: hasDateRange ? "#bfdbfe" : "#e2e8f0",
-              color: hasDateRange ? "#2563eb" : "#334155",
-              textTransform: "none",
-              fontWeight: 600,
-              fontSize: "0.85rem",
-              borderRadius: 2,
-              bgcolor: hasDateRange ? "#eff6ff" : "#fff",
-              px: 1.75,
-              py: 0.85,
-              boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.04)",
-              whiteSpace: "nowrap",
-              "&:hover": { borderColor: "#cbd5e1", bgcolor: hasDateRange ? "#eff6ff" : "#f8fafc" },
-            }}
+            sx={filterButtonSx(hasDateRange)}
           >
             {dateRangeLabel}
-          </Button>
-
-          <Button
-            variant="outlined"
-            startIcon={syncing || syncRunning ? <CircularProgress size={14} color="inherit" /> : <SyncIcon sx={{ color: "#2563eb", fontSize: 18 }} />}
-            onClick={handleSync}
-            disabled={syncing || syncRunning || isLoading}
-            sx={{
-              borderColor: "#bfdbfe",
-              color: "#2563eb",
-              textTransform: "none",
-              fontWeight: 600,
-              fontSize: "0.85rem",
-              borderRadius: 2,
-              bgcolor: "#fff",
-              px: 1.75,
-              py: 0.85,
-              boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.04)",
-              "&:hover": { borderColor: "#93c5fd", bgcolor: "#eff6ff" },
-            }}
-          >
-            {syncing || syncRunning ? "Syncing..." : "Sync Transactions"}
           </Button>
         </Stack>
       </PageHeader>
 
-      {/* Account filter menu */}
+      {/* Account menu */}
       <Menu
         anchorEl={accountMenuAnchorEl}
         open={accountMenuOpen}
         onClose={() => setAccountMenuAnchorEl(null)}
         anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
         transformOrigin={{ vertical: "top", horizontal: "left" }}
-        slotProps={{
-          paper: {
-            sx: {
-              mt: 1,
-              borderRadius: 3,
-              minWidth: 260,
-              border: "1px solid #e2e8f0",
-              boxShadow: "0 12px 30px rgba(15, 23, 42, 0.12)",
-            },
-          },
-        }}
+        slotProps={{ paper: { sx: { mt: 1, minWidth: 260 } } }}
       >
         <MenuItem
           selected={selectedAccount === null}
@@ -720,14 +600,9 @@ export default function TransactionsPage() {
             setSelectedAccountId(null);
             setAccountMenuAnchorEl(null);
           }}
-          sx={{ fontWeight: 600, fontSize: "0.85rem" }}
         >
-          <ListItemText>All Accounts</ListItemText>
-          {selectedAccount === null && (
-            <ListItemIcon sx={{ minWidth: "auto", ml: 1 }}>
-              <CheckRoundedIcon sx={{ fontSize: 18, color: "#2563eb" }} />
-            </ListItemIcon>
-          )}
+          <ListItemText>All accounts</ListItemText>
+          {selectedAccount === null && <CheckRoundedIcon sx={{ fontSize: 18, color: "primary.main", ml: 1 }} />}
         </MenuItem>
 
         {selectableAccounts.map((account) => (
@@ -738,45 +613,23 @@ export default function TransactionsPage() {
               setSelectedAccountId(account.id);
               setAccountMenuAnchorEl(null);
             }}
-            sx={{ fontSize: "0.85rem" }}
           >
-            <ListItemText
-              primary={account.name}
-              slotProps={{ primary: { sx: { fontWeight: 500 } } }}
-            />
-            {selectedAccountId === account.id && (
-              <ListItemIcon sx={{ minWidth: "auto", ml: 1 }}>
-                <CheckRoundedIcon sx={{ fontSize: 18, color: "#2563eb" }} />
-              </ListItemIcon>
-            )}
+            <ListItemText>{account.name}</ListItemText>
+            {selectedAccountId === account.id && <CheckRoundedIcon sx={{ fontSize: 18, color: "primary.main", ml: 1 }} />}
           </MenuItem>
         ))}
 
-        {selectableAccounts.length === 0 && (
-          <MenuItem disabled sx={{ fontSize: "0.85rem" }}>
-            No accounts found
-          </MenuItem>
-        )}
+        {selectableAccounts.length === 0 && <MenuItem disabled>No accounts yet</MenuItem>}
       </Menu>
 
-      {/* Date range filter menu: quick presets + inline custom range */}
+      {/* Date range menu: presets, plus a custom range */}
       <Menu
         anchorEl={dateRangeAnchorEl}
         open={dateRangeOpen}
         onClose={() => setDateRangeAnchorEl(null)}
         anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
         transformOrigin={{ vertical: "top", horizontal: "left" }}
-        slotProps={{
-          paper: {
-            sx: {
-              mt: 1,
-              borderRadius: 3,
-              minWidth: 240,
-              border: "1px solid #e2e8f0",
-              boxShadow: "0 12px 30px rgba(15, 23, 42, 0.12)",
-            },
-          },
-        }}
+        slotProps={{ paper: { sx: { mt: 1, minWidth: 240 } } }}
       >
         {DATE_RANGE_PRESETS.map((option) => (
           <MenuItem
@@ -784,27 +637,19 @@ export default function TransactionsPage() {
             selected={dateRangePreset === option.value}
             onClick={() => {
               setDateRangePreset(option.value);
-              // Every preset resolves to a concrete range immediately, so it's
-              // safe to close right away. Custom stays open to collect dates.
-              if (option.value !== "custom") {
-                setDateRangeAnchorEl(null);
-              }
+              // Presets apply at once; Custom stays open for its dates.
+              if (option.value !== "custom") setDateRangeAnchorEl(null);
             }}
-            sx={{ fontSize: "0.85rem", fontWeight: dateRangePreset === option.value ? 600 : 500 }}
           >
             <ListItemText>{option.label}</ListItemText>
-            {dateRangePreset === option.value && (
-              <ListItemIcon sx={{ minWidth: "auto", ml: 1 }}>
-                <CheckRoundedIcon sx={{ fontSize: 18, color: "#2563eb" }} />
-              </ListItemIcon>
-            )}
+            {dateRangePreset === option.value && <CheckRoundedIcon sx={{ fontSize: 18, color: "primary.main", ml: 1 }} />}
           </MenuItem>
         ))}
 
         {dateRangePreset === "custom" && (
           <Box key="custom-range-fields" sx={{ px: 2, pt: 0.5, pb: 2 }}>
             <Divider sx={{ mb: 1.5 }} />
-            <Stack direction="column" spacing={1.5}>
+            <Stack spacing={1.5}>
               <TextField
                 label="From"
                 type="date"
@@ -812,7 +657,6 @@ export default function TransactionsPage() {
                 value={customDateFrom}
                 onChange={(event) => setCustomDateFrom(event.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ width: "100%" }}
               />
               <TextField
                 label="To"
@@ -821,21 +665,12 @@ export default function TransactionsPage() {
                 value={customDateTo}
                 onChange={(event) => setCustomDateTo(event.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ width: "100%" }}
               />
               <Button
                 variant="contained"
-                disableElevation
                 size="small"
                 onClick={() => setDateRangeAnchorEl(null)}
                 disabled={!customDateFrom && !customDateTo}
-                sx={{
-                  textTransform: "none",
-                  fontWeight: 600,
-                  bgcolor: "#2563eb",
-                  borderRadius: 1.5,
-                  "&:hover": { bgcolor: "#1d4ed8" },
-                }}
               >
                 Apply
               </Button>
@@ -844,191 +679,104 @@ export default function TransactionsPage() {
         )}
       </Menu>
 
-      {/* 2. Top Metric Cards Dashboard Segment */}
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", md: "1fr 1fr 1fr 1fr" },
-          gap: 2,
-        }}
-      >
-        <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
-          <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Box>
-              <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Total Inflows</Typography>
-              <Typography sx={{ fontWeight: 700, color: "#16a34a", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>
-                {formatMoney(summary.inflows)}
-              </Typography>
-              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
-                {summary.inflowCount} transactions
-              </Typography>
-            </Box>
-            <Avatar sx={{ bgcolor: "#f0fdf4", color: "#16a34a", width: 44, height: 44 }}>
-              <SouthWestIcon sx={{ fontSize: 20 }} />
-            </Avatar>
-          </Stack>
-        </Paper>
+      {/* Totals for the account and dates above. Search and the filters below don't move them. */}
+      <StatStrip
+        stats={[
+          {
+            label: "Money in",
+            value: formatCurrency(summary.inflows),
+            caption: plural(summary.inflowCount, "transaction", "transactions"),
+            tone: "positive",
+          },
+          {
+            label: "Money out",
+            value: formatCurrency(summary.outflows),
+            caption: plural(summary.outflowCount, "transaction", "transactions"),
+          },
+          {
+            label: "Net",
+            value: formatSignedCurrency(summary.net),
+            caption: "Transfers between your accounts left out",
+            tone: summary.net > 0 ? "positive" : summary.net < 0 ? "negative" : undefined,
+          },
+        ]}
+      />
 
-        <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
-          <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Box>
-              <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Total Outflows</Typography>
-              <Typography sx={{ fontWeight: 700, color: "#dc2626", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>
-                {formatMoney(summary.outflows)}
-              </Typography>
-              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
-                {summary.outflowCount} transactions
-              </Typography>
-            </Box>
-            <Avatar sx={{ bgcolor: "#fef2f2", color: "#dc2626", width: 44, height: 44 }}>
-              <NorthEastIcon sx={{ fontSize: 20 }} />
-            </Avatar>
-          </Stack>
-        </Paper>
-
-        <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
-          <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Box>
-              <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Net Cash Flow</Typography>
-              <Typography sx={{ fontWeight: 700, color: "#0f172a", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>
-                {formatMoney(summary.net)}
-              </Typography>
-              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
-                {selectedAccount ? selectedAccount.name : "All accounts"}{hasDateRange ? ` · ${dateRangeLabel}` : ""}
-              </Typography>
-            </Box>
-            <Avatar sx={{ bgcolor: "#f5f3ff", color: "#7c3aed", width: 44, height: 44 }}>
-              <SwapHorizIcon sx={{ fontSize: 20 }} />
-            </Avatar>
-          </Stack>
-        </Paper>
-
-        <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
-          <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Box>
-              <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Last Synced</Typography>
-              <Typography sx={{ fontWeight: 700, color: "#0f172a", mt: 0.5, fontSize: "1.25rem" }}>{syncing ? "Syncing…" : lastSyncedDateLabel}</Typography>
-              {!syncing && lastSyncedTimeLabel && (
-                <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
-                  {lastSyncedTimeLabel}
-                </Typography>
-              )}
-              {!syncing && syncCaption && (
-                <Typography
-                  variant="caption"
-                  sx={{ color: syncCaption.attention ? "#dc2626" : "#2563eb", display: "block", mt: 0.25, fontSize: "0.75rem", fontWeight: 600 }}
-                >
-                  {syncCaption.text}
-                </Typography>
-              )}
-            </Box>
-            <Avatar sx={{ bgcolor: "#eff6ff", color: "#2563eb", width: 44, height: 44 }}>
-              <CalendarMonthOutlinedIcon sx={{ fontSize: 20 }} />
-            </Avatar>
-          </Stack>
-        </Paper>
-      </Box>
-
-      {/* 3. Sub-Navigation and Inline Filtering Controls */}
-      <Stack
-        sx={{
-          flexDirection: { xs: "column", sm: "row" },
-          alignItems: { xs: "stretch", sm: "center" },
-          width: "100%",
-          justifyContent: "space-between",
-          gap: 1.5,
-        }}
-      >
-        <Tabs
-          value={flowFilter}
-          onChange={(_event, value) => setFlowFilter(value as FlowFilter)}
-          variant="scrollable"
-          scrollButtons={false}
-          sx={{
-            minHeight: 40,
-            bgcolor: "#fff",
-            borderRadius: 2,
-            border: "1px solid #e2e8f0",
-            p: 0.5,
-            width: "fit-content",
-            maxWidth: "100%",
-            "& .MuiTabs-indicator": { display: "none" },
-          }}
-        >
-          {FLOW_FILTER_TABS.map((tab) => (
-            <Tab
-              key={tab.value}
-              value={tab.value}
-              label={tab.value === "review" && reviewCount > 0 ? `${tab.label} (${reviewCount})` : tab.label}
-              disableRipple
-              sx={{
-                minHeight: 32,
-                minWidth: 0,
-                px: 1.75,
-                borderRadius: 1.5,
-                textTransform: "none",
-                fontWeight: 600,
-                fontSize: "0.8rem",
-                color: "#64748b",
-                "&.Mui-selected": {
-                  color: "#2563eb",
-                  bgcolor: "#eff6ff",
-                },
-              }}
-            />
-          ))}
-        </Tabs>
-
+      {/* One row: money in or out, search, and filters */}
+      <Stack spacing={1.5}>
         <Stack
-          sx={{
-            flexDirection: { xs: "column", sm: "row" },
-            alignItems: { xs: "stretch", sm: "center" },
-            gap: 1.5,
-          }}
+          direction={{ xs: "column", md: "row" }}
+          spacing={1.5}
+          sx={{ alignItems: { xs: "stretch", md: "center" }, justifyContent: "space-between" }}
         >
-        <TextField
-          size="small"
-          placeholder="Search transactions..."
-          value={searchTerm}
-          onChange={(event) => setSearchTerm(event.target.value)}
-          slotProps={{ input: { 
-            sx: { fontSize: "0.85rem" },
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon sx={{ color: "#94a3b8", fontSize: 18 }} />
-              </InputAdornment>
-            ),
-          } }}
-          sx={{
-            bgcolor: "#fff",
-            minWidth: 260,
-            "& .MuiOutlinedInput-root": {
-              borderRadius: 2,
-              fontSize: "0.875rem",
-              "& fieldset": { borderColor: "#e2e8f0" },
-              "&:hover fieldset": { borderColor: "#cbd5e1" },
-            },
-          }}
-        />
-        <Button
-          variant="outlined"
-          startIcon={<FilterListIcon sx={{ fontSize: 17 }} />}
-          onClick={(event) => setFiltersAnchorEl(event.currentTarget)}
-          sx={{
-            borderColor: "#e2e8f0",
-            color: filtersOpen ? "#2563eb" : "#334155",
-            textTransform: "none",
-            fontWeight: 600,
-            fontSize: "0.85rem",
-            borderRadius: 2,
-            bgcolor: "#fff",
-            px: 1.75,
-            "&:hover": { borderColor: "#cbd5e1", bgcolor: "#f8fafc" },
-          }}
-        >
-          Filters
-        </Button>
+          <Tabs
+            value={flowFilter}
+            onChange={(_event, value) => setFlowFilter(value as FlowFilter)}
+            variant="scrollable"
+            scrollButtons={false}
+          >
+            {FLOW_FILTER_TABS.map((tab) => (
+              <Tab
+                key={tab.value}
+                value={tab.value}
+                label={tab.value === "review" && reviewCount > 0 ? `${tab.label} (${reviewCount})` : tab.label}
+              />
+            ))}
+          </Tabs>
+
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+            <TextField
+              size="small"
+              placeholder="Search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon sx={{ color: "text.disabled", fontSize: 18 }} />
+                    </InputAdornment>
+                  ),
+                  endAdornment: searchTerm ? (
+                    <InputAdornment position="end">
+                      <IconButton size="small" aria-label="Clear search" onClick={() => setSearchTerm("")} edge="end">
+                        <CloseRoundedIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </InputAdornment>
+                  ) : undefined,
+                },
+                htmlInput: { "aria-label": "Search transactions" },
+              }}
+              sx={{ flex: 1, width: { md: 260 } }}
+            />
+            <Button
+              variant="outlined"
+              startIcon={<FilterListIcon />}
+              onClick={(event) => setFiltersAnchorEl(event.currentTarget)}
+              sx={filterButtonSx(statusFilter !== "all" || Boolean(minAmount || maxAmount))}
+            >
+              Filters
+            </Button>
+          </Stack>
         </Stack>
+
+        {activeFilters.length > 0 && (
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+            {activeFilters.map((filter) => (
+              <Chip
+                key={filter.key}
+                label={filter.label}
+                onDelete={filter.onClear}
+                size="small"
+                variant="outlined"
+                sx={{ bgcolor: "background.paper", fontWeight: 600, maxWidth: 260 }}
+              />
+            ))}
+            <Button size="small" onClick={clearAllFilters}>
+              Clear all
+            </Button>
+          </Stack>
+        )}
       </Stack>
 
       <Menu
@@ -1037,56 +785,60 @@ export default function TransactionsPage() {
         onClose={() => setFiltersAnchorEl(null)}
         anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
         transformOrigin={{ vertical: "top", horizontal: "right" }}
-        slotProps={{ paper: { sx: { mt: 1, p: 0, borderRadius: 3, border: "1px solid #e2e8f0", boxShadow: "0 12px 30px rgba(15, 23, 42, 0.12)", overflow: "visible" } } }}
+        slotProps={{ paper: { sx: { mt: 1 } } }}
       >
-        <Box sx={{ p: 2.5, minWidth: 320, bgcolor: "#fff" }}>
-          <Stack direction="column" spacing={2} sx={{ width: "100%" }}>
-            <Select
+        <Box sx={{ p: 2, width: 300, maxWidth: "calc(100vw - 32px)" }}>
+          <Stack spacing={2}>
+            <TextField
+              select
+              label="Status"
+              size="small"
               value={statusFilter}
-              size="small"
               onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-              sx={{ width: "100%", height: 40, bgcolor: "#fff" }}
             >
-              <MenuItem value="all">All statuses</MenuItem>
-              <MenuItem value="pending">Pending</MenuItem>
-              <MenuItem value="posted">Posted</MenuItem>
-            </Select>
-            <TextField
-              label="Min amount"
-              type="number"
-              size="small"
-              value={minAmount}
-              onChange={(event) => setMinAmount(event.target.value)}
-              slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
-              sx={{ width: "100%" }}
-            />
-            <TextField
-              label="Max amount"
-              type="number"
-              size="small"
-              value={maxAmount}
-              onChange={(event) => setMaxAmount(event.target.value)}
-              slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
-              sx={{ width: "100%" }}
-            />
-            <Button
-              variant="text"
-              onClick={() => {
-                setStatusFilter("all");
-                setFlowFilter("all");
-                setMinAmount("");
-                setMaxAmount("");
-              }}
-              sx={{ textTransform: "none", fontWeight: 600, alignSelf: "flex-start", px: 0 }}
-            >
-              Clear filters
-            </Button>
+              <MenuItem value="all">Pending and posted</MenuItem>
+              <MenuItem value="pending">Pending only</MenuItem>
+              <MenuItem value="posted">Posted only</MenuItem>
+            </TextField>
+            <Stack direction="row" spacing={1.5}>
+              <TextField
+                label="Min amount"
+                type="number"
+                size="small"
+                value={minAmount}
+                onChange={(event) => setMinAmount(event.target.value)}
+                slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
+              />
+              <TextField
+                label="Max amount"
+                type="number"
+                size="small"
+                value={maxAmount}
+                onChange={(event) => setMaxAmount(event.target.value)}
+                slotProps={{ htmlInput: { min: 0, step: "0.01" } }}
+              />
+            </Stack>
+            <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between" }}>
+              <Button
+                onClick={() => {
+                  setStatusFilter("all");
+                  setMinAmount("");
+                  setMaxAmount("");
+                }}
+                sx={{ px: 1 }}
+              >
+                Reset
+              </Button>
+              <Button variant="contained" onClick={() => setFiltersAnchorEl(null)}>
+                Done
+              </Button>
+            </Stack>
           </Stack>
         </Box>
       </Menu>
 
       {transactionsError && (
-        <Alert severity="error" onClose={() => setTransactionsError(null)} sx={{ borderRadius: 3 }}>
+        <Alert severity="error" onClose={() => setTransactionsError(null)}>
           {transactionsError}
         </Alert>
       )}
@@ -1094,41 +846,58 @@ export default function TransactionsPage() {
       {suggestionUpdates.length > 0 && (
         <Alert
           severity="info"
-          sx={{ borderRadius: 3 }}
           action={
-            <Button
-              color="inherit"
-              size="small"
-              onClick={handleAcceptAllSuggestions}
-              disabled={acceptingAll}
-              sx={{ textTransform: "none", fontWeight: 600 }}
-            >
+            <Button color="inherit" size="small" onClick={handleAcceptAllSuggestions} disabled={acceptingAll} sx={{ whiteSpace: "nowrap" }}>
               {acceptingAll ? "Accepting…" : "Accept all"}
             </Button>
           }
         >
-          Plaid suggests a category for {suggestionUpdates.length} uncategorized{" "}
-          {suggestionUpdates.length === 1 ? "transaction" : "transactions"}. Accept them below one at a time, or all at once.
+          Plaid suggests a category for {plural(suggestionUpdates.length, "uncategorized transaction", "uncategorized transactions")}.
+          Accept them below one at a time, or all at once.
         </Alert>
       )}
 
-      {/* 4. Transactions: a table, or cards on small screens */}
+      {/* The list: a table from md up, cards below, both grouped by day */}
       {isLoading ? (
-        <Box sx={{ display: "flex", justifyContent: "center", py: 12 }}>
-          <CircularProgress size={40} thickness={4} sx={{ color: "#2563eb" }} />
-        </Box>
+        <Paper variant="outlined" sx={{ overflow: "hidden" }}>
+          <ListSkeleton rows={8} />
+        </Paper>
       ) : filteredTransactions.length === 0 ? (
-        <Paper variant="outlined" sx={{ p: 8, textAlign: "center", borderRadius: 3, borderStyle: "dashed", bgcolor: "#fff" }}>
-          <Typography color="text.secondary" variant="body2">
-            {transactions.length === 0 && !hasActiveFilters
-              ? "No transactions yet. Connect a bank on the Accounts page, or add a manual account."
-              : flowFilter === "review"
-                ? "Nothing needs review."
-                : "No transactions match the current filters."}
-          </Typography>
+        <Paper variant="outlined">
+          {transactions.length === 0 && !hasActiveFilters ? (
+            <EmptyState
+              icon={<ReceiptLongOutlinedIcon />}
+              title="No transactions yet"
+              description="Connect a bank on Accounts, or add a manual account. New transactions appear here after each sync."
+              action={
+                <Button component={Link} href="/accounts" variant="contained">
+                  Go to Accounts
+                </Button>
+              }
+            />
+          ) : flowFilter === "review" && activeFilters.length === 0 && !searchTerm.trim() ? (
+            <EmptyState icon={<CheckCircleOutlineRoundedIcon />} title="All caught up" description="Every transaction has a category." />
+          ) : (
+            <EmptyState
+              icon={<SearchIcon />}
+              title="No matching transactions"
+              description="Try a different search, or clear the filters."
+              action={
+                <Button
+                  variant="outlined"
+                  onClick={() => {
+                    clearAllFilters();
+                    setFlowFilter("all");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              }
+            />
+          )}
         </Paper>
       ) : (
-        <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden", bgcolor: "#fff", borderColor: "#e2e8f0" }}>
+        <Paper variant="outlined" sx={{ overflow: "hidden" }}>
           {/* Bulk actions for the selected transactions */}
           {selectedTransactions.length > 0 && (
             <Box
@@ -1137,25 +906,22 @@ export default function TransactionsPage() {
                 alignItems: "center",
                 flexWrap: "wrap",
                 gap: 1.5,
-                px: 2.5,
-                py: 1.5,
+                px: 2,
+                py: 1.25,
                 bgcolor: "#eff6ff",
-                borderBottom: "1px solid #bfdbfe",
+                borderBottom: "1px solid",
+                borderColor: "#bfdbfe",
               }}
             >
-              <Typography sx={{ fontWeight: 700, color: "#1e3a8a", fontSize: "0.85rem" }}>
+              <Typography variant="body2" sx={{ fontWeight: 700, color: "primary.dark" }}>
                 {selectedTransactions.length} selected
               </Typography>
               {selectedTransactions.length < filteredTransactions.length && (
-                <Button
-                  size="small"
-                  onClick={() => setSelectedIds(new Set(filteredTransactions.map((tx) => tx.id)))}
-                  sx={{ textTransform: "none", fontWeight: 600 }}
-                >
+                <Button size="small" onClick={() => setSelectedIds(new Set(filteredTransactions.map((tx) => tx.id)))}>
                   Select all {filteredTransactions.length}
                 </Button>
               )}
-              <Box sx={{ width: 240, bgcolor: "#fff", borderRadius: 1 }}>
+              <Box sx={{ width: { xs: "100%", sm: 240 }, order: { xs: 1, sm: 0 } }}>
                 <CategoryPicker
                   key={bulkPickerKey}
                   categories={categories}
@@ -1169,19 +935,17 @@ export default function TransactionsPage() {
               </Box>
               <Button
                 size="small"
-                startIcon={<VisibilityOffOutlinedIcon sx={{ fontSize: 18 }} />}
+                startIcon={<VisibilityOffOutlinedIcon />}
                 onClick={() => void handleBulkHidden(!allSelectedHidden)}
                 disabled={bulkBusy}
-                sx={{ textTransform: "none", fontWeight: 600 }}
               >
                 {allSelectedHidden ? "Unhide" : "Hide"}
               </Button>
               <Button
                 size="small"
-                startIcon={<BoltIcon sx={{ fontSize: 18 }} />}
+                startIcon={<BoltIcon />}
                 onClick={() => openRuleDialog(draftRuleFor(selectedTransactions))}
                 disabled={bulkBusy}
-                sx={{ textTransform: "none", fontWeight: 600 }}
               >
                 Create rule
               </Button>
@@ -1195,310 +959,239 @@ export default function TransactionsPage() {
 
           {isMobile ? (
             <Box>
-              {paginatedTransactions.map((tx) => {
-                const category = tx.categoryId ? categoriesById.get(tx.categoryId) : undefined;
-                const waiting = needsReview(tx);
-                const note = categoryNote(tx);
-                const selected = selectedIds.has(tx.id);
+              {groups.map((group, groupIndex) => (
+                <Box key={`${group.date}-${groupIndex}`}>
+                  <DayHeading>{dateHeading(group.date)}</DayHeading>
+                  {group.items.map((tx) => {
+                    const category = tx.categoryId ? categoriesById.get(tx.categoryId) : undefined;
+                    const waiting = needsReview(tx);
+                    const note = categoryNote(tx);
+                    const selected = selectedIds.has(tx.id);
 
-                return (
-                  <Box
-                    key={tx.id}
-                    onClick={() => setDrawerTxId(tx.id)}
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 1.25,
-                      px: 1.5,
-                      py: 1.25,
-                      borderBottom: "1px solid #f1f5f9",
-                      cursor: "pointer",
-                      opacity: tx.hidden ? 0.55 : 1,
-                      bgcolor: selected ? "#f8fbff" : "#fff",
-                    }}
-                  >
-                    <Checkbox
-                      size="small"
-                      checked={selected}
-                      onClick={(event) => event.stopPropagation()}
-                      onChange={() => toggleSelected(tx.id)}
-                      slotProps={{ input: { "aria-label": `Select ${tx.displayName}` } }}
-                      sx={{ p: 0.5 }}
-                    />
-                    <MerchantAvatar name={tx.displayName} logoUrl={tx.logoUrl} />
-                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                      <Typography noWrap sx={{ fontWeight: 600, color: "#0f172a", fontSize: "0.875rem" }}>
-                        {tx.displayName}
-                      </Typography>
-                      <Typography noWrap variant="caption" sx={{ color: "#94a3b8", display: "block", fontSize: "0.75rem" }}>
-                        {formatDateString(tx.date)} · {tx.originAccName}
-                        {tx.pending ? " · Pending" : ""}
-                      </Typography>
-                      {category ? (
-                        <Typography noWrap variant="caption" sx={{ color: "#2563eb", display: "block", fontWeight: 600, fontSize: "0.75rem" }}>
-                          {category.name}
-                        </Typography>
-                      ) : waiting ? (
-                        <Typography noWrap variant="caption" sx={{ color: "#dc2626", display: "block", fontWeight: 600, fontSize: "0.75rem" }}>
-                          Needs Review
-                        </Typography>
-                      ) : (
-                        note && (
-                          <Typography noWrap variant="caption" sx={{ color: "#94a3b8", display: "block", fontSize: "0.75rem" }}>
-                            {note}
-                          </Typography>
-                        )
-                      )}
-                    </Box>
-                    <Typography
-                      sx={{ fontWeight: 700, fontSize: "0.875rem", color: tx.amount > 0 ? "#dc2626" : "#16a34a", whiteSpace: "nowrap" }}
-                    >
-                      {formatAmount(tx)}
-                    </Typography>
-                  </Box>
-                );
-              })}
-            </Box>
-          ) : (
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow sx={{ borderBottom: "1px solid #e2e8f0" }}>
-                  <TableCell padding="checkbox" sx={{ pl: 1.5 }}>
-                    <Checkbox
-                      size="small"
-                      checked={pageIds.length > 0 && pageSelectedCount === pageIds.length}
-                      indeterminate={pageSelectedCount > 0 && pageSelectedCount < pageIds.length}
-                      onChange={togglePage}
-                      slotProps={{ input: { "aria-label": "Select this page" } }}
-                    />
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Date</TableCell>
-                  <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Description</TableCell>
-                  <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Account</TableCell>
-                  <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Category</TableCell>
-                  <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Status</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem", pr: 3 }}>Amount</TableCell>
-                  <TableCell align="center" sx={{ py: 1.75, width: 50 }} />
-                </TableRow>
-              </TableHead>
-
-              <TableBody>
-                {paginatedTransactions.map((tx) => {
-                  const isExpense = tx.amount > 0;
-                  const suggestion = !tx.categoryId && tx.suggestedCategoryId ? categoriesById.get(tx.suggestedCategoryId) : undefined;
-                  const note = categoryNote(tx);
-                  const selected = selectedIds.has(tx.id);
-
-                  return (
-                    <TableRow
-                      key={tx.id}
-                      selected={selected}
-                      sx={{
-                        opacity: tx.hidden ? 0.55 : 1,
-                        "&:hover": { backgroundColor: "#f8fafc" },
-                        "&.Mui-selected, &.Mui-selected:hover": { backgroundColor: "#f8fbff" },
-                        "& td": { py: 1.75, borderBottom: "1px solid #f1f5f9" },
-                      }}
-                    >
-                      <TableCell padding="checkbox" sx={{ pl: 1.5 }}>
+                    return (
+                      <Box
+                        key={tx.id}
+                        onClick={() => setDrawerTxId(tx.id)}
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1.25,
+                          px: 1.5,
+                          py: 1.25,
+                          borderBottom: "1px solid",
+                          borderColor: "grey.100",
+                          cursor: "pointer",
+                          opacity: tx.hidden ? 0.55 : 1,
+                          bgcolor: selected ? "#f8fbff" : "background.paper",
+                        }}
+                      >
                         <Checkbox
                           size="small"
                           checked={selected}
+                          onClick={(event) => event.stopPropagation()}
                           onChange={() => toggleSelected(tx.id)}
                           slotProps={{ input: { "aria-label": `Select ${tx.displayName}` } }}
+                          sx={{ p: 0.5 }}
                         />
-                      </TableCell>
-
-                      {/* Date */}
-                      <TableCell sx={{ color: "#334155", fontWeight: 500, whiteSpace: "nowrap", fontSize: "0.85rem" }}>
-                        {formatDateString(tx.date)}
-                      </TableCell>
-
-                      {/* Description / Merchant: opens the detail drawer */}
-                      <TableCell onClick={() => setDrawerTxId(tx.id)} sx={{ cursor: "pointer" }}>
-                        <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-                          <MerchantAvatar name={tx.displayName} logoUrl={tx.logoUrl} />
-                          <Box sx={{ minWidth: 0 }}>
-                            <Typography sx={{ fontWeight: 600, color: "#0f172a", fontSize: "0.875rem", lineHeight: 1.3 }}>
-                              {tx.displayName}
+                        <MerchantAvatar name={tx.displayName} logoUrl={tx.logoUrl} />
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography noWrap variant="body2" sx={{ fontWeight: 600 }}>
+                            {tx.displayName}
+                          </Typography>
+                          <Typography noWrap variant="caption" sx={{ color: "text.secondary", display: "block" }}>
+                            {tx.originAccName}
+                            {tx.pending ? " · Pending" : ""}
+                          </Typography>
+                          {category ? (
+                            <Typography noWrap variant="caption" sx={{ color: "grey.600", display: "block", fontWeight: 600 }}>
+                              {category.name}
                             </Typography>
-                            <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", fontSize: "0.75rem" }}>
-                              {tx.notes ? tx.notes : plaidCategoryLabel(tx.plaidCategoryDetailed ?? tx.plaidCategoryPrimary) || "No Plaid category"}
+                          ) : waiting ? (
+                            <Typography noWrap variant="caption" sx={{ color: "primary.main", display: "block", fontWeight: 600 }}>
+                              Needs review
                             </Typography>
-                          </Box>
-                        </Stack>
-                      </TableCell>
-
-                      {/* Account */}
-                      <TableCell>
-                        <Typography sx={{ fontWeight: 500, color: "#334155", fontSize: "0.85rem" }}>
-                          {tx.originAccName || "Plaid Account"}
-                        </Typography>
-                      </TableCell>
-
-                      {/* Category */}
-                      <TableCell sx={{ minWidth: 210 }}>
-                        <Stack spacing={0.5} sx={{ alignItems: "flex-start" }}>
-                          <Box
-                            sx={{
-                              width: 210,
-                              "& .MuiAutocomplete-inputRoot": { py: "1px", fontSize: "0.8rem", bgcolor: "#fff" },
-                              "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e2e8f0" },
-                            }}
-                          >
-                            <CategoryPicker
-                              categories={categories}
-                              value={tx.categoryId ?? null}
-                              onChange={(categoryId) => void handleCategoryChange(tx, categoryId ?? "")}
-                              placeholder="Needs Review"
-                              exclude={excludeOwnTransfer(tx)}
-                            />
-                          </Box>
-                          {suggestion ? (
-                            <Chip
-                              size="small"
-                              icon={<CheckRoundedIcon sx={{ fontSize: 14 }} />}
-                              label={`Suggested: ${suggestion.name}`}
-                              onClick={() => acceptSuggestion(tx)}
-                              sx={{ height: 22, fontSize: "0.72rem", fontWeight: 600, bgcolor: "#eff6ff", color: "#2563eb", borderRadius: 1.5 }}
-                            />
                           ) : (
                             note && (
-                              <Typography variant="caption" sx={{ color: "#94a3b8", fontSize: "0.72rem" }}>
+                              <Typography noWrap variant="caption" sx={{ color: "text.secondary", display: "block" }}>
                                 {note}
                               </Typography>
                             )
                           )}
-                        </Stack>
-                      </TableCell>
+                        </Box>
+                        <TransactionAmount amount={tx.amount} />
+                      </Box>
+                    );
+                  })}
+                </Box>
+              ))}
+            </Box>
+          ) : (
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell padding="checkbox" sx={{ pl: 1.5 }}>
+                      <Checkbox
+                        size="small"
+                        checked={shownIds.length > 0 && shownSelectedCount === shownIds.length}
+                        indeterminate={shownSelectedCount > 0 && shownSelectedCount < shownIds.length}
+                        onChange={toggleShown}
+                        slotProps={{ input: { "aria-label": "Select the transactions shown" } }}
+                      />
+                    </TableCell>
+                    <TableCell>Description</TableCell>
+                    <TableCell>Account</TableCell>
+                    <TableCell>Category</TableCell>
+                    <TableCell align="right">Amount</TableCell>
+                    <TableCell sx={{ width: 52 }} />
+                  </TableRow>
+                </TableHead>
 
-                      {/* Status */}
-                      <TableCell>
-                        <Chip
-                          size="small"
-                          label={tx.pending ? "Pending" : "Posted"}
-                          sx={{
-                            height: 22,
-                            fontSize: "0.7rem",
-                            fontWeight: 600,
-                            bgcolor: tx.pending ? "#fffbeb" : "#f0fdf4",
-                            color: tx.pending ? "#d97706" : "#16a34a",
-                            borderRadius: 1.5,
-                          }}
-                        />
-                      </TableCell>
+                <TableBody>
+                  {groups.map((group, groupIndex) => (
+                    <Fragment key={`${group.date}-${groupIndex}`}>
+                      <TableRow>
+                        <TableCell colSpan={6} sx={{ p: 0, borderBottom: 0 }}>
+                          <DayHeading>{dateHeading(group.date)}</DayHeading>
+                        </TableCell>
+                      </TableRow>
 
-                      {/* Amount */}
-                      <TableCell align="right" sx={{ fontWeight: 700, fontSize: "0.875rem", color: isExpense ? "#dc2626" : "#16a34a", pr: 3 }}>
-                        {formatAmount(tx)}
-                      </TableCell>
+                      {group.items.map((tx) => {
+                        const suggestion =
+                          !tx.categoryId && tx.suggestedCategoryId ? categoriesById.get(tx.suggestedCategoryId) : undefined;
+                        const note = categoryNote(tx);
+                        const selected = selectedIds.has(tx.id);
 
-                      {/* Details */}
-                      <TableCell align="center">
-                        <IconButton size="small" aria-label="Details" onClick={() => setDrawerTxId(tx.id)} sx={{ color: "#94a3b8" }}>
-                          <MoreHorizIcon fontSize="small" />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                        return (
+                          <TableRow
+                            key={tx.id}
+                            hover
+                            selected={selected}
+                            sx={{ opacity: tx.hidden ? 0.55 : 1, "& td": { py: 1.25 } }}
+                          >
+                            <TableCell padding="checkbox" sx={{ pl: 1.5 }}>
+                              <Checkbox
+                                size="small"
+                                checked={selected}
+                                onChange={() => toggleSelected(tx.id)}
+                                slotProps={{ input: { "aria-label": `Select ${tx.displayName}` } }}
+                              />
+                            </TableCell>
+
+                            {/* Description: opens the detail drawer */}
+                            <TableCell onClick={() => setDrawerTxId(tx.id)} sx={{ cursor: "pointer" }}>
+                              <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+                                <MerchantAvatar name={tx.displayName} logoUrl={tx.logoUrl} />
+                                <Box sx={{ minWidth: 0 }}>
+                                  <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+                                    <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.3 }}>
+                                      {tx.displayName}
+                                    </Typography>
+                                    {tx.pending && (
+                                      <Chip label="Pending" size="small" variant="outlined" sx={{ height: 20, fontSize: "0.68rem" }} />
+                                    )}
+                                  </Stack>
+                                  <Typography variant="caption" sx={{ color: "text.secondary", display: "block" }}>
+                                    {tx.notes
+                                      ? tx.notes
+                                      : plaidCategoryLabel(tx.plaidCategoryDetailed ?? tx.plaidCategoryPrimary) || "No Plaid category"}
+                                  </Typography>
+                                </Box>
+                              </Stack>
+                            </TableCell>
+
+                            <TableCell>
+                              <Typography variant="body2" sx={{ color: "grey.700" }}>
+                                {tx.originAccName || "Plaid account"}
+                              </Typography>
+                            </TableCell>
+
+                            <TableCell sx={{ minWidth: 210 }}>
+                              <Stack spacing={0.5} sx={{ alignItems: "flex-start" }}>
+                                <Box sx={{ width: 210, "& .MuiAutocomplete-inputRoot": { py: "1px", fontSize: "0.8rem" } }}>
+                                  <CategoryPicker
+                                    categories={categories}
+                                    value={tx.categoryId ?? null}
+                                    onChange={(categoryId) => void handleCategoryChange(tx, categoryId ?? "")}
+                                    placeholder="Needs review"
+                                    exclude={excludeOwnTransfer(tx)}
+                                  />
+                                </Box>
+                                {suggestion ? (
+                                  <Chip
+                                    size="small"
+                                    icon={<CheckRoundedIcon sx={{ fontSize: 14 }} />}
+                                    label={`Suggested: ${suggestion.name}`}
+                                    onClick={() => acceptSuggestion(tx)}
+                                    sx={{ height: 22, fontSize: "0.72rem", bgcolor: "#eff6ff", color: "primary.main", "& .MuiChip-icon": { color: "inherit" } }}
+                                  />
+                                ) : (
+                                  note && (
+                                    <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                                      {note}
+                                    </Typography>
+                                  )
+                                )}
+                              </Stack>
+                            </TableCell>
+
+                            <TableCell align="right">
+                              <TransactionAmount amount={tx.amount} />
+                            </TableCell>
+
+                            <TableCell align="center">
+                              <IconButton size="small" aria-label="Details" onClick={() => setDrawerTxId(tx.id)} sx={{ color: "text.secondary" }}>
+                                <MoreHorizIcon fontSize="small" />
+                              </IconButton>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
 
-          {/* 5. Pagination View */}
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={2}
-            sx={{ px: 3, py: 2, borderTop: "1px solid #f1f5f9", bgcolor: "#fff", alignItems: "center", justifyContent: "space-between" }}
+          {/* How many are shown, and more */}
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: 1,
+              px: 2.5,
+              py: 1.5,
+              borderTop: "1px solid",
+              borderColor: "divider",
+            }}
           >
-            <Typography variant="body2" sx={{ color: "#64748b", fontSize: "0.85rem" }}>
-              Showing {startItem} to {endItem} of {filteredTransactions.length} transactions
+            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+              Showing {visibleTransactions.length} of {filteredTransactions.length}
             </Typography>
-
-            <Stack direction="row" spacing={3} sx={{ alignItems: "center" }}>
-              <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
-                <IconButton
-                  size="small"
-                  disabled={currentPageSafe === 1}
-                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                  sx={{ border: "1px solid #e2e8f0", borderRadius: 1.5, p: 0.5 }}
+            {visibleTransactions.length < filteredTransactions.length ? (
+              <Button onClick={showMore}>Show more</Button>
+            ) : (
+              hasOlderTransactions && (
+                <Button
+                  onClick={() => {
+                    showMore();
+                    loadOlderTransactions();
+                  }}
                 >
-                  <KeyboardArrowLeftIcon fontSize="small" />
-                </IconButton>
-
-                {paginationItems.map((pageItem, index) =>
-                  pageItem === "..." ? (
-                    <Typography
-                      key={`ellipsis-${index}`}
-                      sx={{ minWidth: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontWeight: 600, fontSize: "0.85rem", userSelect: "none" }}
-                    >
-                      ...
-                    </Typography>
-                  ) : (
-                    (() => {
-                      const pageNumber = pageItem as number;
-
-                      return (
-                    <Button
-                      key={pageNumber}
-                      size="small"
-                      variant={pageNumber === currentPageSafe ? "outlined" : "text"}
-                      onClick={() => setCurrentPage(pageNumber)}
-                      sx={{ minWidth: 30, height: 30, p: 0, borderRadius: 1.5, bgcolor: pageNumber === currentPageSafe ? "#eff6ff" : "transparent", color: pageNumber === currentPageSafe ? "#2563eb" : "#64748b", borderColor: pageNumber === currentPageSafe ? "#bfdbfe" : "transparent", fontWeight: 600, fontSize: "0.85rem" }}
-                    >
-                      {pageNumber}
-                    </Button>
-                      );
-                    })()
-                  )
-                )}
-
-                <IconButton
-                  size="small"
-                  disabled={currentPageSafe === totalPages}
-                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
-                  sx={{ border: "1px solid #e2e8f0", borderRadius: 1.5, p: 0.5 }}
-                >
-                  <KeyboardArrowRightIcon fontSize="small" />
-                </IconButton>
-              </Stack>
-
-              <Select
-                value={pageSize}
-                size="small"
-                onChange={(event) => {
-                  setPageSize(Number(event.target.value));
-                  setCurrentPage(1);
-                }}
-                sx={{
-                  height: 34,
-                  fontSize: "0.82rem",
-                  color: "#334155",
-                  fontWeight: 500,
-                  "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e2e8f0" },
-                  borderRadius: 2,
-                  bgcolor: "#fff",
-                }}
-              >
-                {PAGE_SIZE_OPTIONS.map((option) => (
-                  <MenuItem key={option} value={option}>
-                    {option} per page
-                  </MenuItem>
-                ))}
-              </Select>
-            </Stack>
-          </Stack>
+                  Load older transactions
+                </Button>
+              )
+            )}
+          </Box>
         </Paper>
       )}
 
-      {hasOlderTransactions && (
+      {!isLoading && filteredTransactions.length === 0 && hasOlderTransactions && (
         <Box sx={{ display: "flex", justifyContent: "center" }}>
-          <Button variant="text" onClick={loadOlderTransactions} sx={{ textTransform: "none", fontWeight: 600 }}>
-            Load older transactions
-          </Button>
+          <Button onClick={loadOlderTransactions}>Load older transactions</Button>
         </Box>
       )}
 
@@ -1549,27 +1242,44 @@ export default function TransactionsPage() {
         onConfirm={handleCreatePromptRule}
       />
 
-      <Snackbar
-        open={notice !== null}
-        autoHideDuration={4000}
-        onClose={() => setNotice(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-      >
-        <Alert severity="success" variant="filled" onClose={() => setNotice(null)} sx={{ borderRadius: 2.5 }}>
+      <Snackbar open={notice !== null} autoHideDuration={4000} onClose={() => setNotice(null)}>
+        <Alert severity="success" variant="filled" onClose={() => setNotice(null)}>
           {notice}
-        </Alert>
-      </Snackbar>
-
-      <Snackbar
-        open={syncSuccess}
-        autoHideDuration={4000}
-        onClose={() => setSyncSuccess(false)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-      >
-        <Alert severity="success" variant="filled" onClose={() => setSyncSuccess(false)} sx={{ borderRadius: 2.5 }}>
-          Transactions synced successfully.
         </Alert>
       </Snackbar>
     </Stack>
   );
+}
+
+/** A day's heading in the list: "Today", "Yesterday", or "Mon, Nov 24". */
+function DayHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <Box
+      sx={{
+        px: 2,
+        py: 0.75,
+        bgcolor: "grey.50",
+        borderBottom: "1px solid",
+        borderColor: "divider",
+        color: "text.secondary",
+        fontSize: "0.75rem",
+        fontWeight: 600,
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+/** The look of a filter button: plain until it filters something, then tinted. */
+function filterButtonSx(active: boolean) {
+  return {
+    whiteSpace: "nowrap",
+    flexShrink: 0,
+    color: active ? "primary.main" : "text.primary",
+    bgcolor: active ? "#eff6ff" : "background.paper",
+    borderColor: active ? "#bfdbfe" : "divider",
+    "& .MuiButton-startIcon": { color: active ? "primary.main" : "text.secondary" },
+    "&:hover": { borderColor: active ? "#93c5fd" : "grey.300", bgcolor: active ? "#eff6ff" : "grey.50" },
+  } as const;
 }

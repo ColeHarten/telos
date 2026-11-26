@@ -116,8 +116,8 @@ export default function DeleteAccountDialog({
 
   return (
     <Dialog open={open} onClose={isDeleting ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem", display: "flex", alignItems: "center", gap: 1 }}>
-        <WarningAmberRoundedIcon sx={{ color: "#dc2626" }} />
+      <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <WarningAmberRoundedIcon sx={{ color: "error.main" }} />
         Delete account permanently?
       </DialogTitle>
 
@@ -128,12 +128,12 @@ export default function DeleteAccountDialog({
           </Box>
         ) : checkResult && !checkResult.isIsolated ? (
           <Stack spacing={1.5}>
-            <Alert severity="error" sx={{ borderRadius: 2 }}>
+            <Alert severity="error">
               This account can&apos;t be deleted yet — it&apos;s still connected to other data:
             </Alert>
             <Box component="ul" sx={{ pl: 2.5, m: 0 }}>
               {checkResult.reasons.map((reason) => (
-                <Typography component="li" variant="body2" key={reason} sx={{ color: "#334155" }}>
+                <Typography component="li" variant="body2" key={reason} sx={{ color: "grey.700" }}>
                   {reason}
                 </Typography>
               ))}
@@ -144,7 +144,7 @@ export default function DeleteAccountDialog({
           </Stack>
         ) : (
           <Stack spacing={2}>
-            <Typography variant="body2" sx={{ color: "#334155" }}>
+            <Typography variant="body2" sx={{ color: "grey.700" }}>
               This permanently deletes <strong>{accountName}</strong>. This cannot be undone — all of its
               history will be gone for good.
             </Typography>
@@ -164,14 +164,14 @@ export default function DeleteAccountDialog({
         )}
 
         {error && (
-          <Alert severity="error" sx={{ mt: 2, borderRadius: 2 }}>
+          <Alert severity="error" sx={{ mt: 2 }}>
             {error}
           </Alert>
         )}
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
-        <Button onClick={onClose} disabled={isDeleting} sx={{ textTransform: "none", fontWeight: 700 }}>
+      <DialogActions>
+        <Button onClick={onClose} disabled={isDeleting}>
           Cancel
         </Button>
         {checkResult?.isIsolated && (
@@ -180,9 +180,8 @@ export default function DeleteAccountDialog({
             color="error"
             variant="contained"
             disabled={!canDelete || isDeleting}
-            sx={{ textTransform: "none", fontWeight: 700 }}
           >
-            {isDeleting ? "Deleting..." : "Delete Forever"}
+            {isDeleting ? "Deleting…" : "Delete forever"}
           </Button>
         )}
       </DialogActions>

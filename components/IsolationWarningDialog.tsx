@@ -50,18 +50,18 @@ export default function IsolationWarningDialog({
 }: IsolationWarningDialogProps) {
   return (
     <Dialog open={open} onClose={isProcessing ? undefined : onCancel} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem", display: "flex", alignItems: "center", gap: 1 }}>
-        <WarningAmberRoundedIcon sx={{ color: "#d97706" }} />
+      <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <WarningAmberRoundedIcon sx={{ color: "warning.main" }} />
         Archive this {entityLabel}?
       </DialogTitle>
 
       <DialogContent>
         <Stack spacing={1.5}>
-          <Typography variant="body2" sx={{ color: "#334155" }}>
+          <Typography variant="body2" sx={{ color: "grey.700" }}>
             <strong>{entityName}</strong> still has things connected to it:
           </Typography>
 
-          <Alert severity="warning" sx={{ borderRadius: 2 }}>
+          <Alert severity="warning">
             <Box component="ul" sx={{ pl: 2.25, m: 0, "& li + li": { mt: 0.5 } }}>
               {reasons.map((reason) => (
                 <Typography component="li" variant="body2" key={reason}>
@@ -77,8 +77,8 @@ export default function IsolationWarningDialog({
         </Stack>
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
-        <Button onClick={onCancel} disabled={isProcessing} sx={{ textTransform: "none", fontWeight: 700 }}>
+      <DialogActions>
+        <Button onClick={onCancel} disabled={isProcessing}>
           Cancel
         </Button>
         <Button
@@ -86,9 +86,8 @@ export default function IsolationWarningDialog({
           color="warning"
           variant="contained"
           disabled={isProcessing}
-          sx={{ textTransform: "none", fontWeight: 700 }}
         >
-          {isProcessing ? "Archiving..." : "Archive Anyway"}
+          {isProcessing ? "Archiving…" : "Archive anyway"}
         </Button>
       </DialogActions>
     </Dialog>

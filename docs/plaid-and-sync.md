@@ -42,7 +42,7 @@ sequenceDiagram
   end
 ```
 
-1. **Connect a bank.** Accounts > Add Account > Connect a Bank opens a step that lists the banks already connected, with each account's last four digits, and "Connections used: N of 10" (counted on the server across all users, in `plaidUsage/{env}`). If the bank is listed, use Manage accounts on its card instead.
+1. **Connect a bank.** Accounts > Add account > Connect a bank opens a step that lists the banks already connected, with each account's last four digits, and "Connections used: N of 10" (counted on the server across all users, in `plaidUsage/{env}`). If the bank is listed, use Manage accounts on its card instead.
 2. **Link token.** Continue to Plaid requests a token and opens Link. New links ask for Transactions, plus Investments and Liabilities when the bank supports them (so brokerage, retirement, and loan accounts are shared too), 730 days of history, and the OAuth redirect (below). The token is kept in the browser for the OAuth return and dropped when Link closes.
 3. **Duplicate check, before the exchange.** Link reports the bank and the accounts picked. The browser sends them with the public token, and `assessLink` compares them with your accounts. Accounts match on type plus last four digits, or type plus Plaid's own name when there's no mask, so renaming an account doesn't hide it.
 
@@ -94,7 +94,7 @@ Afterwards the browser syncs that bank. Every sync begins by reconciling account
 | A sync that stopped part way | Continues 15 seconds later |
 | A bank importing history, or refreshed recently | Every two minutes |
 | A bank whose last sync failed | Once its data is six hours old, then at most every 30 minutes |
-| Sync (Transactions), Refresh Balances (Accounts), Refresh (a bank's card) | When pressed |
+| The sync chip, Refresh balances (Accounts), Refresh (a bank's card) | When pressed |
 | Linking, Manage accounts, Reconnect, Rebuild | Right after |
 
 The automatic syncs come from `useAutoSync` in the signed-in layout. They run only while the tab is visible, and skip banks that need you to sign in again. There are no webhooks yet.
@@ -134,7 +134,7 @@ Plaid sends roughly the last 30 days first, then the rest of the two years, usua
 | `ITEM_LOGIN_REQUIRED`, `ACCESS_NOT_GRANTED`, `NO_ACCOUNTS`, or `USER_PERMISSION_REVOKED` | `needsReauth` is set, and the bank shows Reconnect |
 | Anything else | `lastSyncError` holds the Plaid error code (or `SYNC_FAILED`), and the card says "Sync failed". Telos retries on its own. |
 
-One failing bank never stops the others. Last Synced on the Transactions page shows the bank synced longest ago, with "N banks need attention" under it, so a stuck bank isn't hidden by the healthy ones.
+One failing bank never stops the others. The sync chip shows how long ago the least recently synced bank synced, or "N banks need attention", so a stuck bank isn't hidden by the healthy ones.
 
 ## Refresh from bank
 

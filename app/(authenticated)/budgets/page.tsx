@@ -15,7 +15,10 @@ import {
 } from "@/lib/budgetCalculations";
 import { copyLines, estimateLines, type BudgetSlot } from "@/lib/budgetTools";
 import { formatCurrency } from "@/lib/utils";
+import EmptyState from "@/components/EmptyState";
+import { CardsSkeleton } from "@/components/LoadingSkeleton";
 import PageHeader from "@/components/PageHeader";
+import StatStrip, { type Stat } from "@/components/StatStrip";
 
 import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
 import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
@@ -23,7 +26,6 @@ import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
 import ErrorRoundedIcon from "@mui/icons-material/ErrorRounded";
 import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
-import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import {
   Alert,
@@ -35,7 +37,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Grid,
   InputAdornment,
   LinearProgress,
   Snackbar,
@@ -191,8 +192,8 @@ export default function BudgetsPage() {
       },
       {
         title: "Expenses",
-        color: "#dc2626",
-        background: "#fef2f2",
+        color: "primary.main",
+        background: "#eff6ff",
         icon: <ArrowDownwardRoundedIcon sx={{ fontSize: 20 }} />,
         items: expenseCategories.map((category) => {
           const fallbackValue = category.estimatedMonthly != null
@@ -248,7 +249,7 @@ export default function BudgetsPage() {
     ]
   );
 
-  // Money out this month still in Needs Review, shown as its own line under Expenses.
+  // Money out this month still in Needs review, shown as its own line under Expenses.
   const uncategorized = useMemo(() => uncategorizedSpending(transactions, monthKey), [transactions, monthKey]);
 
   // Every line on the page, with what it shows when it was never set.
@@ -302,19 +303,19 @@ export default function BudgetsPage() {
     const debt = groupTotal("Debt");
     const remaining = income - expenses - savings - debt;
 
-    return [
-      { label: "Total Income", value: income, color: "#059669", bg: "#ecfdf5", icon: <ArrowUpwardRoundedIcon sx={{ fontSize: 20 }} /> },
-      { label: "Total Expenses", value: expenses, color: "#dc2626", bg: "#fef2f2", icon: <ArrowDownwardRoundedIcon sx={{ fontSize: 20 }} /> },
-      { label: "Total Savings", value: savings, color: "#7c3aed", bg: "#f5f3ff", icon: <SavingsRoundedIcon sx={{ fontSize: 20 }} /> },
-      { label: "Total Debt", value: debt, color: "#ea580c", bg: "#fff7ed", icon: <CreditCardRoundedIcon sx={{ fontSize: 20 }} /> },
+    const stats: Stat[] = [
+      { label: "Income", value: formatCurrency(income) },
+      { label: "Expenses", value: formatCurrency(expenses) },
+      { label: "Savings", value: formatCurrency(savings) },
+      { label: "Debt", value: formatCurrency(debt) },
       {
-        label: "Remaining Cash Flow",
-        value: remaining,
-        color: remaining >= 0 ? "#059669" : "#dc2626",
-        bg: remaining >= 0 ? "#ecfdf5" : "#fef2f2",
-        icon: <ShowChartRoundedIcon sx={{ fontSize: 20 }} />,
+        label: "Left to plan",
+        value: formatCurrency(remaining),
+        caption: remaining < 0 ? "Planned more than income" : "Income minus everything planned",
+        tone: remaining < 0 ? "negative" : undefined,
       },
     ];
+    return stats;
   }, [budgetGroups]);
 
   function handleBudgetValueChange(
@@ -325,7 +326,7 @@ export default function BudgetsPage() {
   }
 
   return (
-    <Stack spacing={3} sx={{ p: 4 }}>
+    <Stack spacing={3}>
       <Stack spacing={1.5}>
         <PageHeader title="Budgets">
           <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
@@ -335,7 +336,6 @@ export default function BudgetsPage() {
                 onClick={goToCurrentMonth}
                 variant="text"
                 size="small"
-                sx={{ borderRadius: "8px", textTransform: "none", fontWeight: 600 }}
               >
                 Today
               </Button>
@@ -344,7 +344,6 @@ export default function BudgetsPage() {
               onClick={() => setShortcut("copy")}
               variant="text"
               size="small"
-              sx={{ borderRadius: "8px", textTransform: "none", fontWeight: 600 }}
             >
               Copy last month
             </Button>
@@ -352,7 +351,6 @@ export default function BudgetsPage() {
               onClick={() => setShortcut("estimates")}
               variant="text"
               size="small"
-              sx={{ borderRadius: "8px", textTransform: "none", fontWeight: 600 }}
             >
               Fill from estimates
             </Button>
@@ -363,13 +361,8 @@ export default function BudgetsPage() {
           <Snackbar
             open={Boolean(error)}
             autoHideDuration={5000}
-            anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
           >
-            <Alert
-              severity="error"
-              variant="filled"
-              sx={{ borderRadius: 2, boxShadow: "0 12px 32px rgba(15, 23, 42, 0.18)", fontWeight: 600 }}
-            >
+            <Alert severity="error" variant="filled">
               {error}
             </Alert>
           </Snackbar>
@@ -387,7 +380,7 @@ export default function BudgetsPage() {
           <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: "14px" }}>
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: 90, justifyContent: "flex-end" }}>
               {saveStatus === "saving" && (
-                <Typography variant="caption" sx={{ color: "#64748b", fontWeight: 600 }}>
+                <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 600 }}>
                   Saving…
                 </Typography>
               )}
@@ -405,8 +398,8 @@ export default function BudgetsPage() {
                   onClick={() => flushSave()}
                   sx={{ display: "flex", flexDirection: "row", alignItems: "center", cursor: "pointer" }}
                 >
-                  <ErrorRoundedIcon sx={{ fontSize: 16, color: "#dc2626" }} />
-                  <Typography variant="caption" sx={{ color: "#dc2626", fontWeight: 600 }}>
+                  <ErrorRoundedIcon sx={{ fontSize: 16, color: "error.main" }} />
+                  <Typography variant="caption" sx={{ color: "error.main", fontWeight: 600 }}>
                     Save failed • Retry
                   </Typography>
                 </Stack>
@@ -416,48 +409,19 @@ export default function BudgetsPage() {
         </Stack>
       </Stack>
 
-      <Grid container spacing={2}>
-        {summary.map((item) => (
-          <Grid key={item.label} size={{ xs: 12, sm: 6, md: 2.4 }}>
-            <Card
-              elevation={0}
-              sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, bgcolor: "background.paper", height: "100%" }}
-            >
-              <CardContent sx={{ p: 2, display: "flex", flexDirection: "row", alignItems: "center", gap: 1.5, "&:last-child": { pb: 2 } }}>
-                <Box
-                  sx={{
-                    width: 40, height: 40, borderRadius: "50%", bgcolor: item.bg, color: item.color,
-                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                  }}
-                >
-                  {item.icon}
-                </Box>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, fontSize: "0.8rem" }}>
-                    {item.label}
-                  </Typography>
-                  <Typography variant="h6" sx={{ color: item.color, fontWeight: 800, letterSpacing: "-0.02em", fontSize: "1.15rem" }}>
-                    {formatCurrency(item.value)}
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
+      <StatStrip stats={summary} />
 
       {!isLoading && archivedActuals.total > 0 && (
         <Alert
           severity="warning"
           icon={<WarningAmberRoundedIcon />}
-          sx={{ borderRadius: 3 }}
           action={
             <Button
               component={Link}
               href="/categories"
               size="small"
               color="inherit"
-              sx={{ textTransform: "none", fontWeight: 700, whiteSpace: "nowrap" }}
+              sx={{ whiteSpace: "nowrap" }}
             >
               Review categories
             </Button>
@@ -472,19 +436,12 @@ export default function BudgetsPage() {
       )}
 
       {isLoading ? (
-        <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, bgcolor: "background.paper" }}>
-          <CardContent sx={{ p: 2.5 }}>
-            <Typography variant="body2" color="text.secondary">
-              Loading budget...
-            </Typography>
-          </CardContent>
-        </Card>
+        <CardsSkeleton heights={[220, 260, 160, 160]} />
       ) : (
         budgetGroups.map((group) => (
           <Card
             key={group.title}
-            elevation={0}
-            sx={{ border: "1px solid", borderColor: "divider", borderRadius: 3, bgcolor: "background.paper", overflow: "hidden" }}
+            sx={{ overflow: "hidden" }}
           >
             {/* Group Header Block */}
             <Box
@@ -496,7 +453,7 @@ export default function BudgetsPage() {
             >
               <Box
                 sx={{
-                  width: 36, height: 36, borderRadius: "50%", bgcolor: "#fff", color: group.color,
+                  width: 36, height: 36, borderRadius: "50%", bgcolor: "background.paper", color: group.color,
                   display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                   border: "1px solid", borderColor: "divider",
                 }}
@@ -512,9 +469,15 @@ export default function BudgetsPage() {
 
             <CardContent sx={{ p: 0, "&:last-child": { pb: 0 } }}>
               {group.items.length === 0 ? (
-                <Typography variant="body2" color="text.secondary" sx={{ px: 3, py: 2.5 }}>
-                  No active items in this section yet.
-                </Typography>
+                <EmptyState
+                  dense
+                  title={`No ${group.title.toLowerCase()} lines yet`}
+                  description={
+                    group.title === "Income" || group.title === "Expenses"
+                      ? "Lines come from your active categories. Add some on Categories."
+                      : "Lines come from your active accounts. Add some on Accounts."
+                  }
+                />
               ) : (
                 <TableContainer>
                   <Table sx={{ minWidth: 650 }}>
@@ -536,7 +499,7 @@ export default function BudgetsPage() {
                             key={item.id}
                             sx={{ "& td": { borderBottom: "1px solid", borderColor: "divider", py: 1.5 } }}
                           >
-                            <TableCell sx={{ fontWeight: 500, color: "#0f172a" }}>
+                            <TableCell sx={{ fontWeight: 500, color: "text.primary" }}>
                               {item.label}
                             </TableCell>
                             <TableCell align="right">
@@ -555,7 +518,7 @@ export default function BudgetsPage() {
                                 sx={{ "& input": { textAlign: "right" }, maxWidth: 140 }}
                               />
                             </TableCell>
-                            <TableCell align="right" sx={{ color: "#475569" }}>
+                            <TableCell align="right" sx={{ color: "grey.600" }}>
                               {transactionsLoading ? "…" : formatCurrency(item.actual)}
                             </TableCell>
                             <TableCell>
@@ -564,11 +527,14 @@ export default function BudgetsPage() {
                                   variant="determinate"
                                   value={progress.barPct}
                                   sx={{
-                                    flex: 1, height: 6, borderRadius: 3, bgcolor: "#f1f5f9",
-                                    "& .MuiLinearProgress-bar": { bgcolor: group.color, borderRadius: 3 },
+                                    flex: 1,
+                                    height: 6,
+                                    "& .MuiLinearProgress-bar": {
+                                      bgcolor: group.title === "Expenses" && item.actual > planned ? "error.main" : group.color,
+                                    },
                                   }}
                                 />
-                                <Typography variant="caption" sx={{ width: 38, textAlign: "right", color: "#64748b", fontWeight: 600, flexShrink: 0 }}>
+                                <Typography variant="caption" sx={{ width: 38, textAlign: "right", color: "text.secondary", fontWeight: 600, flexShrink: 0 }}>
                                   {progress.displayPct}%
                                 </Typography>
                               </Box>
@@ -579,18 +545,18 @@ export default function BudgetsPage() {
                       {group.title === "Expenses" && uncategorized.total > 0 && (
                         <TableRow sx={{ "& td": { borderBottom: "1px solid", borderColor: "divider", py: 1.5 } }}>
                           <TableCell>
-                            <Typography sx={{ fontWeight: 500, color: "#0f172a", fontSize: "0.875rem" }}>Uncategorized</Typography>
+                            <Typography sx={{ fontWeight: 500, color: "text.primary", fontSize: "0.875rem" }}>Uncategorized</Typography>
                             <Typography
                               component={Link}
                               href="/transactions"
                               variant="caption"
-                              sx={{ color: "#2563eb", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
+                              sx={{ color: "primary.main", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
                             >
-                              {uncategorized.count} {uncategorized.count === 1 ? "transaction" : "transactions"} in Needs Review
+                              {uncategorized.count} {uncategorized.count === 1 ? "transaction" : "transactions"} in Needs review
                             </Typography>
                           </TableCell>
-                          <TableCell align="right" sx={{ color: "#94a3b8" }}>Not planned</TableCell>
-                          <TableCell align="right" sx={{ color: "#475569" }}>
+                          <TableCell align="right" sx={{ color: "grey.400" }}>Not planned</TableCell>
+                          <TableCell align="right" sx={{ color: "grey.600" }}>
                             {transactionsLoading ? "…" : formatCurrency(uncategorized.total)}
                           </TableCell>
                           <TableCell />
@@ -606,32 +572,26 @@ export default function BudgetsPage() {
       )}
 
       <Dialog open={shortcut !== null} onClose={shortcutBusy ? undefined : () => setShortcut(null)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem" }}>
+        <DialogTitle>
           {shortcut === "copy" ? "Copy last month" : "Fill from estimates"}
         </DialogTitle>
         <DialogContent>
-          <Typography variant="body2" sx={{ color: "#334155" }}>
+          <Typography variant="body2" sx={{ color: "grey.700" }}>
             {shortcut === "copy"
               ? `Every line for ${formatMonthLabel(monthKey)} takes the amount it had in ${formatMonthLabel(previousMonthKey)}, replacing what's there now.`
               : `Every income and expense line for ${formatMonthLabel(monthKey)} takes its category's monthly estimate. Savings and debt lines stay as they are.`}
           </Typography>
           {shortcutError && (
-            <Alert severity="error" sx={{ mt: 2, borderRadius: 2 }}>
+            <Alert severity="error" sx={{ mt: 2 }}>
               {shortcutError}
             </Alert>
           )}
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
-          <Button onClick={() => setShortcut(null)} disabled={shortcutBusy} sx={{ textTransform: "none", fontWeight: 700 }}>
+        <DialogActions>
+          <Button onClick={() => setShortcut(null)} disabled={shortcutBusy}>
             Cancel
           </Button>
-          <Button
-            onClick={applyShortcut}
-            disabled={shortcutBusy}
-            variant="contained"
-            disableElevation
-            sx={{ textTransform: "none", fontWeight: 700, bgcolor: "#2563eb", "&:hover": { bgcolor: "#1d4ed8" } }}
-          >
+          <Button onClick={applyShortcut} disabled={shortcutBusy} variant="contained">
             {shortcut === "copy" ? "Copy" : "Fill"}
           </Button>
         </DialogActions>
@@ -641,9 +601,8 @@ export default function BudgetsPage() {
         open={notice !== null}
         autoHideDuration={4000}
         onClose={() => setNotice(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
       >
-        <Alert severity="success" variant="filled" onClose={() => setNotice(null)} sx={{ borderRadius: 2.5 }}>
+        <Alert severity="success" variant="filled" onClose={() => setNotice(null)}>
           {notice}
         </Alert>
       </Snackbar>

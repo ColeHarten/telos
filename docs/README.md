@@ -25,7 +25,7 @@ It is a Next.js 16 app (App Router) on Firebase Auth and Firestore, with Plaid f
 1. **Every user's data lives under `users/{uid}` in Firestore.** No user can read another user's data.
 2. **The browser reads and writes most data directly**, through React hooks in `lib/hooks/`. `firestore.rules` decides what it may touch.
 3. **Anything involving Plaid or a secret runs on the server**, in the API routes under `app/api/`. The browser never sees a Plaid access token.
-4. **Telos syncs while it's open.** It syncs on opening when a bank's data is over six hours old, every two minutes while a bank imports its history, and whenever you press Sync or Refresh. There are no webhooks yet, so nothing syncs while Telos is closed.
+4. **Telos syncs while it's open.** It syncs on opening when a bank's data is over six hours old, every two minutes while a bank imports its history, and whenever you click the sync chip or press Refresh. There are no webhooks yet, so nothing syncs while Telos is closed.
 5. **A category you set is never overwritten.** Sync only fills in categories for transactions that don't have one.
 
 ## Glossary

@@ -150,11 +150,11 @@ export default function RuleDialog({ open, rule, initial, categories, accounts, 
   }
 
   return (
-    <Dialog open={open} onClose={saving ? undefined : onClose} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
-      <DialogTitle sx={{ fontWeight: 700 }}>{rule ? "Edit rule" : "New rule"}</DialogTitle>
+    <Dialog open={open} onClose={saving ? undefined : onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>{rule ? "Edit rule" : "New rule"}</DialogTitle>
       <DialogContent>
         <Stack spacing={2.25} sx={{ pt: 0.5 }}>
-          <Typography sx={{ fontWeight: 700, fontSize: "0.85rem", color: "#0f172a" }}>If a transaction matches all of these</Typography>
+          <Typography sx={{ fontWeight: 700, fontSize: "0.85rem", color: "text.primary" }}>If a transaction matches all of these</Typography>
 
           <Stack direction="row" spacing={1}>
             <Select
@@ -228,7 +228,7 @@ export default function RuleDialog({ open, rule, initial, categories, accounts, 
             </Select>
           </Stack>
 
-          <Typography sx={{ fontWeight: 700, fontSize: "0.85rem", color: "#0f172a", pt: 1 }}>Then</Typography>
+          <Typography sx={{ fontWeight: 700, fontSize: "0.85rem", color: "text.primary", pt: 1 }}>Then</Typography>
 
           <CategoryPicker
             categories={categories}
@@ -253,12 +253,12 @@ export default function RuleDialog({ open, rule, initial, categories, accounts, 
           />
 
           {showErrors && "error" in result ? (
-            <Alert severity="error" sx={{ borderRadius: 2 }}>
+            <Alert severity="error">
               {result.error}
             </Alert>
           ) : (
             matchCount !== null && (
-              <Typography sx={{ color: "#64748b", fontSize: "0.85rem" }}>
+              <Typography sx={{ color: "text.secondary", fontSize: "0.85rem" }}>
                 Matches {matchCount} loaded {matchCount === 1 ? "transaction" : "transactions"}. Saving changes only new
                 transactions; you can apply it to past ones next.
               </Typography>
@@ -266,16 +266,14 @@ export default function RuleDialog({ open, rule, initial, categories, accounts, 
           )}
         </Stack>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button onClick={onClose} disabled={saving} sx={{ textTransform: "none", fontWeight: 600 }}>
+      <DialogActions>
+        <Button onClick={onClose} disabled={saving}>
           Cancel
         </Button>
         <Button
           onClick={handleSave}
           variant="contained"
-          disableElevation
           disabled={saving}
-          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
         >
           {saving ? "Saving…" : rule ? "Save rule" : "Create rule"}
         </Button>

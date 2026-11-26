@@ -2,7 +2,10 @@
 
 import useAccounts from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
+import EmptyState from "@/components/EmptyState";
+import { ListSkeleton } from "@/components/LoadingSkeleton";
 import PageHeader from "@/components/PageHeader";
+import StatStrip from "@/components/StatStrip";
 import usePlaidAccountLink from "@/lib/hooks/usePlaidAccountLink";
 import { fetchPlaidUsage, runSync, type PlaidUsage } from "@/lib/plaidSync";
 import type { Account, AccountType, NormalBalance } from "@/lib/types/types";
@@ -11,20 +14,15 @@ import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
-import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
 import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
-import PieChartRoundedIcon from "@mui/icons-material/PieChartRounded";
 import SyncRoundedIcon from "@mui/icons-material/SyncRounded";
-import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
-import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import UnarchiveRoundedIcon from "@mui/icons-material/UnarchiveRounded";
 import DeleteForeverRoundedIcon from "@mui/icons-material/DeleteForeverRounded";
 import {
   Alert,
-  Avatar,
   Box,
   Button,
   Chip,
@@ -365,52 +363,21 @@ export default function AccountsPage() {
   const rowMenuAccount = accounts.find((a) => a.id === rowMenuAccountId) ?? null;
 
   return (
-    <Stack spacing={3} sx={{ p: 4, bgcolor: "#f8fafc", minHeight: "100vh" }}>
+    <Stack spacing={3}>
       {/* Header */}
       <PageHeader title="Accounts">
-        <Stack direction="row" spacing={1.5} sx={{ flexShrink: 0, alignItems: "center", flexWrap: "wrap", rowGap: 1.5 }}>
-          <Button
-            variant="outlined"
-            startIcon={<SyncRoundedIcon sx={{ color: "#2563eb", fontSize: 18 }} />}
-            onClick={handleRefreshBalances}
-            disabled={refreshing}
-            sx={{
-              borderColor: "#bfdbfe",
-              color: "#2563eb",
-              textTransform: "none",
-              fontWeight: 600,
-              fontSize: "0.85rem",
-              borderRadius: 2,
-              bgcolor: "#fff",
-              px: 1.75,
-              py: 0.85,
-              boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.04)",
-              whiteSpace: "nowrap",
-              "&:hover": { borderColor: "#93c5fd", bgcolor: "#eff6ff" },
-            }}
-          >
-            Refresh Balances
+        <Stack direction="row" spacing={1} sx={{ flexShrink: 0, alignItems: "center" }}>
+          <Button variant="outlined" startIcon={<SyncRoundedIcon />} onClick={handleRefreshBalances} disabled={refreshing}>
+            Refresh balances
           </Button>
 
           <Button
             variant="contained"
-            disableElevation
-            startIcon={<AddRoundedIcon sx={{ fontSize: 18 }} />}
-            endIcon={<ExpandMoreRoundedIcon sx={{ fontSize: 18 }} />}
+            startIcon={<AddRoundedIcon />}
+            endIcon={<ExpandMoreRoundedIcon />}
             onClick={(event) => setAddMenuAnchor(event.currentTarget)}
-            sx={{
-              bgcolor: "#2563eb",
-              textTransform: "none",
-              fontWeight: 600,
-              fontSize: "0.85rem",
-              borderRadius: 2,
-              px: 1.75,
-              py: 0.85,
-              whiteSpace: "nowrap",
-              "&:hover": { bgcolor: "#1d4ed8" },
-            }}
           >
-            Add Account
+            Add account
           </Button>
 
           <Menu
@@ -420,17 +387,7 @@ export default function AccountsPage() {
             onClose={() => setAddMenuAnchor(null)}
             anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
             transformOrigin={{ vertical: "top", horizontal: "right" }}
-            slotProps={{
-              paper: {
-                sx: {
-                  mt: 1,
-                  borderRadius: 3,
-                  width: 320,
-                  border: "1px solid",
-                  borderColor: "divider",
-                },
-              },
-            }}
+            slotProps={{ paper: { sx: { mt: 1, width: 300, maxWidth: "calc(100vw - 32px)" } } }}
           >
             <Box sx={{ px: 1.5, py: 1 }}>
               <MenuItem
@@ -445,7 +402,7 @@ export default function AccountsPage() {
                 </Box>
                 <Box sx={{ minWidth: 0 }}>
                   <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    Connect a Bank
+                    Connect a bank
                   </Typography>
                 </Box>
                 <ChevronRightRoundedIcon sx={{ ml: "auto", color: "text.disabled", flexShrink: 0 }} />
@@ -475,7 +432,7 @@ export default function AccountsPage() {
                 </Box>
                 <Box sx={{ minWidth: 0 }}>
                   <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    Add Manually
+                    Add manually
                   </Typography>
                 </Box>
                 <ChevronRightRoundedIcon sx={{ ml: "auto", color: "text.disabled", flexShrink: 0 }} />
@@ -487,89 +444,25 @@ export default function AccountsPage() {
       </PageHeader>
 
       {error && (
-        <Snackbar open autoHideDuration={5000} onClose={() => setError(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }}>
-          <Alert severity="error" variant="filled" onClose={() => setError(null)} sx={{ borderRadius: 2.5 }}>
+        <Snackbar open autoHideDuration={5000} onClose={() => setError(null)}>
+          <Alert severity="error" variant="filled" onClose={() => setError(null)}>
             {error}
           </Alert>
         </Snackbar>
       )}
 
-      {/* 2. Top Metric Cards Dashboard Segment */}
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", md: "1fr 1fr 1fr 1fr" },
-          gap: 2,
-        }}
-      >
-        <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
-          <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Box>
-              <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Assets</Typography>
-              <Typography sx={{ fontWeight: 700, color: "#16a34a", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>
-                {formatCurrency(accountSummary.assetTotal)}
-              </Typography>
-              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
-                {accountSummary.assetCount} accounts
-              </Typography>
-            </Box>
-            <Avatar sx={{ bgcolor: "#f0fdf4", color: "#16a34a", width: 44, height: 44 }}>
-              <TrendingUpRoundedIcon sx={{ fontSize: 20 }} />
-            </Avatar>
-          </Stack>
-        </Paper>
-
-        <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
-          <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Box>
-              <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Liabilities</Typography>
-              <Typography sx={{ fontWeight: 700, color: "#dc2626", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>
-                -{formatCurrency(accountSummary.liabilityTotal)}
-              </Typography>
-              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
-                {accountSummary.liabilityCount} accounts
-              </Typography>
-            </Box>
-            <Avatar sx={{ bgcolor: "#fef2f2", color: "#dc2626", width: 44, height: 44 }}>
-              <TrendingDownRoundedIcon sx={{ fontSize: 20 }} />
-            </Avatar>
-          </Stack>
-        </Paper>
-
-        <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
-          <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Box>
-              <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Net Worth</Typography>
-              <Typography sx={{ fontWeight: 700, color: "#0f172a", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>
-                {formatCurrency(accountSummary.netWorth)}
-              </Typography>
-              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
-                Across all active accounts
-              </Typography>
-            </Box>
-            <Avatar sx={{ bgcolor: "#f5f3ff", color: "#7c3aed", width: 44, height: 44 }}>
-              <PieChartRoundedIcon sx={{ fontSize: 20 }} />
-            </Avatar>
-          </Stack>
-        </Paper>
-
-        <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
-          <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Box>
-              <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>Total Accounts</Typography>
-              <Typography sx={{ fontWeight: 700, color: "#0f172a", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>
-                {accountSummary.totalCount}
-              </Typography>
-              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
-                {accountSummary.archivedCount} archived
-              </Typography>
-            </Box>
-            <Avatar sx={{ bgcolor: "#eff6ff", color: "#2563eb", width: 44, height: 44 }}>
-              <CreditCardRoundedIcon sx={{ fontSize: 20 }} />
-            </Avatar>
-          </Stack>
-        </Paper>
-      </Box>
+      <StatStrip
+        stats={[
+          { label: "Assets", value: formatCurrency(accountSummary.assetTotal), caption: countAccounts(accountSummary.assetCount) },
+          {
+            label: "Liabilities",
+            value: formatCurrency(-accountSummary.liabilityTotal),
+            caption: countAccounts(accountSummary.liabilityCount),
+          },
+          { label: "Net worth", value: formatCurrency(accountSummary.netWorth), caption: "Across active accounts" },
+          { label: "Accounts", value: String(accountSummary.totalCount), caption: `${accountSummary.archivedCount} archived` },
+        ]}
+      />
 
       <ConnectionsPanel
         connections={connections}
@@ -584,107 +477,61 @@ export default function AccountsPage() {
         onNewAccounts={(added) => setContributionPromptAccounts(added)}
       />
 
-      {/* 3. Accounts Data Grid Core View */}
-      <Tabs
-        value={viewFilter}
-        onChange={(_e, v: ViewFilter) => setViewFilter(v)}
-        sx={{
-          minHeight: 40,
-          bgcolor: "#fff",
-          borderRadius: 2,
-          border: "1px solid #e2e8f0",
-          p: 0.5,
-          width: "fit-content",
-          "& .MuiTabs-indicator": { display: "none" },
-        }}
-      >
-        <Tab
-          value="active"
-          disableRipple
-          sx={{
-              minHeight: 32,
-              minWidth: 0,
-              px: 1.75,
-              borderRadius: 1.5,
-              textTransform: "none",
-              fontWeight: 600,
-              fontSize: "0.8rem",
-              color: "#64748b",
-              "&.Mui-selected": {
-                color: "#2563eb",
-                bgcolor: "#eff6ff",
-              },
-            }}
-          label={
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <Box>Active</Box>
-              <Chip size="small" label={accountSummary.activeCount} />
-            </Box>
-          }
-        />
-        <Tab
-          value="archived"
-          disableRipple
-          sx={{
-              minHeight: 32,
-              minWidth: 0,
-              px: 1.75,
-              borderRadius: 1.5,
-              textTransform: "none",
-              fontWeight: 600,
-              fontSize: "0.8rem",
-              color: "#64748b",
-              "&.Mui-selected": {
-                color: "#2563eb",
-                bgcolor: "#eff6ff",
-              },
-          }}
-          label={
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <Box>Archived</Box>
-              <Chip size="small" label={accountSummary.archivedCount} />
-            </Box>
-          }
-        />
+      <Tabs value={viewFilter} onChange={(_e, v: ViewFilter) => setViewFilter(v)}>
+        <Tab value="active" label={<TabCount label="Active" count={accountSummary.activeCount} />} />
+        <Tab value="archived" label={<TabCount label="Archived" count={accountSummary.archivedCount} />} />
       </Tabs>
       
-      <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden", bgcolor: "#fff", borderColor: "#e2e8f0" }}>
+      <Paper variant="outlined" sx={{ overflow: "hidden" }}>
         {accountsLoading ? (
-          <Box sx={{ py: 8, textAlign: "center" }}>
-            <Typography variant="body2" sx={{ color: "#64748b" }}>Loading...</Typography>
-          </Box>
+          <ListSkeleton rows={4} />
         ) : baseFilteredAccounts.length === 0 ? (
-          <Box sx={{ py: 8, textAlign: "center" }}>
-            <Typography variant="body2" sx={{ color: "#64748b" }}>No accounts found.</Typography>
-          </Box>
+          viewFilter === "archived" ? (
+            <EmptyState
+              icon={<ArchiveRoundedIcon />}
+              title="No archived accounts"
+              description="Accounts you archive move here, with their history kept."
+            />
+          ) : (
+            <EmptyState
+              icon={<AccountBalanceRoundedIcon />}
+              title="No accounts yet"
+              description="Connect a bank to import accounts and transactions, or add an account by hand."
+              action={
+                <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={(event) => setAddMenuAnchor(event.currentTarget)}>
+                  Add account
+                </Button>
+              }
+            />
+          )
         ) : (
           <TableContainer>
             <Table>
               <TableHead>
-                <TableRow sx={{ borderBottom: "1px solid #e2e8f0" }}>
-                  <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Account</TableCell>
-                  <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Type</TableCell>
-                  <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Balance</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem", pr: 3 }}>Actions</TableCell>
+                <TableRow>
+                  <TableCell>Account</TableCell>
+                  <TableCell>Type</TableCell>
+                  <TableCell align="right">Balance</TableCell>
+                  <TableCell align="right" sx={{ pr: 3, width: 64 }} aria-label="Actions" />
                 </TableRow>
               </TableHead>
               <TableBody>
                 {baseFilteredAccounts.map((account) => {
-                  const styleConfig = accountTypeStyles[account.accountType] || { label: account.accountType, color: "#64748b" };
+                  const styleConfig = accountTypeStyles[account.accountType] || { label: account.accountType, color: "text.secondary" };
                   const balance = account.currentBalance ?? account.startingBalance ?? 0;
                   const needsReauth = Boolean(account.plaidItemId && itemsNeedingReauth.has(account.plaidItemId));
 
                   return (
-                    <TableRow key={account.id} sx={{ "&:hover": { backgroundColor: "#f8fafc" }, "& td": { py: 1.75, borderBottom: "1px solid #f1f5f9" } }}>
-                      <TableCell sx={{ fontWeight: 600, color: "#0f172a", fontSize: "0.875rem" }}>
+                    <TableRow key={account.id} hover sx={{ "& td": { py: 1.5 } }}>
+                      <TableCell sx={{ fontWeight: 600, fontSize: "0.875rem" }}>
                         <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
                           <Box component="span">{account.name}</Box>
                           {needsReauth ? (
                             <PlaidReconnectButton itemId={account.plaidItemId!} onLinkError={setError} />
                           ) : account.plaidItemId && account.isArchived ? (
-                            <ArchiveRoundedIcon sx={{ fontSize: 14, color: "#94a3b8" }} />
+                            <ArchiveRoundedIcon sx={{ fontSize: 14, color: "grey.400" }} />
                           ) : account.plaidItemId ? (
-                            <SyncRoundedIcon sx={{ fontSize: 14, color: "#94a3b8" }} />
+                            <SyncRoundedIcon sx={{ fontSize: 14, color: "grey.400" }} />
                           ) : null}
                           {account.plaidClosed && (
                             <Chip
@@ -709,11 +556,11 @@ export default function AccountsPage() {
                           }}
                         />
                       </TableCell>
-                      <TableCell sx={{ fontWeight: 700, fontSize: "0.875rem", color: account.normalBalance === "liability" ? "#dc2626" : "#0f172a" }}>
+                      <TableCell align="right" sx={{ fontWeight: 600, fontSize: "0.875rem", whiteSpace: "nowrap" }}>
                         {formatCurrency(balance)}
                       </TableCell>
                       <TableCell align="right" sx={{ pr: 3 }}>
-                        <IconButton size="small" sx={{ color: "#94a3b8" }} onClick={(e) => handleOpenRowMenu(e, account.id)}>
+                        <IconButton size="small" aria-label={`Actions for ${account.name}`} sx={{ color: "text.secondary" }} onClick={(e) => handleOpenRowMenu(e, account.id)}>
                           <MoreHorizRoundedIcon fontSize="small" />
                         </IconButton>
                       </TableCell>
@@ -752,9 +599,8 @@ export default function AccountsPage() {
         open={deleteSuccessNotice}
         autoHideDuration={4000}
         onClose={() => setDeleteSuccessNotice(false)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
       >
-        <Alert severity="success" variant="filled" onClose={() => setDeleteSuccessNotice(false)} sx={{ borderRadius: 2.5 }}>
+        <Alert severity="success" variant="filled" onClose={() => setDeleteSuccessNotice(false)}>
           Account deleted permanently.
         </Alert>
       </Snackbar>
@@ -780,9 +626,8 @@ export default function AccountsPage() {
         open={duplicateNotice > 0}
         autoHideDuration={6000}
         onClose={() => setDuplicateNotice(0)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
       >
-        <Alert severity="info" variant="filled" onClose={() => setDuplicateNotice(0)} sx={{ borderRadius: 2.5 }}>
+        <Alert severity="info" variant="filled" onClose={() => setDuplicateNotice(0)}>
           {duplicateNotice} account{duplicateNotice === 1 ? "" : "s"} already linked — skipped.
         </Alert>
       </Snackbar>
@@ -798,9 +643,9 @@ export default function AccountsPage() {
 
       <LinkConfirmDialog link={connectLink} />
 
-      <Snackbar open={connectLink.finishing} anchorOrigin={{ vertical: "bottom", horizontal: "right" }}>
-        <Alert severity="info" variant="filled" sx={{ borderRadius: 2.5 }}>
-          Connecting your bank...
+      <Snackbar open={connectLink.finishing}>
+        <Alert severity="info" variant="filled">
+          Connecting your bank…
         </Alert>
       </Snackbar>
 
@@ -808,9 +653,8 @@ export default function AccountsPage() {
         open={notice !== null}
         autoHideDuration={6000}
         onClose={() => setNotice(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
       >
-        <Alert severity="success" variant="filled" onClose={() => setNotice(null)} sx={{ borderRadius: 2.5 }}>
+        <Alert severity="success" variant="filled" onClose={() => setNotice(null)}>
           {notice}
         </Alert>
       </Snackbar>
@@ -845,10 +689,26 @@ export default function AccountsPage() {
             }}
             sx={{ gap: 1, color: "error.main" }}
           >
-            <DeleteForeverRoundedIcon sx={{ fontSize: 16 }} /> Delete Permanently
+            <DeleteForeverRoundedIcon sx={{ fontSize: 16 }} /> Delete permanently
           </MenuItem>
         )}
       </Menu>
     </Stack>
+  );
+}
+
+function countAccounts(count: number) {
+  return `${count} ${count === 1 ? "account" : "accounts"}`;
+}
+
+/** A tab's label with its count beside it. */
+function TabCount({ label, count }: { label: string; count: number }) {
+  return (
+    <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
+      {label}
+      <Box component="span" sx={{ color: "text.disabled", fontWeight: 600 }}>
+        {count}
+      </Box>
+    </Box>
   );
 }

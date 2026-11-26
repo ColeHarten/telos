@@ -51,7 +51,7 @@ export default function ContributionEligibilityPromptDialog({
 
   return (
     <Dialog open={open} onClose={onSkip} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem" }}>
+      <DialogTitle>
         Eligible for paycheck contributions?
       </DialogTitle>
       <DialogContent>
@@ -89,15 +89,15 @@ export default function ContributionEligibilityPromptDialog({
           ))}
         </Stack>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
-        <Button onClick={onSkip} disabled={isSaving} sx={{ textTransform: "none", fontWeight: 700 }}>
+      <DialogActions>
+        <Button onClick={onSkip} disabled={isSaving}>
           Skip
         </Button>
         <Button
           onClick={() => onConfirm(selections)}
           variant="contained"
           disabled={isSaving}
-          sx={{ height: 36, borderRadius: 2, textTransform: "none", fontWeight: 700, px: 3 }}
+          sx={{ height: 36, px: 3 }}
         >
           Save
         </Button>

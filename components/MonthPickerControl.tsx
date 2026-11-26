@@ -227,9 +227,6 @@ export function MonthPickerControl({
                     variant={isSelected ? "contained" : "text"}
                     fullWidth
                     sx={{
-                      borderRadius: "8px",
-                      textTransform: "none",
-                      fontWeight: 600,
                       minWidth: 0,
                       height: "36px",
                     }}

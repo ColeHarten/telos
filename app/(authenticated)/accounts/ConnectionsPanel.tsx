@@ -54,7 +54,6 @@ type Status = { label: string; color: string; bg: string };
 const CONFIRM_WORD = "DISCONNECT";
 
 const buttonSx = {
-  textTransform: "none",
   fontWeight: 600,
   fontSize: "0.8rem",
   borderRadius: 2,
@@ -66,8 +65,8 @@ const buttonSx = {
 const outlinedButtonSx = {
   ...buttonSx,
   borderColor: "#bfdbfe",
-  color: "#2563eb",
-  bgcolor: "#fff",
+  color: "primary.main",
+  bgcolor: "background.paper",
   "&:hover": { borderColor: "#93c5fd", bgcolor: "#eff6ff" },
 } as const;
 
@@ -83,29 +82,29 @@ function useMinuteTick(): void {
 }
 
 function statusOf(connection: PlaidConnection, otherEnv: boolean): Status {
-  if (otherEnv) return { label: "Other environment", color: "#64748b", bg: "#f1f5f9" };
-  if (connection.needsReauth) return { label: "Needs reconnect", color: "#dc2626", bg: "#fef2f2" };
-  if (isFailing(connection)) return { label: "Sync failed", color: "#dc2626", bg: "#fef2f2" };
-  if (isImporting(connection)) return { label: "Importing history…", color: "#2563eb", bg: "#eff6ff" };
+  if (otherEnv) return { label: "Other environment", color: "text.secondary", bg: "#f1f5f9" };
+  if (connection.needsReauth) return { label: "Needs reconnect", color: "error.main", bg: "#fef2f2" };
+  if (isFailing(connection)) return { label: "Sync failed", color: "error.main", bg: "#fef2f2" };
+  if (isImporting(connection)) return { label: "Importing history…", color: "primary.main", bg: "#eff6ff" };
   if (isConsentExpiringSoon(connection)) return { label: "Access expiring", color: "#b45309", bg: "#fffbeb" };
-  return { label: "Up to date", color: "#16a34a", bg: "#f0fdf4" };
+  return { label: "Up to date", color: "success.main", bg: "#f0fdf4" };
 }
 
 function statusMessage(connection: PlaidConnection, otherEnv: boolean, currentEnv: string | null): { text: string; color: string } | null {
   if (otherEnv) {
     return {
       text: `Linked in Plaid ${connection.plaidEnv}. This server uses ${currentEnv ?? "another environment"}, so it leaves this bank alone.`,
-      color: "#64748b",
+      color: "text.secondary",
     };
   }
   if (connection.needsReauth) {
-    return { text: "The bank needs you to sign in again. Reconnect keeps its history and doesn't use a new connection.", color: "#dc2626" };
+    return { text: "The bank needs you to sign in again. Reconnect keeps its history and doesn't use a new connection.", color: "error.main" };
   }
   if (isFailing(connection)) {
-    return { text: `The last sync failed (${connection.lastSyncError}). Telos retries on its own; Refresh tries now.`, color: "#dc2626" };
+    return { text: `The last sync failed (${connection.lastSyncError}). Telos retries on its own; Refresh tries now.`, color: "error.main" };
   }
   if (isImporting(connection)) {
-    return { text: "Plaid is still sending this bank's history. It usually takes a few minutes, and up to a few hours at some banks.", color: "#2563eb" };
+    return { text: "Plaid is still sending this bank's history. It usually takes a few minutes, and up to a few hours at some banks.", color: "primary.main" };
   }
   if (isConsentExpiringSoon(connection)) {
     const days = consentDaysLeft(connection) ?? 0;
@@ -202,17 +201,17 @@ function ConnectionCard({ connection, accounts, usage, onDisconnect, onError, on
   const confirmed = confirmText.trim().toUpperCase() === CONFIRM_WORD;
 
   return (
-    <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0", display: "flex", flexDirection: "column" }}>
+    <Paper variant="outlined" sx={{ p: 2.5, display: "flex", flexDirection: "column" }}>
       <Stack direction="row" spacing={1.5} sx={{ alignItems: "flex-start" }}>
         <Avatar sx={{ bgcolor: "#eef2ff", color: "#4f46e5", width: 40, height: 40 }}>
           <AccountBalanceRoundedIcon sx={{ fontSize: 20 }} />
         </Avatar>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap", rowGap: 0.5 }}>
-            <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "0.95rem" }}>{name}</Typography>
+            <Typography sx={{ fontWeight: 700, color: "text.primary", fontSize: "0.95rem" }}>{name}</Typography>
             <Chip label={status.label} size="small" sx={{ ...smallChipSx, height: 22, color: status.color, bgcolor: status.bg }} />
           </Stack>
-          <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
+          <Typography variant="caption" sx={{ color: "grey.400", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
             Synced {formatSyncAge(connection.lastSyncedAt)}
           </Typography>
         </Box>
@@ -221,7 +220,7 @@ function ConnectionCard({ connection, accounts, usage, onDisconnect, onError, on
           aria-label={`More actions for ${name}`}
           onClick={(event) => setMenuAnchor(event.currentTarget)}
           disabled={otherEnv || busy !== null}
-          sx={{ color: "#94a3b8" }}
+          sx={{ color: "grey.400" }}
         >
           <MoreHorizRoundedIcon fontSize="small" />
         </IconButton>
@@ -235,17 +234,17 @@ function ConnectionCard({ connection, accounts, usage, onDisconnect, onError, on
 
       <Stack spacing={0.5} sx={{ mt: 1.5 }}>
         {connectionAccounts.length === 0 ? (
-          <Typography variant="body2" sx={{ color: "#64748b", fontSize: "0.8rem" }}>
+          <Typography variant="body2" sx={{ color: "text.secondary", fontSize: "0.8rem" }}>
             No accounts are syncing from this bank. Use Manage accounts to share some.
           </Typography>
         ) : (
           connectionAccounts.map((account) => (
             <Stack key={account.id} direction="row" spacing={1} sx={{ alignItems: "center" }}>
-              <Typography variant="body2" sx={{ color: "#334155", fontSize: "0.8rem" }}>
+              <Typography variant="body2" sx={{ color: "grey.700", fontSize: "0.8rem" }}>
                 {accountLabel(account)}
               </Typography>
               {account.plaidClosed && <Chip label="Not shared" size="small" sx={{ ...smallChipSx, color: "#b45309", bgcolor: "#fffbeb" }} />}
-              {account.isArchived && <Chip label="Archived" size="small" sx={{ ...smallChipSx, color: "#64748b", bgcolor: "#f1f5f9" }} />}
+              {account.isArchived && <Chip label="Archived" size="small" sx={{ ...smallChipSx, color: "text.secondary", bgcolor: "grey.100" }} />}
             </Stack>
           ))
         )}
@@ -256,10 +255,9 @@ function ConnectionCard({ connection, accounts, usage, onDisconnect, onError, on
           {showReconnect && (
             <Button
               variant="contained"
-              disableElevation
               onClick={reconnect.onClick}
               disabled={reconnect.disabled}
-              sx={{ ...buttonSx, bgcolor: "#dc2626", "&:hover": { bgcolor: "#b91c1c" } }}
+              sx={{ ...buttonSx, bgcolor: "error.main", "&:hover": { bgcolor: "#b91c1c" } }}
             >
               {reconnect.disabled ? reconnect.label : "Reconnect"}
             </Button>
@@ -271,7 +269,7 @@ function ConnectionCard({ connection, accounts, usage, onDisconnect, onError, on
             disabled={busy !== null || connection.needsReauth}
             sx={outlinedButtonSx}
           >
-            {busy === "refresh" ? "Refreshing..." : "Refresh"}
+            {busy === "refresh" ? "Refreshing…" : "Refresh"}
           </Button>
           <Button variant="outlined" onClick={manage.onClick} disabled={manage.disabled || busy !== null} sx={outlinedButtonSx}>
             {manage.disabled ? manage.label : "Manage accounts"}
@@ -302,22 +300,20 @@ function ConnectionCard({ connection, accounts, usage, onDisconnect, onError, on
       </Menu>
 
       <Dialog open={rebuildOpen} onClose={() => setRebuildOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem" }}>Rebuild {name} from Plaid?</DialogTitle>
+        <DialogTitle>Rebuild {name} from Plaid?</DialogTitle>
         <DialogContent>
-          <Typography variant="body2" sx={{ color: "#334155" }}>
+          <Typography variant="body2" sx={{ color: "grey.700" }}>
             Telos imports this bank&apos;s full history from Plaid again and removes transactions Plaid no longer has.
             Your categories are kept, the bank stays connected, and no new connection is used.
           </Typography>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
-          <Button onClick={() => setRebuildOpen(false)} sx={{ textTransform: "none", fontWeight: 700 }}>
+        <DialogActions>
+          <Button onClick={() => setRebuildOpen(false)}>
             Cancel
           </Button>
           <Button
             onClick={handleRebuild}
             variant="contained"
-            disableElevation
-            sx={{ textTransform: "none", fontWeight: 700, bgcolor: "#2563eb", "&:hover": { bgcolor: "#1d4ed8" } }}
           >
             Rebuild
           </Button>
@@ -325,15 +321,15 @@ function ConnectionCard({ connection, accounts, usage, onDisconnect, onError, on
       </Dialog>
 
       <Dialog open={disconnectOpen} onClose={busy === "disconnect" ? undefined : closeDisconnect} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem" }}>Disconnect {name}?</DialogTitle>
+        <DialogTitle>Disconnect {name}?</DialogTitle>
         <DialogContent>
-          <Typography variant="body2" sx={{ color: "#334155" }}>
+          <Typography variant="body2" sx={{ color: "grey.700" }}>
             {connectionAccounts.length === 1
               ? "Its account becomes a manual account"
               : `Its ${connectionAccounts.length} accounts become manual accounts`}{" "}
             that keep their history, and balances stop updating.
           </Typography>
-          <Alert severity="warning" sx={{ mt: 2, borderRadius: 2.5 }}>
+          <Alert severity="warning" sx={{ mt: 2 }}>
             Plaid doesn&apos;t give the connection back: linking {name} again uses another one
             {usage ? ` (${usage.used} of ${usage.limit} used)` : ""}. If the bank stopped syncing, use Reconnect instead.
           </Alert>
@@ -347,19 +343,17 @@ function ConnectionCard({ connection, accounts, usage, onDisconnect, onError, on
             sx={{ mt: 2 }}
           />
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
-          <Button onClick={closeDisconnect} disabled={busy === "disconnect"} sx={{ textTransform: "none", fontWeight: 700 }}>
+        <DialogActions>
+          <Button onClick={closeDisconnect} disabled={busy === "disconnect"}>
             Cancel
           </Button>
           <Button
             onClick={handleDisconnect}
             color="error"
             variant="contained"
-            disableElevation
             disabled={!confirmed || busy === "disconnect"}
-            sx={{ textTransform: "none", fontWeight: 700 }}
           >
-            {busy === "disconnect" ? "Disconnecting..." : "Disconnect"}
+            {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -375,9 +369,9 @@ export default function ConnectionsPanel({ connections, ...rest }: ConnectionsPa
   return (
     <Box>
       <Stack direction="row" sx={{ alignItems: "baseline", justifyContent: "space-between", mb: 1.5, gap: 2, flexWrap: "wrap" }}>
-        <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "0.95rem" }}>Bank connections</Typography>
+        <Typography sx={{ fontWeight: 700, color: "text.primary", fontSize: "0.95rem" }}>Bank connections</Typography>
         {rest.usage && (
-          <Typography variant="caption" sx={{ color: "#94a3b8", fontSize: "0.75rem" }}>
+          <Typography variant="caption" sx={{ color: "grey.400", fontSize: "0.75rem" }}>
             {rest.usage.used} of {rest.usage.limit} Plaid connections used{rest.usage.env === "sandbox" ? " (sandbox)" : ""}
           </Typography>
         )}

@@ -54,8 +54,8 @@ export default function ApplyRuleDialog({ open, rule, summary, transactions, cat
   const changes = plan?.updates.length ?? 0;
 
   return (
-    <Dialog open={open} onClose={applying ? undefined : onClose} maxWidth="xs" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
-      <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem" }}>Apply to past transactions?</DialogTitle>
+    <Dialog open={open} onClose={applying ? undefined : onClose} maxWidth="xs" fullWidth>
+      <DialogTitle>Apply to past transactions?</DialogTitle>
       <DialogContent>
         <DialogContentText sx={{ fontSize: "0.9rem", mb: 1.5 }}>
           <strong>{summary}</strong>
@@ -72,16 +72,14 @@ export default function ApplyRuleDialog({ open, rule, summary, transactions, cat
           />
         )}
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={onClose} disabled={applying} sx={{ textTransform: "none", fontWeight: 600 }}>
+      <DialogActions>
+        <Button onClick={onClose} disabled={applying}>
           Not now
         </Button>
         <Button
           onClick={handleApply}
           variant="contained"
-          disableElevation
           disabled={applying || changes === 0}
-          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
         >
           {applying ? "Applying…" : `Apply to ${plural(changes, "transaction", "transactions")}`}
         </Button>

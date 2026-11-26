@@ -8,6 +8,7 @@ import { plaidCategoryLabel } from "@/lib/plaidCategories";
 import { STARTER_CATEGORIES } from "@/lib/starterCategories";
 import { formatCurrency } from "@/lib/utils";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
 import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
@@ -43,7 +44,10 @@ import {
 } from "@mui/material";
 import { useMemo, useState } from "react";
 import AddCategoryModal from "./AddCategoryModal";
+import EmptyState from "@/components/EmptyState";
+import { ListSkeleton } from "@/components/LoadingSkeleton";
 import PageHeader from "@/components/PageHeader";
+import StatStrip from "@/components/StatStrip";
 import IsolationWarningDialog from "@/components/IsolationWarningDialog";
 
 type KindFilter = "all" | CategoryKind;
@@ -53,8 +57,8 @@ const categoryStyles: Record<
   { label: string; color: string; background: string; icon: typeof TrendingUpRoundedIcon }
 > = {
   income: { label: "Income", color: "#059669", background: "#ecfdf5", icon: TrendingUpRoundedIcon },
-  expense: { label: "Expense", color: "#dc2626", background: "#fef2f2", icon: TrendingDownRoundedIcon },
-  transfer: { label: "Transfer", color: "#2563eb", background: "#eff6ff", icon: SwapHorizRoundedIcon },
+  expense: { label: "Expense", color: "error.main", background: "#fef2f2", icon: TrendingDownRoundedIcon },
+  transfer: { label: "Transfer", color: "primary.main", background: "#eff6ff", icon: SwapHorizRoundedIcon },
 };
 
 // --- Main Page Component ---
@@ -348,7 +352,7 @@ export default function CategoriesPage() {
 
   function renderAmountCell(category: Category) {
     const amount = (
-      <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a" }}>
+      <Typography variant="body2" sx={{ fontWeight: 600, color: "text.primary" }}>
         {formatCurrency(category.estimatedMonthly ?? 0)}
       </Typography>
     );
@@ -386,74 +390,35 @@ export default function CategoriesPage() {
   const rowMenuCategory = categories.find((c) => c.id === rowMenuCategoryId) ?? null;
 
   return (
-    <Stack spacing={3} sx={{ p: 4, bgcolor: "#f8fafc", minHeight: "100vh" }}>
+    <Stack spacing={3}>
       {/* Header */}
       <PageHeader title="Categories">
-        <Button
-          variant="contained"
-          disableElevation
-          startIcon={<AddRoundedIcon sx={{ fontSize: 18 }} />}
-          onClick={handleOpenAddForm}
-          sx={{
-            bgcolor: "#2563eb",
-            textTransform: "none",
-            fontWeight: 600,
-            fontSize: "0.85rem",
-            borderRadius: 2,
-            px: 1.75,
-            py: 0.85,
-            whiteSpace: "nowrap",
-            alignSelf: { xs: "stretch", sm: "auto" },
-            "&:hover": { bgcolor: "#1d4ed8" },
-          }}
-        >
-          Add Category
+        <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={handleOpenAddForm} sx={{ whiteSpace: "nowrap" }}>
+          Add category
         </Button>
       </PageHeader>
 
       {error && (
-        <Snackbar open={error !== null} autoHideDuration={5000} onClose={() => setError(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }}>
-          <Alert severity="error" variant="filled" onClose={() => setError(null)} sx={{ borderRadius: 2.5 }}>
+        <Snackbar open={error !== null} autoHideDuration={5000} onClose={() => setError(null)}>
+          <Alert severity="error" variant="filled" onClose={() => setError(null)}>
             {error}
           </Alert>
         </Snackbar>
       )}
 
-      {/* Metric Cards */}
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr 1fr" }, gap: 2 }}>
-        {(
-          [
-            { key: "income" as const, title: "Income Categories", ...summary.income, ...categoryStyles.income },
-            { key: "expense" as const, title: "Expense Categories", ...summary.expense, ...categoryStyles.expense },
-            { key: "transfer" as const, title: "Transfer Categories", ...summary.transfer, ...categoryStyles.transfer },
-          ]
-        ).map((card) => {
-          const Icon = card.icon;
-          return (
-            <Paper key={card.key} variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: "#fff", borderColor: "#e2e8f0" }}>
-              <Stack sx={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                <Box>
-                  <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500, fontSize: "0.85rem" }}>{card.title}</Typography>
-                  <Typography sx={{ fontWeight: 700, color: "#0f172a", mt: 0.5, letterSpacing: "-0.02em", fontSize: "1.5rem" }}>{card.count}</Typography>
-                  <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
-                    Est. monthly: <Box component="span" sx={{ fontWeight: 600, color: "#64748b" }}>{formatCurrency(card.total)}</Box>
-                  </Typography>
-                </Box>
-                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", bgcolor: card.background, color: card.color, borderRadius: 2, width: 40, height: 40, flexShrink: 0 }}>
-                  <Icon sx={{ fontSize: 20 }} />
-                </Box>
-              </Stack>
-            </Paper>
-          );
-        })}
-      </Box>
+      <StatStrip
+        stats={[
+          { label: "Income categories", value: String(summary.income.count), caption: `${formatCurrency(summary.income.total)} a month (est.)` },
+          { label: "Expense categories", value: String(summary.expense.count), caption: `${formatCurrency(summary.expense.total)} a month (est.)` },
+          { label: "Transfer categories", value: String(summary.transfer.count), caption: `${formatCurrency(summary.transfer.total)} a month (est.)` },
+        ]}
+      />
 
       {/* Tabs & Search */}
       <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { xs: "stretch", md: "center" } }}>
         <Tabs
           value={kindFilter}
           onChange={(_, v) => setKindFilter(v)}
-          sx={{ minHeight: 40, bgcolor: "#fff", borderRadius: 2, border: "1px solid #e2e8f0", p: 0.5, width: "fit-content", "& .MuiTabs-indicator": { display: "none" } }}
         >
           {[
             { label: "All", value: "all" },
@@ -465,11 +430,6 @@ export default function CategoriesPage() {
               key={tab.value}
               value={tab.value}
               label={tab.label}
-              disableRipple
-              sx={{
-                minHeight: 32, minWidth: 0, px: 1.75, borderRadius: 1.5, textTransform: "none", fontWeight: 600, fontSize: "0.8rem", color: "#64748b",
-                "&.Mui-selected": { color: "#2563eb", bgcolor: "#eff6ff" },
-              }}
             />
           ))}
         </Tabs>
@@ -477,20 +437,20 @@ export default function CategoriesPage() {
         <Stack direction="row" spacing={1.5}>
           <TextField
             size="small"
-            placeholder="Search categories..."
+            placeholder="Search categories"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            slotProps={{ input: { startAdornment: (<InputAdornment position="start"><SearchRoundedIcon sx={{ fontSize: 18, color: "#94a3b8" }} /></InputAdornment>) } }}
-            sx={{ width: { xs: "100%", md: 240 }, "& .MuiOutlinedInput-root": { bgcolor: "#fff", borderRadius: 2, height: 40 } }}
+            slotProps={{ input: { startAdornment: (<InputAdornment position="start"><SearchRoundedIcon sx={{ fontSize: 18, color: "text.disabled" }} /></InputAdornment>) } }}
+            sx={{ width: { xs: "100%", md: 240 } }}
           />
           <Button
             size="small"
             variant="outlined"
             onClick={() => setShowArchived((prev) => !prev)}
-            startIcon={showArchived ? <RestorePageRoundedIcon sx={{ fontSize: 18 }} /> : <ArchiveRoundedIcon sx={{ fontSize: 18 }} />}
-            sx={{ borderColor: "#e2e8f0", color: "#64748b", bgcolor: "#fff", textTransform: "none", fontWeight: 600, borderRadius: 2, height: 40, px: 2, whiteSpace: "nowrap", "&:hover": { bgcolor: "#f8fafc", borderColor: "#cbd5e1" } }}
+            startIcon={showArchived ? <RestorePageRoundedIcon /> : <ArchiveRoundedIcon />}
+            sx={{ height: 40, px: 2, whiteSpace: "nowrap", flexShrink: 0 }}
           >
-            {showArchived ? "View Active" : `Archived (${archivedCategories.length})`}
+            {showArchived ? "View active" : `Archived (${archivedCategories.length})`}
           </Button>
         </Stack>
       </Stack>
@@ -498,14 +458,13 @@ export default function CategoriesPage() {
       {!isLoading && categories.length === 0 && (
         <Alert
           severity="info"
-          sx={{ borderRadius: 3 }}
           action={
             <Button
               color="inherit"
               size="small"
               onClick={handleAddStarters}
               disabled={addingStarters}
-              sx={{ textTransform: "none", fontWeight: 600, whiteSpace: "nowrap" }}
+              sx={{ whiteSpace: "nowrap" }}
             >
               {addingStarters ? "Adding…" : "Add starter categories"}
             </Button>
@@ -517,25 +476,38 @@ export default function CategoriesPage() {
       )}
 
       {/* Categories Table */}
-      <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3, borderColor: "#e2e8f0", bgcolor: "#fff", overflow: "hidden" }}>
+      <TableContainer component={Paper} variant="outlined">
         <Table sx={{ minWidth: 550 }}>
-          <TableHead sx={{ bgcolor: "#f8fafc" }}>
+          <TableHead>
             <TableRow>
-              <TableCell sx={{ fontWeight: 600, color: "#64748b", fontSize: "0.75rem", textTransform: "uppercase" }}>Category</TableCell>
-              <TableCell sx={{ fontWeight: 600, color: "#64748b", fontSize: "0.75rem", textTransform: "uppercase" }}>Type</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 600, color: "#64748b", fontSize: "0.75rem", textTransform: "uppercase" }}>Est. Monthly</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 600, color: "#64748b", fontSize: "0.75rem", textTransform: "uppercase" }}>Actions</TableCell>
+              <TableCell>Category</TableCell>
+              <TableCell>Type</TableCell>
+              <TableCell align="right">Est. monthly</TableCell>
+              <TableCell align="right" sx={{ width: 64 }} aria-label="Actions" />
             </TableRow>
           </TableHead>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={4} sx={{ py: 3, textAlign: "center" }}><Typography color="text.secondary" variant="body2">Loading categories...</Typography></TableCell></TableRow>
+              <TableRow>
+                <TableCell colSpan={4} sx={{ p: 0, border: 0 }}>
+                  <ListSkeleton rows={5} />
+                </TableCell>
+              </TableRow>
             ) : displayedCategories.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} sx={{ py: 3, textAlign: "center" }}>
-                  <Typography color="text.secondary" variant="body2">
-                    {showArchived ? "No archived categories found." : "No categories match here yet."}
-                  </Typography>
+                <TableCell colSpan={4} sx={{ border: 0 }}>
+                  {showArchived ? (
+                    <EmptyState dense icon={<ArchiveRoundedIcon />} title="No archived categories" description="Categories you archive move here." />
+                  ) : searchQuery.trim() ? (
+                    <EmptyState dense icon={<SearchRoundedIcon />} title="No matches" description="Try another name, or clear the search." />
+                  ) : (
+                    <EmptyState
+                      dense
+                      icon={<CategoryOutlinedIcon />}
+                      title="No categories here yet"
+                      description={categories.length === 0 ? "Add one, or start with the starter set above." : "Add one with Add category."}
+                    />
+                  )}
                 </TableCell>
               </TableRow>
             ) : (
@@ -549,21 +521,21 @@ export default function CategoriesPage() {
                     <TableCell>
                       <Box sx={{ minWidth: 0, display: "flex", alignItems: "center", gap: 1, pl: isDependentTransfer ? 2.25 : 0 }}>
                         <Box>
-                          <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a" }}>{category.name}</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 600, color: "text.primary" }}>{category.name}</Typography>
                           {isDependentTransfer && row.parentCategory && (
-                            <Typography variant="caption" sx={{ color: "#64748b", display: "block" }}>
+                            <Typography variant="caption" sx={{ color: "text.secondary", display: "block" }}>
                               Linked to {row.parentCategory.name}
                             </Typography>
                           )}
                           {category.description && !isDependentTransfer && (
-                            <Typography variant="caption" sx={{ color: "#64748b", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 320 }}>
+                            <Typography variant="caption" sx={{ color: "text.secondary", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 320 }}>
                               {category.description}
                             </Typography>
                           )}
                           {(category.plaidCategories?.length ?? 0) > 0 && (
                             <Typography
                               variant="caption"
-                              sx={{ color: "#94a3b8", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 360 }}
+                              sx={{ color: "grey.400", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 360 }}
                             >
                               Plaid: {category.plaidCategories?.map((code) => plaidCategoryLabel(code)).join(", ")}
                             </Typography>
@@ -586,7 +558,7 @@ export default function CategoriesPage() {
                         </Box>
                       ) : (
                         <IconButton aria-label={`Actions for ${category.name}`} size="small" onClick={(e) => handleOpenRowMenu(e, category.id)}>
-                          <MoreHorizRoundedIcon fontSize="small" sx={{ color: "#64748b" }} />
+                          <MoreHorizRoundedIcon fontSize="small" sx={{ color: "text.secondary" }} />
                         </IconButton>
                       )}
                     </TableCell>
@@ -622,14 +594,14 @@ export default function CategoriesPage() {
       <Menu anchorEl={rowMenuAnchor} open={Boolean(rowMenuAnchor)} onClose={handleCloseRowMenu} slotProps={{ paper: { sx: { mt: 1, borderRadius: 2, minWidth: 160, border: "1px solid", borderColor: "divider" } } }}>
         {rowMenuCategory && isDependentTransferCategory(rowMenuCategory) ? (
           <MenuItem disabled sx={{ gap: 1.5, py: 1.25 }}>
-            <LockRoundedIcon sx={{ fontSize: 18, color: "#64748b" }} />
+            <LockRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
             <Typography variant="body2" sx={{ fontWeight: 500 }}>Managed by income category</Typography>
           </MenuItem>
         ) : (
           <>
             {rowMenuCategory && !rowMenuCategory.isArchived && (
               <MenuItem onClick={() => { handleOpenEditForm(rowMenuCategory); handleCloseRowMenu(); }} sx={{ gap: 1.5, py: 1.25 }}>
-                <EditRoundedIcon sx={{ fontSize: 18, color: "#64748b" }} />
+                <EditRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
                 <Typography variant="body2" sx={{ fontWeight: 500 }}>Edit</Typography>
               </MenuItem>
             )}

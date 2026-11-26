@@ -182,13 +182,10 @@ export default function LoginPage() {
                 disabled={isSigningIn}
                 sx={{
                   py: 1.35,
-                  borderRadius: 2,
-                  textTransform: "none",
-                  fontWeight: 700,
                   boxShadow: "0 12px 24px rgba(37, 99, 235, 0.25)",
                 }}
               >
-                {isSigningIn ? "Signing in..." : "Sign in with Google"}
+                {isSigningIn ? "Signing in…" : "Sign in with Google"}
               </Button>
 
               <Stack

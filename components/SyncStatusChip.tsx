@@ -36,9 +36,9 @@ function statusFor(connections: PlaidConnection[], syncing: boolean): Status {
 }
 
 const TONES = {
-  ok: { color: "#475569", bgcolor: "#fff", borderColor: "#e2e8f0" },
-  busy: { color: "#2563eb", bgcolor: "#eff6ff", borderColor: "#bfdbfe" },
-  attention: { color: "#dc2626", bgcolor: "#fef2f2", borderColor: "#fecaca" },
+  ok: { color: "grey.600", bgcolor: "background.paper", borderColor: "grey.200" },
+  busy: { color: "primary.main", bgcolor: "#eff6ff", borderColor: "#bfdbfe" },
+  attention: { color: "error.main", bgcolor: "#fef2f2", borderColor: "#fecaca" },
 } as const;
 
 /**

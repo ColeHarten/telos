@@ -27,7 +27,7 @@ Do this if `ENCRYPTION_KEY` may have leaked, or on a schedule.
    - `ENCRYPTION_KEY` = the **new** key
    - `ENCRYPTION_KEY_PREVIOUS` = the **old** key
 3. Redeploy.
-4. Each bank's token is re-encrypted with the new key on its next successful sync. Have each user sync at least once (Sync on the Transactions page, or Refresh balances on the Accounts page).
+4. Each bank's token is re-encrypted with the new key on its next successful sync. Have each user sync at least once (click the sync chip, or press Refresh balances on the Accounts page).
 5. Once every connection has synced, remove `ENCRYPTION_KEY_PREVIOUS` and redeploy.
 
 If `ENCRYPTION_KEY_PREVIOUS` is removed too early, connections that haven't synced can't be decrypted, and those banks have to be linked again.
@@ -70,7 +70,7 @@ Filter on `scope` (the route or service name) and `level`. Plaid failures includ
 | An OAuth bank (Chase, Capital One) is missing from Link, or the return fails | `PLAID_REDIRECT_URI` must be set and listed under Allowed redirect URIs in the Plaid dashboard. Finish in the same browser you started in. |
 | Only the last month shows after linking | Normal. Plaid sends about 30 days first and the rest over minutes to hours; the card says "Importing history…" meanwhile. |
 | Transactions look wrong or incomplete | Rebuild from Plaid on the bank's card. It re-imports everything and keeps categories. Never clear the database. |
-| A category keeps not getting applied automatically | Check the Rules page: only the first matching rule applies, and "Merchant is" needs the whole name. Merchant memory needs the same pick twice in a row. A Plaid mapping assigns only when Plaid is confident; otherwise it's a suggestion in Needs Review. Rules apply to new transactions; use Apply to past for older ones. |
+| A category keeps not getting applied automatically | Check the Rules page: only the first matching rule applies, and "Merchant is" needs the whole name. Merchant memory needs the same pick twice in a row. A Plaid mapping assigns only when Plaid is confident; otherwise it's a suggestion in Needs review. Rules apply to new transactions; use Apply to past for older ones. |
 | Permissions errors after changing `firestore.rules` | Deploy the rules. |
 | CSP warnings in the browser console | Unless `CSP_ENFORCE=true`, nothing is blocked. Add the missing source in `next.config.ts` if it's legitimate. |
 | Every route returns 500 at once | A server env var is missing or malformed. The log shows which, for example `ENCRYPTION_KEY is not set`. |

@@ -49,7 +49,7 @@ Full details are in [Data model](data-model.md) and [Security](security.md).
 
 ```
 app/
-  (authenticated)/       Signed-in pages. layout.tsx holds the nav and the sign-in guard.
+  (authenticated)/       Signed-in pages. layout.tsx holds the menu, the phone tab bar, and the sign-in guard.
     dashboard/  accounts/  categories/  budgets/  transactions/  rules/  settings/
     oauth/               Where banks that use OAuth send you back; resumes Plaid Link
   api/                   Server routes (see api-reference.md)
@@ -58,9 +58,11 @@ app/
     accounts/delete/     Permanent account delete
   login/                 Google sign-in page
   layout.tsx, providers.tsx, page.tsx (redirects to /dashboard), not-found.tsx
+  theme.ts               The one theme: colors, corners, shadows, and each component's default look
 
 components/              Shared UI: page header, month picker, logo, archive warning dialog,
-                         CategoryPicker, MerchantAvatar, SyncStatusChip (the header chip),
+                         EmptyState, StatStrip (a page's totals), LoadingSkeleton, TransactionAmount,
+                         CategoryPicker, MerchantAvatar, SyncStatusChip (the menu's sync chip),
                          TransactionsProvider (one transactions listener per visit)
 
 lib/
@@ -117,13 +119,15 @@ firebase.json            Firebase CLI and emulator config
 
 **Every API route has the same shape.** `withUser` (`lib/api/handler.ts`) checks the sign-in token, applies the rate limit, and turns errors into `{ error, message }`. A route body only does its own job.
 
-**Live listeners over manual refetching.** Hooks subscribe to Firestore. After a sync or a link, the server writes and the page updates by itself. Transactions have one listener for the whole visit, in `TransactionsProvider` in the signed-in layout, so moving between pages doesn't read them all again. The provider also pairs transfers once for every page and counts Needs Review for the menu. `useAutoSync`, also in the layout, listens to each bank's status and hands it to the header's sync chip, which reads whether a sync is running from `useSyncRunning`.
+**Live listeners over manual refetching.** Hooks subscribe to Firestore. After a sync or a link, the server writes and the page updates by itself. Transactions have one listener for the whole visit, in `TransactionsProvider` in the signed-in layout, so moving between pages doesn't read them all again. The provider also pairs transfers once for every page and counts Needs review for the menu. `useAutoSync`, also in the layout, listens to each bank's status and hands it to the sync chip in the menu, which reads whether a sync is running from `useSyncRunning`.
+
+**One theme, one page frame.** `app/theme.ts` sets the colors, corners, shadows, and each MUI component's default look, so pages style layout only. The signed-in layout gives every page its padding (16px on phones, 32px on desktop) and maximum width. Empty lists use `EmptyState`, first loads use `LoadingSkeleton`, and amounts use `formatCurrency`, `formatTransactionAmount`, and `formatSignedCurrency` (`lib/utils.ts`).
 
 **Category choices are never overwritten.** Sync only fills in categories that are empty. See [Plaid and sync](plaid-and-sync.md).
 
-## Request walkthrough: pressing Sync
+## Request walkthrough: clicking the sync chip
 
-1. The Transactions page calls `runSync()` (`lib/plaidSync.ts`), which posts to `/api/plaid/sync` with the user's Firebase ID token.
+1. The sync chip calls `runSync()` (`lib/plaidSync.ts`), which posts to `/api/plaid/sync` with the user's Firebase ID token.
 2. `withUser` verifies the token (401 if bad), checks the rate limit (429 if over), and calls the route.
 3. The route calls `syncAllPlaidItems(uid, { deadline })`, which syncs each bank in turn and stops taking new pages after 40 seconds (see [Plaid and sync](plaid-and-sync.md)).
 4. The server writes transactions, balances, and each bank's status doc.

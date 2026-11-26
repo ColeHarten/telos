@@ -40,10 +40,10 @@ export default function ConnectBankDialog({ open, onClose, connections, accounts
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem" }}>Connect a bank</DialogTitle>
+      <DialogTitle>Connect a bank</DialogTitle>
       <DialogContent>
         <Stack spacing={2}>
-          <Typography variant="body2" sx={{ color: "#334155" }}>
+          <Typography variant="body2" sx={{ color: "grey.700" }}>
             Each bank login you connect uses one of your Plaid connections, and disconnecting a bank doesn&apos;t give
             its connection back. If the bank is already listed below, use Manage accounts on its card to add accounts,
             or Reconnect if it stopped syncing. Connecting the same login twice can break the first connection.
@@ -58,31 +58,31 @@ export default function ConnectBankDialog({ open, onClose, connections, accounts
               p: 1.75,
               borderRadius: 2.5,
               border: "1px solid #e2e8f0",
-              bgcolor: "#f8fafc",
+              bgcolor: "grey.50",
             }}
           >
-            <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500 }}>
+            <Typography variant="body2" sx={{ color: "text.secondary", fontWeight: 500 }}>
               Connections used
             </Typography>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
               {usage?.env === "sandbox" && (
-                <Chip label="Sandbox" size="small" sx={{ height: 20, fontSize: "0.7rem", fontWeight: 600, color: "#64748b", bgcolor: "#f1f5f9" }} />
+                <Chip label="Sandbox" size="small" sx={{ height: 20, fontSize: "0.7rem", fontWeight: 600, color: "text.secondary", bgcolor: "grey.100" }} />
               )}
-              <Typography variant="body2" sx={{ fontWeight: 700, color: "#0f172a" }}>
+              <Typography variant="body2" sx={{ fontWeight: 700, color: "text.primary" }}>
                 {usage ? `${usage.used} of ${usage.limit}` : "..."}
               </Typography>
             </Stack>
           </Box>
 
           {atLimit && (
-            <Alert severity="warning" sx={{ borderRadius: 2.5 }}>
+            <Alert severity="warning">
               Every connection on your Plaid plan is in use, so Plaid will refuse a new bank.
             </Alert>
           )}
 
           {connections.length > 0 && (
             <Box>
-              <Typography variant="body2" sx={{ fontWeight: 700, color: "#0f172a", mb: 1 }}>
+              <Typography variant="body2" sx={{ fontWeight: 700, color: "text.primary", mb: 1 }}>
                 Already connected
               </Typography>
               <Stack spacing={1}>
@@ -106,10 +106,10 @@ export default function ConnectBankDialog({ open, onClose, connections, accounts
                         <AccountBalanceRoundedIcon sx={{ fontSize: 18 }} />
                       </Box>
                       <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a" }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: "text.primary" }}>
                           {connection.institutionName ?? "Bank connection"}
                         </Typography>
-                        <Typography variant="caption" sx={{ color: "#64748b", display: "block" }}>
+                        <Typography variant="caption" sx={{ color: "text.secondary", display: "block" }}>
                           {connectionAccounts.length > 0
                             ? connectionAccounts.map(accountLabel).join(", ")
                             : "No accounts yet"}
@@ -123,8 +123,8 @@ export default function ConnectBankDialog({ open, onClose, connections, accounts
           )}
         </Stack>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
-        <Button onClick={onClose} sx={{ textTransform: "none", fontWeight: 700 }}>
+      <DialogActions>
+        <Button onClick={onClose}>
           Cancel
         </Button>
         <Button
@@ -132,8 +132,6 @@ export default function ConnectBankDialog({ open, onClose, connections, accounts
           disabled={link.disabled}
           startIcon={link.disabled ? <CircularProgress size={14} color="inherit" /> : undefined}
           variant="contained"
-          disableElevation
-          sx={{ textTransform: "none", fontWeight: 700, bgcolor: "#2563eb", "&:hover": { bgcolor: "#1d4ed8" } }}
         >
           {link.disabled ? link.label : "Continue to Plaid"}
         </Button>

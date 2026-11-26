@@ -1,5 +1,6 @@
 "use client";
 
+import { formatTransactionAmount } from "@/lib/utils";
 import CategoryPicker from "@/components/CategoryPicker";
 import MerchantAvatar from "@/components/MerchantAvatar";
 import { CUSTOM_NAME_MAX, NOTES_MAX, type TransactionChanges } from "@/lib/categorization";
@@ -47,18 +48,13 @@ function formatDate(value: string | null | undefined): string | null {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function formatAmount(amount: number): string {
-  const value = Math.abs(amount).toLocaleString("en-US", { style: "currency", currency: "USD" });
-  return amount > 0 ? `−${value}` : `+${value}`;
-}
-
 function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
     <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2, py: 0.75 }}>
-      <Typography variant="body2" sx={{ color: "#64748b", flexShrink: 0 }}>
+      <Typography variant="body2" sx={{ color: "text.secondary", flexShrink: 0 }}>
         {label}
       </Typography>
-      <Typography variant="body2" sx={{ color: "#0f172a", fontWeight: 500, textAlign: "right", wordBreak: "break-word" }}>
+      <Typography variant="body2" sx={{ color: "text.primary", fontWeight: 500, textAlign: "right", wordBreak: "break-word" }}>
         {children}
       </Typography>
     </Box>
@@ -76,7 +72,7 @@ export default function TransactionDrawer(props: TransactionDrawerProps) {
       anchor="right"
       open={transaction !== null}
       onClose={onClose}
-      slotProps={{ paper: { sx: { width: { xs: "100%", sm: 420 }, bgcolor: "#fff" } } }}
+      slotProps={{ paper: { sx: { width: { xs: "100%", sm: 420 }, bgcolor: "background.paper" } } }}
     >
       {/* A new key per transaction, so the name and notes fields start from its saved values. */}
       {transaction && <DrawerBody key={transaction.id} {...props} transaction={transaction} />}
@@ -122,20 +118,20 @@ function DrawerBody({
       <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5, p: 3, pb: 2 }}>
         <MerchantAvatar name={tx.displayName} logoUrl={tx.logoUrl} size={44} />
         <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Typography sx={{ fontWeight: 700, color: "#0f172a", fontSize: "1.05rem", lineHeight: 1.3, wordBreak: "break-word" }}>
+          <Typography sx={{ fontWeight: 700, color: "text.primary", fontSize: "1.05rem", lineHeight: 1.3, wordBreak: "break-word" }}>
             {tx.displayName}
           </Typography>
-          <Typography variant="body2" sx={{ color: "#64748b" }}>
+          <Typography variant="body2" sx={{ color: "text.secondary" }}>
             {formatDate(tx.date)} · {tx.originAccName}
           </Typography>
         </Box>
-        <IconButton aria-label="Close" onClick={onClose} size="small" sx={{ color: "#94a3b8" }}>
+        <IconButton aria-label="Close" onClick={onClose} size="small" sx={{ color: "grey.400" }}>
           <CloseRoundedIcon fontSize="small" />
         </IconButton>
       </Box>
 
-      <Typography sx={{ px: 3, fontWeight: 700, fontSize: "1.6rem", letterSpacing: "-0.02em", color: tx.amount > 0 ? "#dc2626" : "#16a34a" }}>
-        {formatAmount(tx.amount)}
+      <Typography sx={{ px: 3, fontWeight: 700, fontSize: "1.6rem", letterSpacing: "-0.02em", color: tx.amount > 0 ? "text.primary" : "success.main" }}>
+        {formatTransactionAmount(tx.amount)}
       </Typography>
       <Stack direction="row" spacing={1} sx={{ px: 3, mt: 1 }}>
         <Chip
@@ -144,7 +140,7 @@ function DrawerBody({
           sx={{ height: 22, fontSize: "0.7rem", fontWeight: 600, borderRadius: 1.5, bgcolor: tx.pending ? "#fffbeb" : "#f0fdf4", color: tx.pending ? "#d97706" : "#16a34a" }}
         />
         {tx.hidden && (
-          <Chip size="small" label="Hidden" sx={{ height: 22, fontSize: "0.7rem", fontWeight: 600, borderRadius: 1.5, bgcolor: "#f1f5f9", color: "#475569" }} />
+          <Chip size="small" label="Hidden" sx={{ height: 22, fontSize: "0.7rem", fontWeight: 600, borderRadius: 1.5, bgcolor: "grey.100", color: "grey.600" }} />
         )}
       </Stack>
 
@@ -156,7 +152,7 @@ function DrawerBody({
               value={tx.categoryId ?? null}
               onChange={(categoryId) => onCategoryChange(tx, categoryId ?? "")}
               label="Category"
-              placeholder="Needs Review"
+              placeholder="Needs review"
               exclude={(category) => category.kind === "transfer" && category.transferAccountId === tx.originAccId}
             />
             {suggestion && (
@@ -165,10 +161,10 @@ function DrawerBody({
                 icon={<CheckRoundedIcon sx={{ fontSize: 14 }} />}
                 label={`Accept suggestion: ${suggestion.name}`}
                 onClick={() => onAcceptSuggestion(tx)}
-                sx={{ mt: 1, height: 24, fontSize: "0.75rem", fontWeight: 600, bgcolor: "#eff6ff", color: "#2563eb", borderRadius: 1.5 }}
+                sx={{ mt: 1, height: 24, fontSize: "0.75rem", fontWeight: 600, bgcolor: "#eff6ff", color: "primary.main", borderRadius: 1.5 }}
               />
             )}
-            <Typography variant="caption" sx={{ display: "block", mt: 1, color: "#64748b" }}>
+            <Typography variant="caption" sx={{ display: "block", mt: 1, color: "text.secondary" }}>
               {note ?? (tx.categoryId ? "You chose this category." : "Waiting for a category.")}
               {rule && ` ${describeConditions(rule, accountsById)} → ${describeActions(rule, categoriesById)}.`}
             </Typography>
@@ -208,11 +204,11 @@ function DrawerBody({
             control={<Switch checked={Boolean(tx.hidden)} onChange={(event) => void onSave(tx, { hidden: event.target.checked })} />}
             label={
               <Box>
-                <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a" }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, color: "text.primary" }}>
                   Hide from budgets
                 </Typography>
-                <Typography variant="caption" sx={{ color: "#64748b" }}>
-                  Left out of budgets, cash flow, and Needs Review.
+                <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                  Left out of budgets, cash flow, and Needs review.
                 </Typography>
               </Box>
             }
@@ -222,7 +218,7 @@ function DrawerBody({
           <Divider />
 
           <Box>
-            <Typography variant="body2" sx={{ fontWeight: 700, color: "#0f172a", mb: 0.5 }}>
+            <Typography variant="body2" sx={{ fontWeight: 700, color: "text.primary", mb: 0.5 }}>
               From the bank
             </Typography>
             <Detail label="Account">{tx.originAccName}</Detail>
@@ -243,11 +239,10 @@ function DrawerBody({
         <Button
           startIcon={<BoltIcon sx={{ fontSize: 18 }} />}
           onClick={() => onCreateRule(tx)}
-          sx={{ textTransform: "none", fontWeight: 600 }}
         >
           Create rule
         </Button>
-        <Button onClick={onClose} variant="outlined" sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
+        <Button onClick={onClose} variant="outlined">
           Done
         </Button>
       </Box>

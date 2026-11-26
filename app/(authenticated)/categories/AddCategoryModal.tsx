@@ -46,8 +46,8 @@ import { useEffect, useMemo, useState } from "react";
 
 const KIND_OPTIONS: { value: CategoryKind; label: string; color: string }[] = [
   { value: "income", label: "Income", color: "#059669" },
-  { value: "expense", label: "Expense", color: "#dc2626" },
-  { value: "transfer", label: "Transfer", color: "#2563eb" },
+  { value: "expense", label: "Expense", color: "error.main" },
+  { value: "transfer", label: "Transfer", color: "primary.main" },
 ];
 
 // Logical order: money leaves gross pay pre-tax first, then taxes are withheld,
@@ -56,7 +56,7 @@ const DEDUCTION_TYPE_ORDER: DeductionType[] = ["preTaxDeduction", "tax", "postTa
 
 const DEDUCTION_TYPE_META: Record<DeductionType, { label: string; color: string; background: string }> = {
   preTaxDeduction: { label: "Pre-tax", color: "#7c3aed", background: "#f5f3ff" },
-  tax: { label: "Tax", color: "#475569", background: "#f1f5f9" },
+  tax: { label: "Tax", color: "grey.600", background: "#f1f5f9" },
   postTaxDeduction: { label: "Post-tax", color: "#c2410c", background: "#fff7ed" },
 };
 
@@ -322,7 +322,7 @@ export default function AddCategoryModal({
             disableUnderline
           >
             <MenuItem value="percentOfGross">% of Gross</MenuItem>
-            <MenuItem value="flatAmount">Flat Amount</MenuItem>
+            <MenuItem value="flatAmount">Flat amount</MenuItem>
           </Select>
           <TextField
             size="small"
@@ -338,9 +338,9 @@ export default function AddCategoryModal({
               },
             }}
           />
-          <Tooltip title="Delete Item">
+          <Tooltip title="Delete item">
             <IconButton onClick={() => removeDeductionRow(row.index)} size="small">
-              <DeleteRoundedIcon sx={{ color: "#dc2626", fontSize: 18 }} />
+              <DeleteRoundedIcon sx={{ color: "error.main", fontSize: 18 }} />
             </IconButton>
           </Tooltip>
         </Box>
@@ -369,7 +369,7 @@ export default function AddCategoryModal({
               sx={{ mt: 0.25 }}
             />
             {linkedAccountIsIneligible && (
-              <Typography variant="caption" sx={{ color: "#d97706", display: "block", mt: 0.25 }}>
+              <Typography variant="caption" sx={{ color: "warning.main", display: "block", mt: 0.25 }}>
                 This account is archived or no longer eligible for contributions — clear the link or restore
                 the account to change it.
               </Typography>
@@ -396,7 +396,7 @@ export default function AddCategoryModal({
             size="small"
             startIcon={<AddRoundedIcon sx={{ fontSize: 14 }} />}
             disabled={isSaving}
-            sx={{ textTransform: "none", fontWeight: 700, fontSize: "0.7rem", minWidth: 0, py: 0, color: meta.color }}
+            sx={{ fontSize: "0.7rem", minWidth: 0, py: 0, color: meta.color }}
           >
             Add
           </Button>
@@ -413,7 +413,7 @@ export default function AddCategoryModal({
                 label={option.label}
                 onClick={() => !alreadyAdded && addDeductionRow(type, option.label, option.defaultPercent)}
                 disabled={alreadyAdded || isSaving}
-                sx={{ borderRadius: 999, bgcolor: "#f1f5f9", color: "#475569", fontWeight: 600 }}
+                sx={{ borderRadius: 999, bgcolor: "grey.100", color: "grey.600", fontWeight: 600 }}
               />
             );
           })}
@@ -499,8 +499,8 @@ export default function AddCategoryModal({
         paper: { component: "form", onSubmit: handleSubmit, sx: { borderRadius: 3 } },
       }}
     >
-      <DialogTitle sx={{ fontWeight: 700, pt: 2.5 }}>
-        {isEditing ? "Edit Category" : "Add Category"}
+      <DialogTitle sx={{ pt: 2.5 }}>
+        {isEditing ? "Edit category" : "Add category"}
       </DialogTitle>
 
       <DialogContent>
@@ -603,16 +603,16 @@ export default function AddCategoryModal({
           )}
 
           {showPaycheckCard && (
-            <Card sx={{ bgcolor: "#f8fafc", border: "1px solid", borderColor: "divider", borderRadius: 2 }} elevation={0}>
+            <Card sx={{ bgcolor: "grey.50", border: "1px solid", borderColor: "divider", borderRadius: 2 }} elevation={0}>
               <CardContent sx={{ p: 2 }}>
                 <Grid container spacing={1.5}>
                   <Grid size={{ xs: 12, sm: 6 }}>
                     <FormControl fullWidth size="small">
-                      <InputLabel>Pay Frequency</InputLabel>
+                      <InputLabel>Pay frequency</InputLabel>
                       <Select
                         onChange={(e) => setPayFrequency(e.target.value as PayFrequency)}
                         value={payFrequency}
-                        label="Pay Frequency"
+                        label="Pay frequency"
                         disabled={isSaving}
                       >
                         {payFrequencyOptions.map((opt) => (
@@ -675,7 +675,7 @@ export default function AddCategoryModal({
               value={formatCurrency(calculatedValues.estimatedMonthlyNet)}
               disabled
               sx={{
-                "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2, bgcolor: "#f8fafc" },
+                "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2, bgcolor: "grey.50" },
                 "& input": { textAlign: "right" },
               }}
             />
@@ -688,7 +688,7 @@ export default function AddCategoryModal({
               disabled
               helperText="Synced automatically from a linked paycheck deduction."
               sx={{
-                "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2, bgcolor: "#f8fafc" },
+                "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2, bgcolor: "grey.50" },
                 "& input": { textAlign: "right" },
               }}
             />
@@ -755,12 +755,12 @@ export default function AddCategoryModal({
         </Stack>
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5 }}>
-        <Button onClick={onClose} disabled={isSaving} sx={{ textTransform: "none", fontWeight: 700 }}>
+      <DialogActions>
+        <Button onClick={onClose} disabled={isSaving}>
           Cancel
         </Button>
-        <Button type="submit" variant="contained" disabled={isSaving} sx={{ height: 36, borderRadius: 2, textTransform: "none", fontWeight: 700, px: 3 }}>
-          {isSaving ? "Saving..." : isEditing ? "Save Changes" : "Add Category"}
+        <Button type="submit" variant="contained" disabled={isSaving} sx={{ height: 36, px: 3 }}>
+          {isSaving ? "Saving…" : isEditing ? "Save changes" : "Add category"}
         </Button>
       </DialogActions>
     </Dialog>
