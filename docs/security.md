@@ -20,19 +20,19 @@ How Telos protects user data. Five layers, from the database out:
 |---|---|---|---|---|
 | `users/{uid}` | Owner | Owner | Owner | Owner |
 | `plaidItems` | No | No | No | No |
-| `plaidItemStatus` | Owner | No | No | No |
+| `plaidItemStatus`, `balanceSnapshots` | Owner | No | No | No |
 | `transactions` | Owner | No | Owner, category fields only, valid `categoryKind` | No |
 | `accounts` | Owner | Owner, manual accounts only | Owner, with limits | No |
 | `categories` | Owner | Owner, valid `kind` | Owner, `kind` unchanged | Owner |
 | `budgets`, `automations`, `categoryPlaidStats`, `settings` | Owner | Owner | Owner | Owner |
-| `rateLimits` (top level) | No | No | No | No |
+| `rateLimits`, `plaidUsage` (top level) | No | No | No | No |
 
 The limits in detail:
 
 - **Transactions:** an update may change only `categoryKind`, `categoryId`, `transferAccountId`, and `updatedAt`, and `categoryKind` must be `income`, `expense`, `transfer`, or null. Amounts, dates, and the rest are Plaid's.
 - **Categories:** `kind` must be valid on create and can't change on update, because each transaction stores its category's kind.
 - **Account create:** `isManual` must be `true`, and `plaidItemId` and `plaidAccountId` must be empty. Only the server creates linked accounts.
-- **Account update:** may never change `isManual` or any Plaid field. On a linked account, it also may not change `startingBalance`, `currentBalance`, or `balanceUpdatedAt`.
+- **Account update:** may never change `isManual` or any Plaid field, including `plaidType`, `plaidSubtype`, `plaidName`, and `plaidClosed`. On a linked account, it also may not change `startingBalance`, `currentBalance`, or `balanceUpdatedAt`.
 - **Account delete:** server only, because deleting an account also deletes its transactions and must check what links to it.
 
 The rules tests in `tests/rules/` check each of these. See [Testing and CI](testing-and-ci.md).
@@ -40,6 +40,14 @@ The rules tests in `tests/rules/` check each of these. See [Testing and CI](test
 ### Why the browser can't see `plaidItems`
 
 `plaidItems` holds the encrypted access token and the sync cursor. The few things the browser needs (whether a bank needs reconnecting, when it last synced, and its last error) are copied to `plaidItemStatus`, which the browser can read but not write.
+
+### Plaid environment guard
+
+Each connection stores the Plaid environment it was linked in (`plaidEnv`). A server running in the other environment never syncs, refreshes, rebuilds, reconnects, or removes it (409 `wrong_environment`), so a development server with sandbox keys pointed at the production database can't break real banks. Development should still use its own Firebase project.
+
+### Who can sign up
+
+Sign-up is open: anyone with a Google account can sign in. Each person sees only their own data, but linking a bank uses one of **your** Plaid plan's connections, wherever it comes from. Connect a bank shows the count across all users (`plaidUsage`); watch it, and lock down sign-up if strangers start linking.
 
 ## 2. API routes
 
@@ -58,11 +66,14 @@ Fixed one-minute windows per user, stored in the top-level `rateLimits` collecti
 
 | Route | Requests per minute |
 |---|---|
-| Sync | 6 |
+| Sync | 10 |
 | Link tokens (new and update mode) | 10 |
 | Exchange token | 5 |
 | Disconnect bank | 10 |
 | Delete account | 10 |
+| Refresh from bank | 4 |
+| Rebuild from Plaid | 2 |
+| Connection usage | 30 |
 
 Each counter doc has an `expiresAt` field. You can add a Firestore TTL policy on it to clean up old counters; it's optional.
 
@@ -89,11 +100,11 @@ Set for every page in `next.config.ts`:
 | `Referrer-Policy: strict-origin-when-cross-origin` | Other sites see only the origin, not full URLs |
 | `X-Frame-Options: DENY`, and `frame-ancestors 'none'` in the CSP | Telos can't be embedded in another site (stops clickjacking) |
 | `Permissions-Policy` | Camera, microphone, location, and payment APIs are off |
-| `Content-Security-Policy-Report-Only` | See below |
+| `Content-Security-Policy-Report-Only`, or `Content-Security-Policy` with `CSP_ENFORCE=true` | See below |
 
 The `X-Powered-By` header is also turned off.
 
-**Content Security Policy.** The CSP lists the sources Telos needs: itself, Plaid Link, Firebase, and Google sign-in. It currently ships in **report-only** mode, so the browser logs violations in the console but blocks nothing. Once the console is clean in normal use, rename the header to `Content-Security-Policy` in `next.config.ts` to enforce it.
+**Content Security Policy.** The CSP lists the sources Telos needs: itself, Plaid Link, Firebase, and Google sign-in. It also allows Plaid's merchant logo hosts. By default it ships in **report-only** mode, so the browser logs violations in the console but blocks nothing. Once a full run-through (sign in, link a bank, every page) leaves the console clean, set `CSP_ENFORCE=true` in the deployment's environment and redeploy to enforce it. The variable is read at build time.
 
 ## 5. Logging
 

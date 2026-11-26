@@ -1,21 +1,26 @@
 import "server-only";
 
-import { Configuration, CountryCode, PlaidApi, PlaidEnvironments, Products } from "plaid";
+import {
+  Configuration,
+  CountryCode,
+  PersonalFinanceCategoryVersion,
+  PlaidApi,
+  PlaidEnvironments,
+  Products,
+  type LinkTokenCreateRequest,
+} from "plaid";
 import type { AccountType, NormalBalance } from "@/lib/types/types";
 import { logInfo } from "./logging";
+import { parsePlaidEnv, type PlaidEnv } from "./plaidEnv";
 
 const PLAID_CLIENT_NAME = "Telos";
 const PLAID_COUNTRY_CODES: CountryCode[] = [CountryCode.Us];
+/** Transactions per /transactions/sync page. 500 is Plaid's maximum. */
+const SYNC_PAGE_SIZE = 500;
 
-type PlaidEnv = "sandbox" | "production";
-
-// PLAID_ENV picks the Plaid environment. It defaults to sandbox.
-function getPlaidEnv(): PlaidEnv {
-  const value = process.env.PLAID_ENV || "sandbox";
-  if (value !== "sandbox" && value !== "production") {
-    throw new Error(`PLAID_ENV must be "sandbox" or "production", got "${value}"`);
-  }
-  return value;
+/** PLAID_ENV picks the Plaid environment. It defaults to sandbox. */
+export function currentPlaidEnv(): PlaidEnv {
+  return parsePlaidEnv(process.env.PLAID_ENV);
 }
 
 function requireEnv(name: "PLAID_CLIENT_ID" | "PLAID_SECRET"): string {
@@ -24,13 +29,21 @@ function requireEnv(name: "PLAID_CLIENT_ID" | "PLAID_SECRET"): string {
   return value;
 }
 
+/**
+ * Where OAuth banks (Chase, Capital One, and others) send the user back to.
+ * Must also be listed under Allowed redirect URIs in the Plaid dashboard.
+ */
+function redirectUri(): string | undefined {
+  return process.env.PLAID_REDIRECT_URI || undefined;
+}
+
 let client: PlaidApi | null = null;
 
 // Created on first use, so `next build` and tests don't need Plaid secrets.
 function getPlaidClient(): PlaidApi {
   client ??= new PlaidApi(
     new Configuration({
-      basePath: PlaidEnvironments[getPlaidEnv()],
+      basePath: PlaidEnvironments[currentPlaidEnv()],
       baseOptions: {
         headers: {
           "PLAID-CLIENT-ID": requireEnv("PLAID_CLIENT_ID"),
@@ -42,35 +55,45 @@ function getPlaidClient(): PlaidApi {
   return client;
 }
 
-export async function createLinkToken(uid: string) {
-  const res = await getPlaidClient().linkTokenCreate({
+export async function createLinkToken(uid: string): Promise<string> {
+  const request: LinkTokenCreateRequest = {
     user: { client_user_id: uid },
     client_name: PLAID_CLIENT_NAME,
     language: "en",
-    products: [Products.Transactions] as Products[],
+    products: [Products.Transactions],
+    // Added when the bank supports them, so brokerage, retirement, and loan
+    // accounts are shared too. A bank without them can still be linked.
+    optional_products: [Products.Investments, Products.Liabilities],
     country_codes: PLAID_COUNTRY_CODES,
     // Plaid's maximum. The default is 90 days, and it can't be raised after linking.
     transactions: { days_requested: 730 },
-  });
+  };
+  const uri = redirectUri();
+  if (uri) request.redirect_uri = uri;
 
+  const res = await getPlaidClient().linkTokenCreate(request);
   return res.data.link_token;
 }
 
-// Update mode: re-opens Link for an ALREADY-linked item so the user can
-// re-enter credentials without creating a new item/access_token. This is
-// the actual fix for ITEM_LOGIN_REQUIRED — no amount of retrying the sync
-// call resolves it, since the item's login state (not timing) is the
-// problem. Passing access_token instead of products is what puts Link into
-// update mode; products is omitted since it's not accepted in this mode.
-export async function createUpdateModeLinkToken(uid: string, accessToken: string) {
-  const res = await getPlaidClient().linkTokenCreate({
+/**
+ * Update mode: reopens Link for a connection that already exists, so the user
+ * can sign in again (Reconnect) or change which accounts are shared (Manage
+ * accounts, with accountSelection). No new connection is created and no token
+ * is exchanged.
+ */
+export async function createUpdateModeLinkToken(uid: string, accessToken: string, accountSelection: boolean): Promise<string> {
+  const request: LinkTokenCreateRequest = {
     user: { client_user_id: uid },
     client_name: PLAID_CLIENT_NAME,
     language: "en",
     country_codes: PLAID_COUNTRY_CODES,
     access_token: accessToken,
-  });
+  };
+  if (accountSelection) request.update = { account_selection_enabled: true };
+  const uri = redirectUri();
+  if (uri) request.redirect_uri = uri;
 
+  const res = await getPlaidClient().linkTokenCreate(request);
   return res.data.link_token;
 }
 
@@ -90,11 +113,8 @@ export async function fetchAccounts(accessToken: string) {
   return res.data.accounts;
 }
 
-// Right after itemPublicTokenExchange, Plaid needs a moment to prepare the
-// item's initial transactions data. Calling transactionsSync before that's
-// ready throws PRODUCT_NOT_READY — not a real failure, just "not yet". This
-// retries only that specific error, with backoff, and rethrows immediately
-// for anything else (an invalid access token should fail fast, not retry).
+// Right after an exchange, Plaid can answer PRODUCT_NOT_READY for a moment.
+// That one error is retried with backoff; anything else fails fast.
 const PRODUCT_NOT_READY_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
 
 function getPlaidErrorCode(err: unknown): string | undefined {
@@ -103,12 +123,19 @@ function getPlaidErrorCode(err: unknown): string | undefined {
 
 export { getPlaidErrorCode };
 
-export async function syncTransactions(accessToken: string, cursor?: string) {
+/** One page of /transactions/sync, with Plaid's v2 categories and the bank's original description. */
+export async function syncTransactionsPage(accessToken: string, cursor: string) {
   for (let attempt = 0; attempt <= PRODUCT_NOT_READY_RETRY_DELAYS_MS.length; attempt++) {
     try {
       const res = await getPlaidClient().transactionsSync({
         access_token: accessToken,
         cursor: cursor || "",
+        count: SYNC_PAGE_SIZE,
+        options: {
+          include_original_description: true,
+          // Pinned, so categories never change meaning under Telos's rules.
+          personal_finance_category_version: PersonalFinanceCategoryVersion.V2,
+        },
       });
       return res.data;
     } catch (err) {
@@ -119,34 +146,40 @@ export async function syncTransactions(accessToken: string, cursor?: string) {
       await new Promise((resolve) => setTimeout(resolve, PRODUCT_NOT_READY_RETRY_DELAYS_MS[attempt]));
     }
   }
-  // Unreachable — the loop always returns or throws — but satisfies TS.
-  throw new Error("syncTransactions: exhausted retries");
+  // Unreachable: the loop always returns or throws.
+  throw new Error("syncTransactionsPage: exhausted retries");
 }
 
-export async function getInstitutionForItem(accessToken: string) {
-  const itemResponse = await getPlaidClient().itemGet({
-    access_token: accessToken,
-  });
+/** Asks Plaid to check the bank for new transactions now. They arrive at the next sync. */
+export async function refreshTransactions(accessToken: string): Promise<void> {
+  await getPlaidClient().transactionsRefresh({ access_token: accessToken });
+}
 
-  const institutionId =
-    itemResponse.data.item.institution_id;
+export type ItemDetails = {
+  institutionId: string | null;
+  institutionName: string | null;
+  /** When the user's consent at an OAuth bank runs out (ISO 8601), or null. */
+  consentExpiresAt: string | null;
+};
 
-  if (!institutionId) {
-    return null;
-  }
+export async function getItemDetails(accessToken: string, withInstitutionName = false): Promise<ItemDetails> {
+  const { item } = (await getPlaidClient().itemGet({ access_token: accessToken })).data;
+  const institutionId = item.institution_id ?? null;
+  let institutionName = item.institution_name ?? null;
 
-  const institutionResponse =
-    await getPlaidClient().institutionsGetById({
+  if (withInstitutionName && institutionId && !institutionName) {
+    const res = await getPlaidClient().institutionsGetById({
       institution_id: institutionId,
       country_codes: PLAID_COUNTRY_CODES,
     });
+    institutionName = res.data.institution.name;
+  }
 
-  return {
-    institutionId,
-    institutionName:
-      institutionResponse.data.institution.name,
-  };
+  return { institutionId, institutionName, consentExpiresAt: item.consent_expiration_time ?? null };
 }
+
+// Plaid investment subtypes that are retirement accounts.
+const RETIREMENT_SUBTYPE_PARTS = ["401", "403", "457", "ira", "roth", "pension", "retirement", "thrift savings", "profit sharing", "keogh", "sarsep"];
 
 export function mapPlaidAccountType(
   account: {
@@ -155,37 +188,13 @@ export function mapPlaidAccountType(
   }
 ): AccountType {
   const type = account.type?.toLowerCase();
-  const subtype = account.subtype?.toLowerCase();
+  const subtype = account.subtype?.toLowerCase() ?? "";
 
-  // Depository accounts
-  if (type === "depository") {
-    return "cash";
-  }
-
-  // Credit cards
-  if (type === "credit") {
-    return "credit_card";
-  }
-
-  // Loans
-  if (type === "loan") {
-    return "loan";
-  }
-
-  // Retirement accounts
-  if (
-    subtype?.includes("401k") ||
-    subtype?.includes("ira") ||
-    subtype?.includes("roth")
-  ) {
-    return "retirement";
-  }
-
-  // Investment accounts
-  if (type === "investment") {
-    return "investment";
-  }
-
+  if (type === "depository") return "cash";
+  if (type === "credit") return "credit_card";
+  if (type === "loan") return "loan";
+  if (RETIREMENT_SUBTYPE_PARTS.some((part) => subtype.includes(part))) return "retirement";
+  if (type === "investment" || type === "brokerage") return "investment";
   return "other_asset";
 }
 
@@ -204,9 +213,10 @@ export function getNormalBalanceFromPlaid(
   }
 }
 
-// Revokes Plaid's access to this item entirely (used when deleting the last
-// account tied to a given Plaid connection). Irreversible on Plaid's side —
-// the user would need to re-link via Plaid Link to reconnect this bank.
+/**
+ * Revokes Plaid's access to a connection. Irreversible: linking the bank again
+ * creates a new connection, which uses another of the plan's connections.
+ */
 export async function removeItem(accessToken: string) {
   const res = await getPlaidClient().itemRemove({
     access_token: accessToken,

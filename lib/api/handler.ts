@@ -41,6 +41,22 @@ export async function readJsonObject(req: Request): Promise<Record<string, unkno
   return body as Record<string, unknown>;
 }
 
+/** Like readJsonObject, but an empty body reads as {}. For routes whose fields are all optional. */
+export async function readOptionalJsonObject(req: Request): Promise<Record<string, unknown>> {
+  const text = await req.text();
+  if (text.trim() === "") return {};
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw badRequest("Request body must be valid JSON.");
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw badRequest("Request body must be a JSON object.");
+  }
+  return body as Record<string, unknown>;
+}
+
 export function requireString(body: Record<string, unknown>, key: string, maxLength = 512): string {
   const value = body[key];
   if (typeof value !== "string" || value.trim() === "" || value.length > maxLength) {

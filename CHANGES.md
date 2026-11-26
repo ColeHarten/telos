@@ -2,6 +2,39 @@
 
 Running log for the `production-hardening` branch: one section and one commit per stage.
 
+## Stage 6: Production Plaid safety
+
+Everything that has to be right before a real bank is linked. No new dependencies. Deploy `firestore.rules` with this stage. No new Firestore indexes.
+
+### Added
+- **Duplicate gate** (`lib/services/linkGate.ts`): Link's `onSuccess` metadata is checked against your accounts, including disconnected ones, **before** the public token is exchanged, so a refused link uses no connection. 409 `duplicate_item`, `duplicate_accounts`, or `same_institution` (confirmed with "This is a different login"). After the exchange, Plaid's account list is checked again, and accounts another connection already syncs are skipped.
+- **Reattach on relink:** linking a disconnected bank again links its old account docs back, and re-imported transactions take the old copies' categories instead of duplicating them.
+- **Connect a bank** step (`ConnectBankDialog.tsx`): lists connected banks with each account's last four digits, and "Connections used: N of 10", counted on the server across all users (`plaidUsage/{env}`, `GET /api/plaid/usage`, `PLAID_ITEM_LIMIT`).
+- **Bank connections panel** (`ConnectionsPanel.tsx`): a card per bank with status (Up to date, Importing history…, Needs reconnect, Access expiring, Sync failed, Other environment), last sync, accounts, and Refresh, Manage accounts, Reconnect, Rebuild from Plaid, and Disconnect (typed confirmation, warns that relinking uses another connection).
+- **Manage accounts:** update mode with account selection. Every sync reconciles accounts with Plaid (`lib/services/accountReconcile.ts`): creates docs for newly shared accounts, marks unshared ones `plaidClosed` ("Not shared"), and refreshes balances and Plaid details.
+- **Resumable sync** (`lib/services/syncLoop.ts`): 500 per page, each page committed with its cursor, the loop's starting cursor kept for Plaid's mid-loop restart rule, removals applied when the loop ends, and a 40-second budget after which the route returns `more` and the browser calls again (`lib/plaidSync.ts`).
+- **Freshness:** `importStatus`, `hasMore`, and consent expiry on each bank's status; `useAutoSync` in the signed-in layout syncs on opening when data is over six hours old, every two minutes while importing or after a Refresh, and retries failing banks every 30 minutes. `POST /api/plaid/refresh` (`/transactions/refresh`). Reconnect is offered 14 days before consent expires.
+- **Rebuild from Plaid** (`POST /api/plaid/rebuild`): re-imports a bank's full history from an empty cursor, keeping categories; transactions Plaid no longer has are deleted when it finishes.
+- **OAuth:** `PLAID_REDIRECT_URI` on new and update-mode link tokens, and an `/oauth` page that resumes Link from the saved session.
+- **Environment guard** (`lib/services/plaidEnv.ts`): connections store `plaidEnv`; a server never syncs, changes, or removes a connection from the other environment (409 `wrong_environment`, `itemsOtherEnv`).
+- **Captured from the start:** Plaid categories pinned to version 2; authorized date, merchant id, original description, logo, website, payment channel, and category confidence on each transaction; a daily balance snapshot per linked account (`balanceSnapshots`).
+- **One transactions listener** (`components/TransactionsProvider.tsx`) for the whole visit, instead of one per page.
+- **Export transactions (CSV)** on Settings (`lib/exportCsv.ts`), with a guard against spreadsheet formulas.
+- `CSP_ENFORCE=true` enforces the Content Security Policy; Plaid's logo hosts are allowed.
+- Tests: `linkGate`, `accountReconcile`, `syncLoop`, `plaidEnv`, `connections`, and `exportCsv` unit tests; more `syncPlanner` cases; rules tests for `balanceSnapshots`, `plaidUsage`, and the new account fields.
+
+### Changed
+- Deleting an account never disconnects its bank. It's refused (409 `still_shared`) while the bank still shares the account, and also deletes its balance snapshots.
+- Disconnect keeps each account's Plaid details, so relinking can reattach them, and takes the sync lease.
+- Last Synced shows the bank synced longest ago, with a note when a bank is importing or needs attention. The dashboard shows when each linked balance was last updated.
+- Rate limits: sync 10 per minute (was 6); refresh 4, rebuild 2, and usage 30 are new.
+- `firestore.rules`: the browser can't change `plaidType`, `plaidSubtype`, `plaidName`, or `plaidClosed`; `balanceSnapshots` is read-only.
+- `.env.example`: `PLAID_REDIRECT_URI`, `PLAID_ITEM_LIMIT`, and `CSP_ENFORCE`.
+- `docs/`: Plaid and sync rewritten; the going-live runbook is in Operations; the other pages are updated for this stage.
+
+### Not in this stage
+- Rules engine v2 and transfer pairing (Stage 7); bulk editing, the detail drawer, and the header sync chip (Stage 8); webhooks.
+
 ## Stage 5: Code review fixes
 
 Fixes from the Telos code review. No new dependencies; `next` and `eslint-config-next` move to 16.4.6.

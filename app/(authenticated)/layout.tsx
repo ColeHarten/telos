@@ -10,6 +10,8 @@ import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import SwapHorizOutlinedIcon from "@mui/icons-material/SwapHorizOutlined";
 import TelosLogo from "@/components/telos-logo";
+import { TransactionsProvider } from "@/components/TransactionsProvider";
+import useAutoSync from "@/lib/hooks/useAutoSync";
 import {
   Avatar,
   Box,
@@ -65,6 +67,9 @@ export default function AuthenticatedLayout({
 
     return () => unsubscribe();
   }, [router]);
+
+  // Keeps bank data fresh while Telos is open (see useAutoSync).
+  useAutoSync(user?.uid ?? null);
 
   if (isCheckingAuth) {
     return (
@@ -262,7 +267,7 @@ export default function AuthenticatedLayout({
             pb: 4,
           }}
         >
-          {children}
+          <TransactionsProvider uid={user.uid}>{children}</TransactionsProvider>
         </Container>
 
         <Box

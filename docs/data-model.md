@@ -15,8 +15,10 @@ users/{uid}                          Profile
   settings/app                       App settings
   plaidItems/{itemId}                Bank connections (server only, secret)
   plaidItemStatus/{itemId}           Bank connection status (browser reads)
+  balanceSnapshots/{accountId}_{date}  Daily balance of each linked account (browser reads)
 
 rateLimits/{uid}_{bucket}            Rate-limit counters (server only, top level)
+plaidUsage/{env}                     Connections created, across all users (server only, top level)
 ```
 
 | Collection | Written by | Browser can |
@@ -31,7 +33,9 @@ rateLimits/{uid}_{bucket}            Rate-limit counters (server only, top level
 | `settings` | Browser | Read and write |
 | `plaidItems` | Server | Nothing |
 | `plaidItemStatus` | Server | Read |
+| `balanceSnapshots` | Server | Read |
 | `rateLimits` | Server | Nothing |
+| `plaidUsage` | Server | Nothing |
 
 Timestamps are a mix of Firestore server timestamps (browser writes) and millisecond numbers (server writes). Code that reads them handles both.
 
@@ -59,8 +63,10 @@ For a linked account, the doc id is Plaid's `account_id`. Manual accounts get a 
 | `isManual` | boolean | `true` for manual accounts and for accounts whose bank was disconnected |
 | `isArchived` | boolean | |
 | `isContributionEligible` | boolean | Can be linked from a paycheck deduction |
-| `plaidAccountId`, `plaidItemId` | string or null | Set for linked accounts. Cleared when the bank is disconnected. |
-| `plaidInstitutionId`, `plaidMask` | string or null | Used to spot duplicates when a bank is linked again |
+| `plaidAccountId`, `plaidItemId` | string or null | Set for linked accounts. Cleared when the bank is disconnected. The doc id is the Plaid account id it was created with; after a disconnected bank is reattached, `plaidAccountId` can differ from it. |
+| `plaidInstitutionId`, `plaidMask` | string or null | The bank and last four digits. Kept after a disconnect, to spot duplicates and to reattach the account when the bank is linked again. |
+| `plaidType`, `plaidSubtype`, `plaidName` | string or null | Plaid's account type, subtype, and name (not your rename). Used for duplicate checks. Server only. |
+| `plaidClosed` | boolean | `true` when the bank no longer shares the account ("Not shared"). Server only. |
 | `createdAt`, `updatedAt` | timestamp | |
 
 Balances are positive numbers for both assets and liabilities. `normalBalance` says which way they count toward net worth.
@@ -78,7 +84,15 @@ The doc id is Plaid's `transaction_id`. The server writes every field; the brows
 | `rawName` | string | The bank's original description |
 | `pending` | boolean | |
 | `pendingTransactionId` | string or null | On a posted transaction, the id of its pending version |
-| `category` | object or null | Plaid's category: `{ primary, detailed, confidence_level }` |
+| `category` | object or null | Plaid's personal finance category, version 2: `{ primary, detailed, confidence_level }` |
+| `plaidAccountId`, `plaidItemId` | string | Plaid's account and connection ids |
+| `authorizedDate` | string or null | When the purchase was made, if the bank reports it |
+| `merchantEntityId` | string or null | Plaid's stable id for the merchant |
+| `originalDescription` | string or null | The description exactly as the bank sent it |
+| `logoUrl`, `website` | string or null | The merchant's logo and website |
+| `paymentChannel` | string or null | `online`, `in store`, or `other` |
+| `removedByPlaid` | boolean | `true` once Plaid removes it. Hidden at once and deleted when the sync loop ends. |
+| `plaidSeenAt` | number (ms) | When a sync last received it from Plaid. A rebuild deletes what it didn't see again. |
 | `categoryKind` | string or null | `income`, `expense`, `transfer`, or null (Needs Review) |
 | `categoryId` | string or null | The Telos category |
 | `transferAccountId` | string or null | For transfers, the destination account. Stored on the transaction so it survives if the category is later deleted. |
@@ -163,8 +177,15 @@ One doc per bank connection. The browser has no access at all.
 | `itemId` | string | Plaid's item id |
 | `cursor` | string | Where the next transactions sync starts |
 | `institutionId`, `institutionName` | string or null | |
-| `skippedDuplicateAccountIds` | string[] | Plaid accounts at this bank that Telos ignores: duplicates at link time, or accounts you deleted |
-| `syncLeaseId`, `syncLeaseUntil` | string, number | Present only while a sync is running |
+| `plaidEnv` | string | `sandbox` or `production`. A server never touches a connection from the other environment. |
+| `loopStartCursor` | string | Where the current sync loop began. Plaid requires restarting there if data changes mid-loop. |
+| `pendingRemovalIds` | string[] | Transactions Plaid removed during the current loop, deleted when it ends |
+| `skippedDuplicateAccountIds` | string[] | Plaid accounts at this bank that Telos ignores because another connection already syncs them |
+| `carryOverAccountIds` | string[] | Reattached account docs whose re-imported transactions take the old copies' categories. Cleared once history is complete. |
+| `rebuildStartedAt` | number (ms) or null | Set while a Rebuild from Plaid runs |
+| `consentCheckedAt` | number (ms) | When the consent expiry was last read from Plaid (once a day) |
+| `lastSyncStartedAt` | number (ms) | When a sync last started; the least recent goes first |
+| `syncLeaseId`, `syncLeaseUntil` | string, number | Present only while a sync, rebuild, or disconnect is running |
 | `createdAt` | number (ms) | |
 
 ## `plaidItemStatus/{itemId}` (browser reads)
@@ -178,6 +199,23 @@ What the browser needs to know about each connection, without the secrets.
 | `lastSyncedAt` | timestamp or null | Last successful sync |
 | `lastSyncError` | string or null | Plaid error code from the last failed sync |
 | `lastSyncErrorAt` | timestamp or null | |
+| `plaidEnv` | string | The environment it was linked in |
+| `importStatus` | string | `not_ready`, `initial` (about 30 days in), `historical` (all history in), or `unknown` |
+| `hasMore` | boolean | A sync stopped part way, or a rebuild is pending |
+| `linkedAt` | number (ms) | When the bank was linked |
+| `consentExpiresAt` | string or null | ISO date when the bank's consent runs out, if it has one |
+| `refreshRequestedAt`, `rebuildRequestedAt` | number (ms) | When Refresh or Rebuild was last pressed, so the browser keeps syncing for a while |
+
+## `balanceSnapshots/{accountId}_{date}` (browser reads)
+
+One doc per linked account per day (UTC), written by every sync, so balance history builds up from the day a bank is linked. Plaid can't supply past balances.
+
+| Field | Type | Notes |
+|---|---|---|
+| `accountId` | string | The account doc id |
+| `date` | string | `YYYY-MM-DD` |
+| `current`, `available`, `limit` | number or null | As Plaid reports them |
+| `updatedAt` | number (ms) | |
 
 ## `rateLimits/{uid}_{bucket}` (server only)
 
@@ -186,6 +224,15 @@ What the browser needs to know about each connection, without the secrets.
 | `windowStart` | number (ms) | Start of the current one-minute window |
 | `count` | number | Requests in this window |
 | `expiresAt` | timestamp | Lets an optional Firestore TTL policy clean up old docs |
+
+## `plaidUsage/{env}` (server only)
+
+Counts connections created in each Plaid environment, across all users. It only goes up, because Plaid doesn't give a connection back when it's removed.
+
+| Field | Type | Notes |
+|---|---|---|
+| `itemsCreated` | number | Public tokens exchanged since Stage 6 was deployed. Set it by hand to match the Plaid dashboard if connections were used before. |
+| `updatedAt` | number (ms) | |
 
 ## Indexes
 

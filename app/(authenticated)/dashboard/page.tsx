@@ -17,6 +17,7 @@ import useAuth from "@/lib/hooks/useAuth";
 import useBudget from "@/lib/hooks/useBudget";
 import useCategories from "@/lib/hooks/useCategories";
 import useTransactions from "@/lib/hooks/useTransactions";
+import { toDateOrNull } from "@/lib/connections";
 import { formatCurrency } from "@/lib/utils";
 import PageHeader from "@/components/PageHeader";
 
@@ -52,15 +53,12 @@ function formatLongDate(dateStr: string) {
   }
 }
 
-// Best-effort relative time from a Firestore-Timestamp-like value. Falls back
-// to "Manual" for manual accounts, or nothing for accounts with no timestamp.
+// How long ago a linked account's balance came from the bank; "Manual" for
+// manual accounts, or nothing when no time is known.
 function formatRelativeSync(account: Account): string | null {
-  const raw = account.updatedAt as { toDate?: () => Date; seconds?: number } | undefined;
-  let date: Date | null = null;
-  if (raw?.toDate) date = raw.toDate();
-  else if (typeof raw?.seconds === "number") date = new Date(raw.seconds * 1000);
-
-  if (!date) return account.isManual ? "Manual" : null;
+  if (account.isManual) return "Manual";
+  const date = toDateOrNull(account.balanceUpdatedAt ?? account.updatedAt);
+  if (!date) return null;
 
   const diffMs = Date.now() - date.getTime();
   const minutes = Math.floor(diffMs / 60000);

@@ -3,7 +3,8 @@
 import useAccounts from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
 import PageHeader from "@/components/PageHeader";
-import { authenticatedFetch } from "@/lib/authenticatedFetch";
+import usePlaidAccountLink from "@/lib/hooks/usePlaidAccountLink";
+import { fetchPlaidUsage, runSync, type PlaidUsage } from "@/lib/plaidSync";
 import type { Account, AccountType, NormalBalance } from "@/lib/types/types";
 import { formatCurrency } from "@/lib/utils";
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
@@ -21,17 +22,12 @@ import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import UnarchiveRoundedIcon from "@mui/icons-material/UnarchiveRounded";
 import DeleteForeverRoundedIcon from "@mui/icons-material/DeleteForeverRounded";
-import LinkOffRoundedIcon from "@mui/icons-material/LinkOffRounded";
 import {
   Alert,
   Avatar,
   Box,
   Button,
   Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   IconButton,
   Menu,
   MenuItem,
@@ -49,18 +45,20 @@ import {
   Typography
 } from "@mui/material";
 import ContributionEligibilityPromptDialog from "./ContributionEligibilityPromptDialog";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AccountFormDialog from "./AccountFormDialog";
 import DeleteAccountDialog from "./DeleteAccountDialog";
 import IsolationWarningDialog from "@/components/IsolationWarningDialog";
 import { accountTypeStyles } from "./accountTypes";
-import { PlaidConnectButton, PlaidReconnectButton } from "./plaidLinkButton";
+import ConnectBankDialog from "./ConnectBankDialog";
+import ConnectionsPanel from "./ConnectionsPanel";
+import { LinkConfirmDialog, PlaidReconnectButton } from "./plaidLinkButton";
 
 type ViewFilter = "active" | "archived";
 
 export default function AccountsPage() {
   const { user, authLoading } = useAuth();  
-  const { accounts, accountsLoading, itemsNeedingReauth, addManualAccount, updateAccount, archiveAccount, checkAccountIsolation, deleteAccount, disconnectBank } = useAccounts(user, authLoading);
+  const { accounts, accountsLoading, itemsNeedingReauth, connections, addManualAccount, updateAccount, archiveAccount, checkAccountIsolation, deleteAccount, disconnectBank } = useAccounts(user, authLoading);
 
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,8 +66,9 @@ export default function AccountsPage() {
   const [deleteDialogAccount, setDeleteDialogAccount] = useState<Account | null>(null);
   const [deleteSuccessNotice, setDeleteSuccessNotice] = useState(false);
 
-  const [disconnectDialogAccount, setDisconnectDialogAccount] = useState<Account | null>(null);
-  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [connectDialogOpen, setConnectDialogOpen] = useState(false);
+  const [usage, setUsage] = useState<PlaidUsage | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedEditingAccount, setSelectedEditingAccount] = useState<Account | null>(null);
@@ -82,6 +81,49 @@ export default function AccountsPage() {
   const [contributionPromptAccounts, setContributionPromptAccounts] = useState<{ id: string; name: string }[]>([]);
   const [isSavingContributionPrompt, setIsSavingContributionPrompt] = useState(false);
   const [duplicateNotice, setDuplicateNotice] = useState(0);
+
+  // Plaid connections used so far, for the Connect a bank step and the bank cards.
+  function refreshUsage() {
+    fetchPlaidUsage()
+      .then(setUsage)
+      .catch((usageError: unknown) => console.error(usageError));
+  }
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    fetchPlaidUsage()
+      .then((next) => {
+        if (!cancelled) setUsage(next);
+      })
+      .catch((usageError: unknown) => console.error(usageError));
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  // Connect a bank. The dialog closes as Link opens, because its focus trap blocks Link.
+  const connectLink = usePlaidAccountLink({
+    onAccountsLinked: (linked, skippedDuplicateCount, reattachedCount) => {
+      setContributionPromptAccounts(linked.map((a) => ({ id: a.id, name: a.name })));
+      setDuplicateNotice(skippedDuplicateCount);
+      if (reattachedCount > 0) {
+        setNotice(
+          reattachedCount === 1
+            ? "An account from an earlier connection was reattached with its history."
+            : `${reattachedCount} accounts from an earlier connection were reattached with their history.`
+        );
+      }
+      refreshUsage();
+    },
+    onLinkError: (message) => setError(message),
+    onOpen: () => setConnectDialogOpen(false),
+  });
+
+  function openConnectDialog() {
+    setConnectDialogOpen(true);
+    refreshUsage();
+  }
 
   function closeContributionPrompt() {
     setContributionPromptAccounts([]);
@@ -289,26 +331,6 @@ export default function AccountsPage() {
     }
   }
 
-  const disconnectAccountCount = disconnectDialogAccount?.plaidItemId
-    ? accounts.filter((a) => a.plaidItemId === disconnectDialogAccount.plaidItemId).length
-    : 0;
-
-  async function handleConfirmDisconnect() {
-    const itemId = disconnectDialogAccount?.plaidItemId;
-    if (!itemId) return;
-    try {
-      setIsDisconnecting(true);
-      setError(null);
-      await disconnectBank(itemId);
-    } catch (disconnectError) {
-      console.error(disconnectError);
-      setError(disconnectError instanceof Error ? disconnectError.message : "Could not disconnect the bank.");
-    } finally {
-      setIsDisconnecting(false);
-      setDisconnectDialogAccount(null);
-    }
-  }
-
   function handleOpenRowMenu(event: React.MouseEvent<HTMLElement>, accountId: string) {
     setRowMenuAnchor(event.currentTarget);
     setRowMenuAccountId(accountId);
@@ -319,33 +341,20 @@ export default function AccountsPage() {
     setRowMenuAccountId(null);
   }
 
-  // Fires after a per-row reconnect succeeds. Doesn't need to touch local
-  // state — syncPlaidItem clears needsReauth on the connection's status doc once the
-  // sync completes, and useAccounts' live listener on that collection picks
-  // it up automatically, so the row's warning icon just disappears on its
-  // own once the item is actually healthy again.
-  async function triggerResyncAfterReconnect() {
-    try {
-      await authenticatedFetch("/api/plaid/sync", { method: "POST" });
-    } catch (syncError) {
-      console.error("[AccountsPage] Resync after reconnect failed:", syncError);
-    }
-  }
-
   // Syncs every bank, which also refreshes balances; the account listener shows them.
   const [refreshing, setRefreshing] = useState(false);
   async function handleRefreshBalances() {
     setRefreshing(true);
     setError(null);
     try {
-      const res = await authenticatedFetch("/api/plaid/sync", { method: "POST" });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { message?: string } | null;
-        setError(body?.message ?? "Could not refresh balances.");
+      const summary = await runSync();
+      const problems = summary.itemsNeedingReauth.length + summary.itemsFailed.length;
+      if (problems > 0) {
+        setError(`${problems === 1 ? "A bank" : `${problems} banks`} couldn't sync. See Bank connections below.`);
       }
     } catch (refreshError) {
       console.error(refreshError);
-      setError("Could not refresh balances.");
+      setError(refreshError instanceof Error ? refreshError.message : "Could not refresh balances.");
     } finally {
       setRefreshing(false);
     }
@@ -422,33 +431,23 @@ export default function AccountsPage() {
             }}
           >
             <Box sx={{ px: 1.5, py: 1 }}>
-              <PlaidConnectButton
-                onAccountsLinked={(accounts, skippedDuplicateCount) => {
-                  setContributionPromptAccounts(accounts.map((a) => ({ id: a.id, name: a.name })));
-                  setDuplicateNotice(skippedDuplicateCount);
+              <MenuItem
+                onClick={() => {
+                  setAddMenuAnchor(null);
+                  openConnectDialog();
                 }}
-                onLinkError={(message) => setError(message)}
-                render={({ onClick, disabled, label }) => (
-                  <MenuItem
-                    onClick={() => {
-                      setAddMenuAnchor(null);
-                      onClick();
-                    }}
-                    disabled={disabled}
-                    sx={{ borderRadius: 2, py: 1.25, alignItems: "flex-start", gap: 1.5 }}
-                  >
-                    <Box sx={{ width: 36, height: 36, borderRadius: 2, bgcolor: "#eef2ff", color: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <AccountBalanceRoundedIcon sx={{ fontSize: 20 }} />
-                    </Box>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                        {disabled ? label : "Connect a Bank"}
-                      </Typography>
-                    </Box>
-                    <ChevronRightRoundedIcon sx={{ ml: "auto", color: "text.disabled", flexShrink: 0 }} />
-                  </MenuItem>
-                )}
-              />
+                sx={{ borderRadius: 2, py: 1.25, alignItems: "flex-start", gap: 1.5 }}
+              >
+                <Box sx={{ width: 36, height: 36, borderRadius: 2, bgcolor: "#eef2ff", color: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <AccountBalanceRoundedIcon sx={{ fontSize: 20 }} />
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    Connect a Bank
+                  </Typography>
+                </Box>
+                <ChevronRightRoundedIcon sx={{ ml: "auto", color: "text.disabled", flexShrink: 0 }} />
+              </MenuItem>
 
               <MenuItem
                 onClick={() => {
@@ -570,6 +569,19 @@ export default function AccountsPage() {
         </Paper>
       </Box>
 
+      <ConnectionsPanel
+        connections={connections}
+        accounts={accounts}
+        usage={usage}
+        onDisconnect={async (itemId) => {
+          await disconnectBank(itemId);
+          refreshUsage();
+        }}
+        onError={setError}
+        onNotice={setNotice}
+        onNewAccounts={(added) => setContributionPromptAccounts(added)}
+      />
+
       {/* 3. Accounts Data Grid Core View */}
       <Tabs
         value={viewFilter}
@@ -666,14 +678,18 @@ export default function AccountsPage() {
                         <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
                           <Box component="span">{account.name}</Box>
                           {needsReauth ? (
-                            <PlaidReconnectButton
-                              itemId={account.plaidItemId!}
-                              onSyncSuccess={triggerResyncAfterReconnect}
-                            />
+                            <PlaidReconnectButton itemId={account.plaidItemId!} onLinkError={setError} />
                           ) : account.plaidItemId && account.isArchived ? (
                             <ArchiveRoundedIcon sx={{ fontSize: 14, color: "#94a3b8" }} />
-                          ) : (
+                          ) : account.plaidItemId ? (
                             <SyncRoundedIcon sx={{ fontSize: 14, color: "#94a3b8" }} />
+                          ) : null}
+                          {account.plaidClosed && (
+                            <Chip
+                              label="Not shared"
+                              size="small"
+                              sx={{ height: 20, fontSize: "0.68rem", fontWeight: 600, color: "#b45309", bgcolor: "#fffbeb", borderRadius: 1.5 }}
+                            />
                           )}
                         </Stack>
                       </TableCell>
@@ -719,32 +735,6 @@ export default function AccountsPage() {
           setDeleteSuccessNotice(true);
         }}
       />
-
-      <Dialog open={disconnectDialogAccount !== null} onClose={isDisconnecting ? undefined : () => setDisconnectDialogAccount(null)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem" }}>Disconnect bank?</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" sx={{ color: "#334155" }}>
-            {disconnectAccountCount === 1
-              ? "This account becomes a manual account."
-              : `All ${disconnectAccountCount} accounts from this bank become manual accounts.`}{" "}
-            Transaction history is kept, and balances stop updating. You can link the bank again later.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
-          <Button onClick={() => setDisconnectDialogAccount(null)} disabled={isDisconnecting} sx={{ textTransform: "none", fontWeight: 700 }}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleConfirmDisconnect}
-            color="error"
-            variant="contained"
-            disabled={isDisconnecting}
-            sx={{ textTransform: "none", fontWeight: 700 }}
-          >
-            {isDisconnecting ? "Disconnecting..." : "Disconnect"}
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <IsolationWarningDialog
         open={isolationCheckAccount !== null}
@@ -795,6 +785,34 @@ export default function AccountsPage() {
         </Alert>
       </Snackbar>
 
+      <ConnectBankDialog
+        open={connectDialogOpen}
+        onClose={() => setConnectDialogOpen(false)}
+        connections={connections}
+        accounts={accounts}
+        usage={usage}
+        link={connectLink}
+      />
+
+      <LinkConfirmDialog link={connectLink} />
+
+      <Snackbar open={connectLink.finishing} anchorOrigin={{ vertical: "bottom", horizontal: "right" }}>
+        <Alert severity="info" variant="filled" sx={{ borderRadius: 2.5 }}>
+          Connecting your bank...
+        </Alert>
+      </Snackbar>
+
+      <Snackbar
+        open={notice !== null}
+        autoHideDuration={6000}
+        onClose={() => setNotice(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+      >
+        <Alert severity="success" variant="filled" onClose={() => setNotice(null)} sx={{ borderRadius: 2.5 }}>
+          {notice}
+        </Alert>
+      </Snackbar>
+
       {/* Row context Action options menu popup */}
       <Menu anchorEl={rowMenuAnchor} open={Boolean(rowMenuAnchor)} onClose={handleCloseRowMenu}>
         {rowMenuAccount && !rowMenuAccount.isArchived && (
@@ -816,17 +834,6 @@ export default function AccountsPage() {
               <UnarchiveRoundedIcon sx={{ fontSize: 16 }} /> Restore
             </MenuItem>
           )
-        )}
-        {rowMenuAccount?.plaidItemId && (
-          <MenuItem
-            onClick={() => {
-              setDisconnectDialogAccount(rowMenuAccount);
-              handleCloseRowMenu();
-            }}
-            sx={{ gap: 1 }}
-          >
-            <LinkOffRoundedIcon sx={{ fontSize: 16 }} /> Disconnect bank
-          </MenuItem>
         )}
         {rowMenuAccount && rowMenuAccount.isArchived && (
           <MenuItem

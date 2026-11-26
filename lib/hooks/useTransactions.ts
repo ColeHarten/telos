@@ -1,72 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTransactionsStore } from "@/components/TransactionsProvider";
 import { db } from "@/lib/firebaseClient";
-import {
-  collection,
-  doc,
-  getDocs,
-  increment,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-  where,
-} from "firebase/firestore";
-import type { PersonalFinanceCategory } from "plaid";
+import { monthsSince } from "@/lib/transactionDocs";
+import { doc, increment, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import type { AuthUser, Account, Transaction, CategoryKind } from "../types/types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function resolveDisplayName(merchantName: string | null, rawName: string): string {
-  return merchantName ?? rawName;
-}
-
 /**
- * Reconciles the raw assignment fields read from Firestore into a valid
- * (categoryKind, categoryId) pair.
+ * Strict invariant check used before writing an assignment. An invalid
+ * combination reaching this point means our own UI code has a bug, so it
+ * fails loudly.
  *
- * This is a *soft* check — Firestore data isn't fully under our control (a
- * bad write, manual console edits), so rather than throwing and taking down
- * the whole transaction list over one bad doc, an inconsistent record is
- * logged and coerced to unassigned (both fields undefined).
- */
-function normalizeAssignment(
-  rawType: unknown,
-  rawId: unknown,
-  context: string
-): { categoryKind: CategoryKind | undefined; categoryId: string | undefined } {
-  const categoryKind = (typeof rawType === "string" ? rawType : undefined) as CategoryKind | undefined;
-  const categoryId = typeof rawId === "string" && rawId.length > 0 ? rawId : undefined;
-
-  const hasId = Boolean(categoryId);
-  const isConsistent = (!categoryKind && !hasId) || (!!categoryKind && hasId);
-
-  if (!isConsistent) {
-    console.warn(
-      `[useTransactions] Inconsistent assignment for ${context}: type="${categoryKind}", id="${categoryId ?? "none"}". Falling back to unassigned.`
-    );
-    return { categoryKind: undefined, categoryId: undefined };
-  }
-
-  return { categoryKind, categoryId };
-}
-
-/**
- * Strict invariant check used before writing an assignment. Unlike
- * normalizeAssignment, this throws — an invalid combination reaching this
- * point means the caller (our own UI code) has a bug, not that Firestore has
- * bad data, so it should fail loudly during development.
- *
- * transferAccountId is validated here (rather than categoryId) against the
- * transaction's own origin account, since categoryId for a "transfer"
- * assignment is a Category doc id, not an Account id — see
- * updateTransactionAssignment for where transferAccountId is resolved.
+ * transferAccountId is validated against the transaction's own origin
+ * account: a transfer to the account it came from is meaningless.
  */
 function assertValidAssignment(
   categoryKind: CategoryKind | undefined,
@@ -97,80 +44,11 @@ function assertValidAssignment(
   }
 }
 
-// Raw fields of a transaction doc. The account name is joined later, in memory.
-function toTransaction(
-  id: string,
-  data: {
-    accountId?: string;
-    amount?: number;
-    date?: string;
-    merchantName?: string | null;
-    rawName?: string;
-    pending?: boolean;
-    category?: PersonalFinanceCategory | null;
-    categoryKind?: CategoryKind | undefined;
-    categoryId?: string | undefined;
-    transferAccountId?: string | null;
-  }
-): Omit<Transaction, "originAccName"> {
-  const originAccId = data.accountId || "unlinked";
-  const { categoryKind, categoryId } = normalizeAssignment(
-    data.categoryKind,
-    data.categoryId,
-    `transaction ${id}`
-  );
-
-  return {
-    id,
-    originAccId,
-    displayName: resolveDisplayName(data.merchantName ?? null, data.rawName ?? ""),
-    amount: data.amount ?? 0,
-    date: data.date ?? "",
-    pending: Boolean(data.pending),
-    plaidCategoryPrimary: data.category?.primary ?? null,
-    plaidCategoryDetailed: data.category?.detailed ?? null,
-    categoryKind,
-    categoryId,
-    // Defensive: only meaningful for "transfer" — force null for any other
-    // kind (or for unassigned), regardless of what's stored, so a stale or
-    // hand-edited field can never leak into the wrong place.
-    transferAccountId: categoryKind === "transfer" ? data.transferAccountId ?? null : null,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
-
-type RawTransaction = Omit<Transaction, "originAccName">;
-
-// Months of history loaded at first; "Load older transactions" adds more.
-const INITIAL_MONTHS = 24;
-const MONTHS_PER_PAGE = 12;
-
-/** First day of the month `months` months ago, as YYYY-MM-DD (transaction dates use this format). */
-function cutoffDate(months: number): string {
-  const now = new Date();
-  const cutoff = new Date(now.getFullYear(), now.getMonth() - months, 1);
-  const month = String(cutoff.getMonth() + 1).padStart(2, "0");
-  return `${cutoff.getFullYear()}-${month}-01`;
-}
-
-/** Whole months from a "YYYY-MM" key to the current month (0 for this month or later). */
-function monthsSince(monthKey: string | undefined): number {
-  if (!monthKey) return 0;
-  const [year, month] = monthKey.split("-").map(Number);
-  if (!year || !month) return 0;
-  const now = new Date();
-  return Math.max(0, (now.getFullYear() - year) * 12 + (now.getMonth() + 1 - month));
-}
-
-type Loaded = { key: string; items: RawTransaction[]; error: string | null };
-
 /**
- * Live transactions for the last 24 months, plus 12 more per "load older".
- * sinceMonthKey widens the window so that month is always covered, which the
- * Budgets page and Dashboard use for the month on screen.
+ * Transactions from the session's shared listener (see TransactionsProvider),
+ * with account names joined in. The last 24 months load first, plus 12 more
+ * per "load older". sinceMonthKey widens the window so that month is always
+ * covered, which the Budgets page and Dashboard use for the month on screen.
  */
 export default function useTransactions(
   user: AuthUser | null,
@@ -178,70 +56,19 @@ export default function useTransactions(
   accounts: Account[],
   sinceMonthKey?: string
 ) {
-  const uid = authLoading ? null : user?.uid ?? null;
-  const [pagedMonths, setMonths] = useState(INITIAL_MONTHS);
-  const months = Math.max(pagedMonths, monthsSince(sinceMonthKey));
-  const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [olderCheck, setOlderCheck] = useState<{ key: string; hasOlder: boolean } | null>(null);
+  const store = useTransactionsStore();
+  const { ensureMonths } = store;
+  const neededMonths = monthsSince(sinceMonthKey);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const key = uid ? `${uid}:${months}` : null;
-
-  // Live listener over the loaded window, so syncs, edits in other tabs, and
-  // server-side rules show up without a refresh.
   useEffect(() => {
-    if (!uid) return;
-    const listenerKey = `${uid}:${months}`;
-    const q = query(
-      collection(db, "users", uid, "transactions"),
-      where("date", ">=", cutoffDate(months)),
-      orderBy("date", "desc")
-    );
-    return onSnapshot(
-      q,
-      (snapshot) => {
-        const items = snapshot.docs.map((docSnap) =>
-          toTransaction(docSnap.id, docSnap.data() as Parameters<typeof toTransaction>[1])
-        );
-        setLoaded({ key: listenerKey, items, error: null });
-      },
-      (err) => {
-        console.error("[useTransactions] Listener error:", err);
-        setLoaded({ key: listenerKey, items: [], error: "Failed to load transactions." });
-      }
-    );
-  }, [uid, months]);
+    ensureMonths(neededMonths);
+  }, [ensureMonths, neededMonths]);
 
-  // Whether anything exists before the loaded window.
-  useEffect(() => {
-    if (!uid) return;
-    const checkKey = `${uid}:${months}`;
-    const q = query(
-      collection(db, "users", uid, "transactions"),
-      where("date", "<", cutoffDate(months)),
-      orderBy("date", "desc"),
-      limit(1)
-    );
-    getDocs(q)
-      .then((snap) => setOlderCheck({ key: checkKey, hasOlder: !snap.empty }))
-      .catch((err: unknown) => {
-        console.error("[useTransactions] Could not check for older transactions:", err);
-        setOlderCheck({ key: checkKey, hasOlder: false });
-      });
-  }, [uid, months]);
-
-  const current = loaded && loaded.key === key ? loaded : null;
-  // While a wider window loads, keep showing the previous one.
-  const sameUser = Boolean(uid && loaded?.key.startsWith(`${uid}:`));
-  const rawTransactions = useMemo(
-    () => current?.items ?? (sameUser && loaded ? loaded.items : []),
-    [current, sameUser, loaded]
-  );
-  const transactionsLoading = authLoading || (Boolean(uid) && !current);
-  const hasOlderTransactions = Boolean(olderCheck && olderCheck.key === key && olderCheck.hasOlder);
-  const transactionsError = actionError ?? current?.error ?? null;
-
-  const loadOlderTransactions = useCallback(() => setMonths((m) => m + MONTHS_PER_PAGE), []);
+  const rawTransactions = store.items;
+  // Until the window covers the month on screen, its totals would be wrong.
+  const transactionsLoading = authLoading || store.loading || neededMonths > store.months;
+  const transactionsError = actionError ?? store.error;
 
   const accountNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -356,8 +183,8 @@ export default function useTransactions(
     transactionsLoading,
     transactionsError,
     setTransactionsError: setActionError,
-    hasOlderTransactions,
-    loadOlderTransactions,
+    hasOlderTransactions: store.hasOlder,
+    loadOlderTransactions: store.loadOlder,
     updateTransactionAssignment,
   };
 }

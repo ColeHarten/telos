@@ -92,3 +92,7 @@ The browser checks these before saving, and the Firestore rules limit which fiel
 - A category kind needs a category id, and a category id needs a kind.
 - A transfer needs a destination account, and it can't be the account the transaction came from.
 - Clearing an assignment sets all three fields to null.
+
+## Plaid's category version
+
+Every sync asks for version 2 of Plaid's personal finance categories, so the codes Telos stores and learns from don't change underneath it. Version 2 adds codes version 1 lacks, such as `LOAN_DISBURSEMENTS_OTHER_DISBURSEMENT` and `TRANSFER_IN_WIRE`.

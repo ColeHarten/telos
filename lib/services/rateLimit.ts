@@ -11,11 +11,14 @@ export type RateLimitRule = {
 };
 
 export const RATE_LIMITS = {
-  sync: { bucket: "sync", limit: 6, windowSeconds: 60 },
+  sync: { bucket: "sync", limit: 10, windowSeconds: 60 },
   linkToken: { bucket: "link-token", limit: 10, windowSeconds: 60 },
   exchangeToken: { bucket: "exchange-token", limit: 5, windowSeconds: 60 },
   disconnect: { bucket: "disconnect", limit: 10, windowSeconds: 60 },
   deleteAccount: { bucket: "delete-account", limit: 10, windowSeconds: 60 },
+  refresh: { bucket: "refresh", limit: 4, windowSeconds: 60 },
+  rebuild: { bucket: "rebuild", limit: 2, windowSeconds: 60 },
+  usage: { bucket: "usage", limit: 30, windowSeconds: 60 },
 } satisfies Record<string, RateLimitRule>;
 
 export type RateLimitResult = { allowed: true } | { allowed: false; retryAfterSeconds: number };

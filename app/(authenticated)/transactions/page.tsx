@@ -1,6 +1,7 @@
 "use client";
 
-import { authenticatedFetch } from "@/lib/authenticatedFetch";
+import { syncStatusCaption } from "@/lib/connections";
+import { runSync } from "@/lib/plaidSync";
 import { isTransfer } from "@/lib/budgetCalculations";
 import { useAccounts } from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
@@ -230,7 +231,7 @@ function describeSyncProblems(body: SyncResponse | null): string | null {
 
 export default function TransactionsPage() {
   const { user, authLoading } = useAuth();
-  const { accounts = [], lastSyncedAt } = useAccounts(user, authLoading);
+  const { accounts = [], lastSyncedAt, connections } = useAccounts(user, authLoading);
   const {
     transactions = [],
     transactionsLoading,
@@ -293,11 +294,13 @@ export default function TransactionsPage() {
     [dateRangePreset, customDateFrom, customDateTo]
   );
 
-  // Live "Last Synced": the most recent sync across connections, from useAccounts.
+  // Live "Last Synced": the bank synced longest ago, so a stuck bank isn't hidden by the others.
   const { dateLabel: lastSyncedDateLabel, timeLabel: lastSyncedTimeLabel } = useMemo(
     () => formatLastSynced(lastSyncedAt),
     [lastSyncedAt]
   );
+  // Under Last Synced: banks that need attention, or an import still running.
+  const syncCaption = syncStatusCaption(connections);
 
   // Top-tier filters: account + date range. These scope both the summary cards
   // and the list below, mirroring how account selection already works.
@@ -383,9 +386,7 @@ export default function TransactionsPage() {
     setTransactionsError(null);
 
     try {
-      const res = await authenticatedFetch("/api/plaid/sync", { method: "POST" });
-      const body = (await res.json().catch(() => null)) as SyncResponse | null;
-      if (!res.ok) throw new Error(body?.message ?? "Sync failed. Please try again.");
+      const body = await runSync();
 
       // New transactions and Last Synced arrive through the live listeners.
       const problem = describeSyncProblems(body);
@@ -742,6 +743,14 @@ export default function TransactionsPage() {
               {!syncing && lastSyncedTimeLabel && (
                 <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: 0.25, fontSize: "0.75rem" }}>
                   {lastSyncedTimeLabel}
+                </Typography>
+              )}
+              {!syncing && syncCaption && (
+                <Typography
+                  variant="caption"
+                  sx={{ color: syncCaption.attention ? "#dc2626" : "#2563eb", display: "block", mt: 0.25, fontSize: "0.75rem", fontWeight: 600 }}
+                >
+                  {syncCaption.text}
                 </Typography>
               )}
             </Box>

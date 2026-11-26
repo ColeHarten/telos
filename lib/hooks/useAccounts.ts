@@ -1,6 +1,7 @@
 "use client";
 
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
+import { oldestSync, toPlaidConnection } from "@/lib/connections";
 import { db } from "@/lib/firebaseClient";
 import {
   collection,
@@ -15,43 +16,31 @@ import {
   where,
 } from "firebase/firestore";
 import { useCallback, useEffect, useState } from "react";
-import type { Account, AccountType } from "../types/types";
+import type { Account, AccountType, PlaidConnection } from "../types/types";
 import type { AuthUser } from "../types/types";
 
 export type AccountIsolationCheck = {
   isIsolated: boolean;
   reasons: string[];
-  // Informational only — never blocks deletion. Deleting an account that's
-  // still connected to Plaid also disconnects that bank link (see
-  // deleteAccount), so the UI can warn the user about that without treating
-  // it as something they need to fix first.
+  // The account's bank still shares it. Archiving is fine; deleting waits
+  // until it's no longer shared (see DeleteAccountDialog), because the next
+  // sync would bring it back.
   hasActivePlaidConnection: boolean;
   // Informational only. Deleting an account also deletes its own transactions.
   hasTransactionHistory: boolean;
 };
-
-// Best-effort conversion of a Firestore-Timestamp-like value (or a raw
-// epoch-ms number) into a JS Date. Mirrors the pattern already used for
-// account.updatedAt in dashboard/page.tsx's formatRelativeSync.
-function toDateOrNull(raw: unknown): Date | null {
-  if (!raw) return null;
-  const value = raw as { toDate?: () => Date; seconds?: number };
-  if (typeof value.toDate === "function") return value.toDate();
-  if (typeof value.seconds === "number") return new Date(value.seconds * 1000);
-  if (typeof raw === "number") return new Date(raw);
-  return null;
-}
 
 export function useAccounts(user: AuthUser | null, authLoading: boolean) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [itemsNeedingReauth, setItemsNeedingReauth] = useState<Set<string>>(new Set());
-  // Most recent lastSyncedAt across all of the user's plaidItemStatus docs, or
-  // null if no item has ever completed a sync. Powers the "Last Synced"
-  // card on the Transactions page — see syncService.ts's syncPlaidItem,
-  // which is the only place lastSyncedAt is written.
+  // The oldest of the banks' latest syncs, or null if none has synced, so one
+  // stuck bank isn't hidden by the others. Powers "Last Synced" on the
+  // Transactions page; syncService.ts writes lastSyncedAt.
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  // One per bank connection, from plaidItemStatus, sorted by bank name.
+  const [connections, setConnections] = useState<PlaidConnection[]>([]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -87,6 +76,9 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
             plaidAccountId: data.plaidAccountId ?? null,
             plaidItemId: data.plaidItemId ?? null,
             plaidMask: data.plaidMask ?? null,
+            plaidInstitutionId: data.plaidInstitutionId ?? null,
+            plaidClosed: data.plaidClosed === true,
+            balanceUpdatedAt: typeof data.balanceUpdatedAt === "number" ? data.balanceUpdatedAt : null,
             createdAt: data.createdAt,
             updatedAt: data.updatedAt,
           } satisfies Account;
@@ -116,14 +108,15 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
   }, [authLoading, user]);
 
   // Live listener on plaidItemStatus: one doc per bank connection, written by
-  // the sync job. needsReauth drives the reconnect prompt, and lastSyncedAt is
-  // the most recent across connections.
+  // the sync job. It drives the connection cards, the reconnect prompts, and
+  // Last Synced.
   useEffect(() => {
     if (authLoading) return;
 
     if (!user) {
       setItemsNeedingReauth(new Set());
       setLastSyncedAt(null);
+      setConnections([]);
       return;
     }
 
@@ -132,21 +125,12 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
     const unsubscribeItems = onSnapshot(
       itemsQuery,
       (snapshot) => {
-        const next = new Set<string>();
-        let latestSyncedAt: Date | null = null;
-
-        snapshot.docs.forEach((d) => {
-          const data = d.data();
-          if (data.needsReauth === true) next.add(d.id);
-
-          const syncedAt = toDateOrNull(data.lastSyncedAt);
-          if (syncedAt && (!latestSyncedAt || syncedAt > latestSyncedAt)) {
-            latestSyncedAt = syncedAt;
-          }
-        });
-
-        setItemsNeedingReauth(next);
-        setLastSyncedAt(latestSyncedAt);
+        const next = snapshot.docs
+          .map((d) => toPlaidConnection(d.id, d.data()))
+          .sort((a, b) => (a.institutionName ?? "").localeCompare(b.institutionName ?? ""));
+        setConnections(next);
+        setItemsNeedingReauth(new Set(next.filter((c) => c.needsReauth).map((c) => c.itemId)));
+        setLastSyncedAt(oldestSync(next));
       },
       (err) => {
         // Non-fatal — reauth indicators and sync-status are supplementary;
@@ -277,7 +261,7 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
       return {
         isIsolated: reasons.length === 0,
         reasons,
-        hasActivePlaidConnection: Boolean(target?.plaidItemId),
+        hasActivePlaidConnection: Boolean(target?.plaidItemId) && !target?.plaidClosed,
         hasTransactionHistory: !originSnap.empty,
       };
     },
@@ -321,6 +305,7 @@ export function useAccounts(user: AuthUser | null, authLoading: boolean) {
     error,
     itemsNeedingReauth,
     lastSyncedAt,
+    connections,
     addManualAccount,
     updateAccount,
     archiveAccount,

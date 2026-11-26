@@ -16,6 +16,11 @@ import {
 } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 
+// A linked account its bank still shares would come straight back at the next
+// sync, so it has to stop being shared first.
+const STILL_SHARED_REASON =
+  "Its bank still shares it with Telos. Stop sharing it with Manage accounts on the bank's card (Accounts page), or disconnect the bank.";
+
 export type IsolationCheck = {
   isIsolated: boolean;
   reasons: string[];
@@ -72,7 +77,12 @@ export default function DeleteAccountDialog({
 
     checkIsolation.current(accountId)
       .then((result) => {
-        if (!cancelled) setCheckResult(result);
+        if (cancelled) return;
+        setCheckResult(
+          result.hasActivePlaidConnection
+            ? { ...result, isIsolated: false, reasons: [...result.reasons, STILL_SHARED_REASON] }
+            : result
+        );
       })
       .catch((err) => {
         console.error(err);
@@ -138,12 +148,6 @@ export default function DeleteAccountDialog({
               This permanently deletes <strong>{accountName}</strong>. This cannot be undone — all of its
               history will be gone for good.
             </Typography>
-            {checkResult?.hasActivePlaidConnection && (
-                <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                    This account is still connected to your bank. Deleting it stops syncing it, and disconnects
-                    the bank if no other account uses it.
-                </Alert>
-            )}
             <Typography variant="body2" color="text.secondary">
               Type <strong>{accountName}</strong> to confirm.
             </Typography>

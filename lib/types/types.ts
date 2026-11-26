@@ -35,8 +35,33 @@ export type Account = {
   // against existing accounts without an extra join. Manual accounts write
   // this as null (see useAccounts.addManualAccount).
   plaidInstitutionId?: string | null;
+  /** The bank stopped sharing this account (Manage accounts, or closed at the bank). It keeps its history. */
+  plaidClosed?: boolean;
+  /** When the server last wrote this account's balance from Plaid, in epoch milliseconds. */
+  balanceUpdatedAt?: number | null;
   createdAt?: unknown;
   updatedAt?: unknown;
+};
+
+/** How much of a bank's history Plaid has delivered (its transactions_update_status). */
+export type PlaidImportStatus = "not_ready" | "initial" | "historical" | "unknown";
+
+/** A bank connection as the browser sees it, from its plaidItemStatus doc. */
+export type PlaidConnection = {
+  itemId: string;
+  institutionName: string | null;
+  plaidEnv: "sandbox" | "production";
+  needsReauth: boolean;
+  lastSyncedAt: Date | null;
+  lastSyncError: string | null;
+  lastSyncErrorAt: Date | null;
+  importStatus: PlaidImportStatus;
+  /** The last sync stopped part way; the next one continues. */
+  hasMore: boolean;
+  linkedAt: number | null;
+  consentExpiresAt: Date | null;
+  refreshRequestedAt: number | null;
+  rebuildRequestedAt: number | null;
 };
 
 export type CategoryKind = "income" | "expense" | "transfer";

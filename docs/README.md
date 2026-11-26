@@ -2,7 +2,7 @@
 
 Telos is a personal budgeting app. You link bank accounts through Plaid (or add accounts by hand), sort transactions into categories, plan a monthly budget, and track cash flow and net worth.
 
-It is a Next.js 16 app (App Router) on Firebase Auth and Firestore, with Plaid for bank data and MUI for the interface. Plaid currently runs in **sandbox** mode, which uses test banks only.
+It is a Next.js 16 app (App Router) on Firebase Auth and Firestore, with Plaid for bank data and MUI for the interface. Plaid runs in **sandbox** mode (test banks only) unless `PLAID_ENV` is `production`. Read [Going live with production Plaid](operations.md#going-live-with-production-plaid) before linking a real bank.
 
 ## Start here
 
@@ -25,16 +25,17 @@ It is a Next.js 16 app (App Router) on Firebase Auth and Firestore, with Plaid f
 1. **Every user's data lives under `users/{uid}` in Firestore.** No user can read another user's data.
 2. **The browser reads and writes most data directly**, through React hooks in `lib/hooks/`. `firestore.rules` decides what it may touch.
 3. **Anything involving Plaid or a secret runs on the server**, in the API routes under `app/api/`. The browser never sees a Plaid access token.
-4. **Sync is on demand.** Transactions update when you press Sync, refresh balances, link a bank, or reconnect one. There are no webhooks or scheduled syncs yet.
+4. **Telos syncs while it's open.** It syncs on opening when a bank's data is over six hours old, every two minutes while a bank imports its history, and whenever you press Sync or Refresh. There are no webhooks yet, so nothing syncs while Telos is closed.
 5. **A category you set is never overwritten.** Sync only fills in categories for transactions that don't have one.
 
 ## Glossary
 
 | Term | Meaning |
 |---|---|
-| **Item** or **connection** | One login at one bank, as Plaid sees it. One item can hold several accounts. |
+| **Item** or **connection** | One login at one bank, as Plaid sees it. One item can hold several accounts. Each new one uses one of your Plaid plan's connections, and removing it doesn't give that back. |
 | **Linked account** | An account that syncs from Plaid. |
 | **Manual account** | An account you added by hand, or a linked account whose bank you disconnected. |
+| **Not shared** | A linked account the bank no longer shares with Telos. It keeps its history, and Manage accounts can share it again. |
 | **Category kind** | `income`, `expense`, or `transfer`. |
 | **Transfer** | Money moving between your own accounts, such as a savings deposit or a credit-card payment. Transfers are left out of cash flow. |
 | **Automation** | A rule that sends every transaction from one merchant to one category. |

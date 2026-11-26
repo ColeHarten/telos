@@ -17,7 +17,13 @@ They cover the pure logic, with no database or network.
 
 | File | Covers |
 |---|---|
-| `syncPlanner.test.ts` | New transactions get rules; repeat runs don't duplicate; categories are never overwritten; uncategorized modified transactions get the rules again; pending categories carry to posted; skipped accounts are ignored |
+| `syncPlanner.test.ts` | New transactions get rules; repeat runs and repeated pages don't duplicate; categories are never overwritten; uncategorized modified transactions get the rules again; pending categories carry to posted; removals are marked, then undone if the transaction comes back; reattached accounts and re-imported transactions keep their categories |
+| `syncLoop.test.ts` | Paging with the cursor saved after each page, stopping on time and resuming, restarting where the loop began after a mid-loop change, giving up after repeated restarts, and Plaid's update status |
+| `linkGate.test.ts` | Duplicate checks before the exchange: a fully connected login, a partly connected one, a second login at a connected bank, archived matches, renamed accounts, a card and a bank account with the same last four, and a disconnected bank |
+| `accountReconcile.test.ts` | New accounts, accounts shared later, accounts no longer shared (and shared again), skipped accounts, and reattaching a disconnected bank's accounts |
+| `connections.test.ts` | Bank status, consent warnings, sync age, Last Synced, and when the browser syncs on its own |
+| `plaidEnv.test.ts` | Reading `PLAID_ENV` and spotting connections from the other environment |
+| `exportCsv.test.ts` | CSV quoting, the formula guard, and the export's order and signs |
 | `categorization.test.ts` | `normalizeMerchant`, `resolveWinner` thresholds, `readVotes` with old and new formats, `applyRules` order and fallthrough, and paycheck math |
 | `budgetCalculations.test.ts` | Month helpers, refunds netting, the zero floor, archived actuals, transfer detection, cash flow, and net worth |
 | `encryption.test.ts` | Round trip, tamper detection, the old format, key rotation, and key length checks |
@@ -31,9 +37,9 @@ Server modules start with `import "server-only"`, which throws outside Next.js. 
 | Area | Checks |
 |---|---|
 | Ownership | You can read your data; another user and a signed-out user can't |
-| Server-only data | `plaidItems` and `rateLimits` are fully denied; `plaidItemStatus` is read-only |
+| Server-only data | `plaidItems`, `rateLimits`, and `plaidUsage` are fully denied; `plaidItemStatus` and `balanceSnapshots` are read-only |
 | Transactions | Category fields can change; Plaid fields can't; no create or delete |
-| Accounts | Only manual accounts can be created; a manual balance can be edited; a linked account's balance and Plaid fields can't; no delete |
+| Accounts | Only manual accounts can be created; a manual balance can be edited; a linked account's balance, Plaid fields, and what Plaid reports about it can't; no delete |
 | Categories | `kind` must be `income`, `expense`, or `transfer` |
 
 **Change `firestore.rules`? Add a test** for the new behavior in this file, both an allowed case and a denied one.
@@ -61,10 +67,14 @@ Any failing step fails the run. Click the failed step in the **Actions** tab to 
 Before a release, run through this on sandbox with `user_transactions_dynamic`:
 
 1. Sign in with Google.
-2. Link a bank. Accounts appear at once, transactions a few seconds later.
-3. Press Sync. Last Synced updates.
-4. Categorize a transaction and accept the automation offer.
-5. Set a budget line, reload, and check it stuck.
-6. Archive an account, check it leaves net worth, then restore it.
-7. Disconnect the bank. Its accounts become manual with history kept.
-8. Archive one of those accounts and delete it permanently.
+2. Link a bank. Accounts appear at once under a card for the bank, which says "Importing history…"; transactions follow within seconds.
+3. Link the same test user at the same bank again. Telos refuses before exchanging anything, and Connections used doesn't change.
+4. Press Manage accounts on the card, stop sharing one account, then share it again. It shows "Not shared", then syncs again.
+5. Press Sync, then Refresh on the card, then Rebuild from Plaid in its menu. Categories survive the rebuild.
+6. Categorize a transaction and accept the automation offer.
+7. Set a budget line, reload, and check it stuck.
+8. Export transactions from Settings and open the file.
+9. Archive an account, check it leaves net worth, then restore it.
+10. Disconnect the bank (type DISCONNECT). Its accounts become manual with history kept. Link it again: the accounts come back as linked, with their categories.
+11. Archive an account at a disconnected bank and delete it permanently.
+12. Sign in with a second Google account and check it sees none of the first one's data.

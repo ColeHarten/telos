@@ -51,12 +51,19 @@ service cloud.firestore {
 
         // Plaid links, and balances on linked accounts, belong to the server.
         allow update: if isOwner(uid)
-          && !changedKeys().hasAny(['isManual', 'plaidAccountId', 'plaidItemId', 'plaidInstitutionId', 'plaidInstitutionName', 'plaidMask'])
+          && !changedKeys().hasAny(['isManual', 'plaidAccountId', 'plaidItemId', 'plaidInstitutionId', 'plaidInstitutionName',
+                                     'plaidMask', 'plaidType', 'plaidSubtype', 'plaidName', 'plaidClosed'])
           && (resource.data.get('isManual', true) == true
               || !changedKeys().hasAny(['startingBalance', 'currentBalance', 'balanceUpdatedAt']));
 
         // Deleting an account also deletes its transactions, so it runs on the server.
         allow delete: if false;
+      }
+
+      // One balance per linked account per day, written by the sync job.
+      match /balanceSnapshots/{snapshotId} {
+        allow read: if isOwner(uid);
+        allow write: if false;
       }
 
       match /categories/{categoryId} {
@@ -85,6 +92,6 @@ service cloud.firestore {
       }
     }
 
-    // Top-level collections such as rateLimits have no rule, so browsers are denied.
+    // Top-level collections (rateLimits, plaidUsage) have no rule, so browsers are denied.
   }
 }

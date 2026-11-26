@@ -1,59 +1,55 @@
 "use client";
 
-import usePlaidAccountLink from "@/lib/hooks/usePlaidAccountLink";
-import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
+import usePlaidAccountLink, { type PlaidAccountLink } from "@/lib/hooks/usePlaidAccountLink";
 import SyncProblemRoundedIcon from "@mui/icons-material/SyncProblemRounded";
-import { Button, IconButton, Tooltip } from "@mui/material";
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Tooltip, Typography } from "@mui/material";
 
-type PlaidConnectButtonProps = {
-  onAccountsLinked?: Parameters<typeof usePlaidAccountLink>[0]["onAccountsLinked"];
-  onLinkError?: Parameters<typeof usePlaidAccountLink>[0]["onLinkError"];
-  render?: (trigger: ReturnType<typeof usePlaidAccountLink>) => React.ReactNode;
-};
-
-export function PlaidConnectButton({ onAccountsLinked, onLinkError, render }: PlaidConnectButtonProps) {
-  const trigger = usePlaidAccountLink({ onAccountsLinked, onLinkError });
-
-  if (render) return <>{render(trigger)}</>;
-
+/**
+ * Shown when Link finished at a bank that's already connected. Nothing has
+ * been used up yet: the public token is only exchanged if the user confirms.
+ */
+export function LinkConfirmDialog({ link }: { link: PlaidAccountLink }) {
   return (
-    <Button
-      variant="contained"
-      onClick={trigger.onClick}
-      disabled={trigger.disabled}
-      startIcon={<AccountBalanceIcon />}
-      sx={{
-        textTransform: "none",
-        fontWeight: 600,
-        fontSize: "15px",
-        padding: "10px 20px",
-        borderRadius: "8px",
-        boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-        backgroundColor: "#000000",
-        "&:hover": { backgroundColor: "#333333" },
-        "&.Mui-disabled": { backgroundColor: "#e0e0e0" },
-      }}
-    >
-      {trigger.label}
-    </Button>
+    <Dialog open={link.confirmation !== null} onClose={link.cancelConfirmation} maxWidth="xs" fullWidth>
+      <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem" }}>Already connected</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" sx={{ color: "#334155" }}>
+          {link.confirmation?.message}
+        </Typography>
+        <Typography variant="body2" sx={{ color: "#334155", mt: 1.5 }}>
+          Continuing uses one of your Plaid connections.
+        </Typography>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
+        <Button onClick={link.cancelConfirmation} sx={{ textTransform: "none", fontWeight: 700 }}>
+          Cancel
+        </Button>
+        <Button
+          onClick={link.confirmDifferentLogin}
+          variant="contained"
+          disableElevation
+          sx={{ textTransform: "none", fontWeight: 700, bgcolor: "#2563eb", "&:hover": { bgcolor: "#1d4ed8" } }}
+        >
+          This is a different login
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 
 type PlaidReconnectButtonProps = {
   itemId: string;
-  onSyncSuccess: () => void;
+  onLinkError?: (message: string) => void;
 };
 
-export function PlaidReconnectButton({ itemId, onSyncSuccess }: PlaidReconnectButtonProps) {
-  const trigger = usePlaidAccountLink({
-    updateModeItemId: itemId,
-    onSyncSuccess,
-  });
+/** The warning icon on an account row whose bank needs the user to sign in again. */
+export function PlaidReconnectButton({ itemId, onLinkError }: PlaidReconnectButtonProps) {
+  const link = usePlaidAccountLink({ updateModeItemId: itemId, onLinkError });
 
   return (
-    <Tooltip title={trigger.label}>
+    <Tooltip title={link.label}>
       <span>
-        <IconButton size="small" onClick={trigger.onClick} disabled={trigger.disabled} sx={{ p: 0.25, color: "#dc2626" }}>
+        <IconButton size="small" onClick={link.onClick} disabled={link.disabled} sx={{ p: 0.25, color: "#dc2626" }}>
           <SyncProblemRoundedIcon sx={{ fontSize: 15 }} />
         </IconButton>
       </span>

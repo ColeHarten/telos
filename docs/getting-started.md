@@ -48,8 +48,13 @@ Fill in `.env.local`:
 | `PLAID_ENV` | Server | `sandbox`. This is also the default if left blank. |
 | `ENCRYPTION_KEY` | Server | A new random key: `openssl rand -base64 32`. |
 | `ENCRYPTION_KEY_PREVIOUS` | Server | Leave blank. Only used while rotating keys (see [Operations](operations.md)). |
+| `PLAID_REDIRECT_URI` | Server | Leave blank locally. In production, `https://<your domain>/oauth` (see [Plaid and sync](plaid-and-sync.md#oauth-banks)). |
+| `PLAID_ITEM_LIMIT` | Server | Leave blank (10, Plaid's free Trial). Only for a plan with a different limit. |
+| `CSP_ENFORCE` | Build | Leave blank. `true` enforces the Content Security Policy (see [Security](security.md#4-security-headers)). |
 
 Never prefix a secret with `NEXT_PUBLIC_`. Anything with that prefix is sent to the browser.
+
+Use a Firebase project just for development. Never point a local server at the production project.
 
 ## 4. Deploy the Firestore rules
 
@@ -72,7 +77,7 @@ Open http://localhost:3000 and sign in with Google.
 
 ## 6. Link a test bank
 
-1. Go to **Accounts** and choose to connect a bank.
+1. Go to **Accounts**, choose Add Account > Connect a Bank, and press **Continue to Plaid**.
 2. In Plaid Link, pick any institution.
 3. Sign in with one of Plaid's test users:
 
@@ -81,7 +86,8 @@ Open http://localhost:3000 and sign in with Google.
 | `user_good` | `pass_good` | A standard account with fixed transactions. |
 | `user_transactions_dynamic` | any | Transactions that change over time, including pending to posted. Best for testing sync. |
 
-4. The accounts appear right away. Transactions follow a few seconds later, once the first sync finishes.
+4. The accounts appear right away, under a card for the bank. Transactions follow a few seconds later, and the card says "Importing history…" until Plaid has sent everything.
+5. Try linking the same test user again: Telos refuses before exchanging anything, which is what protects your connections in production.
 
 ## Everyday commands
 

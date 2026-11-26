@@ -59,6 +59,8 @@ beforeEach(async () => {
       transferAccountId: null,
     });
     await setDoc(doc(db, "rateLimits/alice_sync"), { count: 1 });
+    await setDoc(doc(db, "users/alice/balanceSnapshots/linked_2026-11-25"), { accountId: "linked", current: 100 });
+    await setDoc(doc(db, "plaidUsage/production"), { itemsCreated: 1 });
   });
 });
 
@@ -95,6 +97,17 @@ describe("server-only collections", () => {
 
   it("denies rateLimits", async () => {
     await assertFails(getDoc(doc(alice(), "rateLimits/alice_sync")));
+  });
+
+  it("allows reading balance snapshots but not writing them", async () => {
+    await assertSucceeds(getDoc(doc(alice(), "users/alice/balanceSnapshots/linked_2026-11-25")));
+    await assertFails(setDoc(doc(alice(), "users/alice/balanceSnapshots/linked_2026-11-26"), { current: 1 }));
+    await assertFails(deleteDoc(doc(alice(), "users/alice/balanceSnapshots/linked_2026-11-25")));
+  });
+
+  it("denies plaidUsage", async () => {
+    await assertFails(getDoc(doc(alice(), "plaidUsage/production")));
+    await assertFails(setDoc(doc(alice(), "plaidUsage/production"), { itemsCreated: 0 }));
   });
 });
 
@@ -139,6 +152,12 @@ describe("accounts", () => {
     await assertSucceeds(updateDoc(doc(alice(), "users/alice/accounts/linked"), { name: "Main checking" }));
     await assertFails(updateDoc(doc(alice(), "users/alice/accounts/linked"), { currentBalance: 1 }));
     await assertFails(updateDoc(doc(alice(), "users/alice/accounts/linked"), { plaidItemId: null }));
+  });
+
+  it("protects what Plaid reports about a linked account", async () => {
+    await assertFails(updateDoc(doc(alice(), "users/alice/accounts/linked"), { plaidClosed: false }));
+    await assertFails(updateDoc(doc(alice(), "users/alice/accounts/linked"), { plaidName: "Renamed" }));
+    await assertFails(updateDoc(doc(alice(), "users/alice/accounts/linked"), { plaidSubtype: "savings" }));
   });
 
   it("denies deleting accounts from the browser", async () => {
