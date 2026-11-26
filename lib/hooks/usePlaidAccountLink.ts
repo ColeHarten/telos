@@ -6,12 +6,16 @@ import { runSync, type SyncSummary } from "@/lib/plaidSync";
 import { usePlaidLink, type PlaidLinkOnSuccessMetadata } from "react-plaid-link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+const TOKEN_MAX_AGE_MS = 30 * 60 * 1000;
+
 export type LinkedAccount = { id: string; name: string; accountType: string };
 
 export type PlaidAccountLinkTrigger = {
   onClick: () => void;
   disabled: boolean;
   label: string;
+  /** Fetches a link token ahead of the click, so Link opens right away. */
+  prepare: () => void;
 };
 
 export type PlaidAccountLink = PlaidAccountLinkTrigger & {
@@ -131,6 +135,8 @@ export default function usePlaidAccountLink(options: PlaidAccountLinkOptions = {
 
   // Set by a click (or a resumed OAuth session); Link opens once its token is ready.
   const openRequested = useRef(Boolean(resume));
+  // When the current token was fetched (0 for a resumed one), so an old prepared token is replaced.
+  const tokenFetchedAt = useRef(0);
   // A new link waiting for "This is a different login".
   const pending = useRef<PendingExchange | null>(null);
 
@@ -216,21 +222,30 @@ export default function usePlaidAccountLink(options: PlaidAccountLinkOptions = {
     }
   }, [token, ready, open]);
 
-  function requestToken() {
+  // quiet: prepared ahead of a click, so a failure only shows as "Try again".
+  function requestToken(quiet: boolean) {
     setLoading(true);
     setFailed(false);
     fetchLinkToken(updateModeItemId, accountSelection)
       .then((linkToken) => {
         saveLinkSession({ token: linkToken, updateModeItemId: updateModeItemId ?? null, accountSelection });
+        tokenFetchedAt.current = Date.now();
         setToken(linkToken);
       })
       .catch((error: unknown) => {
         console.error(error);
         openRequested.current = false;
         setFailed(true);
-        callbacks.current.onLinkError?.(error instanceof Error ? error.message : "Could not prepare the bank connection.");
+        if (!quiet) {
+          callbacks.current.onLinkError?.(error instanceof Error ? error.message : "Could not prepare the bank connection.");
+        }
       })
       .finally(() => setLoading(false));
+  }
+
+  // Link tokens last four hours; a prepared one older than this is replaced.
+  function tokenIsFresh(): boolean {
+    return tokenFetchedAt.current === 0 || Date.now() - tokenFetchedAt.current < TOKEN_MAX_AGE_MS;
   }
 
   const preparing = loading || (Boolean(token) && !ready);
@@ -239,13 +254,17 @@ export default function usePlaidAccountLink(options: PlaidAccountLinkOptions = {
   return {
     onClick: () => {
       if (busy) return;
-      if (token && ready) {
+      if (token && ready && tokenIsFresh()) {
         callbacks.current.onOpen?.();
         open();
         return;
       }
       openRequested.current = true;
-      requestToken();
+      requestToken(false);
+    },
+    prepare: () => {
+      if (loading || finishing || (token && tokenIsFresh())) return;
+      requestToken(true);
     },
     disabled: busy,
     label: finishing

@@ -22,24 +22,32 @@ Months are `YYYY-MM` keys in your local time zone. A transaction belongs to a mo
 - **Expense categories:** money out minus money in. A $50 purchase and a $20 refund give $30.
 - **Income categories:** money in minus money out. A $2,000 paycheck and a $100 reversal give $1,900.
 - Each total is **floored at 0**, so a month with more refunds than spending shows $0, not a negative.
-- Transfers and uncategorized transactions aren't included.
+- Transfers, uncategorized transactions, and hidden transactions aren't included.
 
 ### Archived categories
 
-Budget lines show active categories only. So money on archived categories isn't lost from the totals, `archivedCategoryActuals` adds it up separately (income, expense, and a transaction count). The Budgets page shows it as its own line, and the Dashboard includes it in income and spending actuals.
+Budget lines show active categories only. So money on archived categories isn't lost from the totals, `archivedCategoryActuals` adds it up separately (income, expense, and a transaction count). The Budgets page shows it in a warning above the lines (not in the line totals), and the Dashboard includes it in income and spending actuals.
 
 ## Savings and debt actuals
 
-`transferActualsByAccount` adds up, per destination account, the transactions categorized as transfers into that account that month. It uses the absolute amount. This is the **Actual** on Savings (asset accounts) and Debt (liability accounts) budget lines.
+`transferActualsByAccount` gives each account the net money moved into it by transfers that month, counted once. This is the **Actual** on Savings (asset accounts) and Debt (liability accounts) budget lines.
+
+- **A linked account** is counted from its own transactions: every transfer into it adds, and every transfer out of it subtracts. A credit card's payments are the money into it.
+- **A manual account** has no transactions of its own, so it's counted from the transfers categorized to it: money sent to it adds, and money taken out of it subtracts.
+- Transfers categorized to a linked account aren't counted again from the sending side.
+- Each total is **floored at 0**, and hidden transactions don't count.
+
+For example, $300 moved from checking to a linked savings account and $100 taken back out gives savings an actual of $200.
 
 ## Cash flow
 
-`monthCashFlow` gives inflow, outflow, and net for a month, **leaving out transfers**, since moving money between your own accounts isn't income or spending.
+`monthCashFlow` gives inflow, outflow, and net for a month, **leaving out transfers** and hidden transactions, since moving money between your own accounts isn't income or spending.
 
 A transaction counts as a transfer when either:
 
 - You (or a rule) categorized it as a transfer, or
-- It has no category and Plaid labels it a transfer (`TRANSFER_IN`, `TRANSFER_OUT`) or a credit-card payment (`LOAN_PAYMENTS_CREDIT_CARD_PAYMENT`).
+- It has no category and is paired with its other leg in another of your accounts (see [Categorization](categorization.md#transfers-between-your-accounts)), or
+- It has no category and Plaid labels it a transfer (`TRANSFER_IN`, `TRANSFER_OUT`), a card or loan payment (`LOAN_PAYMENTS`), or a loan disbursement (`LOAN_DISBURSEMENTS`).
 
 A transaction you categorized as income or expense always counts, whatever Plaid calls it.
 
@@ -70,6 +78,10 @@ A month's budget is a set of planned amounts, one per line (see [Data model](dat
 | Debt | Your amount, or 0 | Transfers into the account |
 
 Budget lines save themselves a moment after you stop typing. Each line is written as its own field with a merge, so edits to different lines from two tabs both survive. While a line has unsaved changes, an update from another tab won't replace what you're typing.
+
+**Uncategorized.** `uncategorizedSpending` adds up money out in the month that's still in Needs Review (uncategorized, not hidden, and not a transfer). The Budgets page shows it as an Uncategorized line under Expenses, with no planned amount, so expense actuals plus this line match the month's cash-flow outflow.
+
+**Shortcuts** (`lib/budgetTools.ts`). `copyLines` gives each line the amount it showed last month: last month's saved line, or the category's estimate (0 for an account) if it was never set. `estimateLines` gives each income and expense line its category's `estimatedMonthly`. Both round to cents, and the page saves them like typed amounts.
 
 **Planned amounts.** `plannedAmount` gives a category's planned amount: the saved line, or the category's `estimatedMonthly` if the line was never set. The Budgets totals add up the amounts shown on the lines, and the Dashboard's planned figures (spending vs. budget, expected income) use `plannedAmount`, so the two pages agree.
 

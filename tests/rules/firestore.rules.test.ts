@@ -124,6 +124,21 @@ describe("transactions", () => {
     );
   });
 
+  it("allows renaming, hiding, and notes, within limits", async () => {
+    const t1 = doc(alice(), "users/alice/transactions/t1");
+    await assertSucceeds(updateDoc(t1, { customName: "Lunch", hidden: true, notes: "With Sam", categorySource: "user" }));
+    await assertFails(updateDoc(t1, { customName: "x".repeat(121) }));
+    await assertFails(updateDoc(t1, { hidden: "yes" }));
+    await assertFails(updateDoc(t1, { categorySource: "magic" }));
+  });
+
+  it("denies a transfer to the transaction's own account or to nowhere", async () => {
+    const t1 = doc(alice(), "users/alice/transactions/t1");
+    await assertFails(updateDoc(t1, { categoryKind: "transfer", categoryId: "to-self", transferAccountId: "linked" }));
+    await assertFails(updateDoc(t1, { categoryKind: "transfer", categoryId: "to-nowhere", transferAccountId: null }));
+    await assertSucceeds(updateDoc(t1, { categoryKind: "transfer", categoryId: "to-cash", transferAccountId: "manual" }));
+  });
+
   it("denies an invalid categoryKind", async () => {
     await assertFails(updateDoc(doc(alice(), "users/alice/transactions/t1"), { categoryKind: "savings" }));
   });
@@ -174,5 +189,36 @@ describe("categories", () => {
   it("allows editing a category but not changing its kind", async () => {
     await assertSucceeds(updateDoc(doc(alice(), "users/alice/categories/food"), { name: "Groceries" }));
     await assertFails(updateDoc(doc(alice(), "users/alice/categories/food"), { kind: "income" }));
+  });
+
+  it("requires Plaid mappings to be a list", async () => {
+    await assertSucceeds(updateDoc(doc(alice(), "users/alice/categories/food"), { plaidCategories: ["FOOD_AND_DRINK"] }));
+    await assertFails(updateDoc(doc(alice(), "users/alice/categories/food"), { plaidCategories: "FOOD_AND_DRINK" }));
+  });
+});
+
+describe("rules and merchant memory", () => {
+  const rule = {
+    enabled: true,
+    priority: 0,
+    conditions: { description: "coffee" },
+    actions: { categoryId: "food", rename: null, hide: false },
+  };
+
+  it("lets you manage your rules", async () => {
+    await assertSucceeds(setDoc(doc(alice(), "users/alice/rules/r1"), rule));
+    await assertFails(setDoc(doc(alice(), "users/alice/rules/r2"), { ...rule, enabled: "yes" }));
+    await assertSucceeds(deleteDoc(doc(alice(), "users/alice/rules/r1")));
+  });
+
+  it("denies another user's rules", async () => {
+    const bob = env.authenticatedContext("bob").firestore();
+    await assertFails(setDoc(doc(bob, "users/alice/rules/r1"), rule));
+  });
+
+  it("lets you write merchant memory with a positive streak", async () => {
+    const memory = doc(alice(), "users/alice/merchantMemory/n_cafe");
+    await assertSucceeds(setDoc(memory, { key: "n_cafe", label: "Cafe", categoryId: "food", streak: 1 }));
+    await assertFails(setDoc(memory, { key: "n_cafe", label: "Cafe", categoryId: "food", streak: 0 }));
   });
 });

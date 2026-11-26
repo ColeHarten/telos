@@ -66,6 +66,9 @@ export type PlaidConnection = {
 
 export type CategoryKind = "income" | "expense" | "transfer";
 
+/** Who set a transaction's category: you, a rule, merchant memory, or a Plaid mapping. */
+export type CategorySource = "user" | "rule" | "merchant" | "plaid";
+
 export type Category = {
   id: string;
   name: string;
@@ -157,23 +160,69 @@ export type Transaction = {
   // working even if the source Category is later hard-deleted (see
   // reconcileContributionTransfers in useCategories.ts). null otherwise.
   transferAccountId: string | null;
+
+  // Optional so test fixtures can leave them out; toTransaction always sets them.
+  merchantName?: string | null;
+  merchantEntityId?: string | null;
+  /** The bank's description, as Plaid cleaned it. */
+  rawName?: string;
+  originalDescription?: string | null;
+  logoUrl?: string | null;
+  plaidConfidence?: string | null;
+  categorySource?: CategorySource | null;
+  /** The first rule that matched this transaction. */
+  ruleId?: string | null;
+  /** A less confident Plaid match, waiting in Needs Review for you to accept. */
+  suggestedCategoryId?: string | null;
+  /** Your name for it, shown instead of the merchant. */
+  customName?: string | null;
+  /** Left out of budgets, cash flow, and Needs Review. */
+  hidden?: boolean;
+  notes?: string | null;
+  /** When the card was swiped, if the bank reports it (date is when it posted). */
+  authorizedDate?: string | null;
+  website?: string | null;
+  /** The other leg of a transfer between your accounts. Computed in the browser, not stored. */
+  transferPairId?: string | null;
 };
 
-export type Automation = {
-  id: string; // normalized merchant key, doubles as the Firestore doc id
-  merchantKey: string;
-  merchantLabel: string; // original, un-normalized merchant text — display only
+/** A rule's conditions. Every condition that is set must hold, and a rule needs at least one. */
+export type RuleConditions = {
+  /** Compared with the merchant name (or the bank's description) without punctuation or digits. */
+  merchant: { op: "is" | "contains"; value: string } | null;
+  /** Found anywhere in the bank's description. */
+  description: string | null;
+  /** Empty means any account. */
+  accountIds: string[];
+  /** Bounds on the amount's size, inclusive. */
+  amountMin: number | null;
+  amountMax: number | null;
+  direction: "in" | "out" | null;
+};
+
+export type RuleActions = {
+  categoryId: string | null;
+  rename: string | null;
+  hide: boolean;
+};
+
+/** users/{uid}/rules/{ruleId}. Rules run lowest priority number first, and only the first match applies. */
+export type Rule = {
+  id: string;
+  enabled: boolean;
+  priority: number;
+  conditions: RuleConditions;
+  actions: RuleActions;
+};
+
+/**
+ * users/{uid}/merchantMemory/{key}: the category you last chose for a
+ * merchant and how many times in a row. It applies to new transactions once
+ * the streak reaches 2. Never written for transfer categories.
+ */
+export type MerchantMemory = {
+  key: string;
+  label: string;
   categoryId: string;
-  createdAt?: unknown;
-};
-
-// Aggregated Tier 2 learning signal. One doc per Plaid `detailed` category
-// code, scoped to a user (users/{uid}/categoryPlaidStats/{plaidDetailedCode}).
-// `counts` maps categoryId -> number of manual corrections that landed on
-// that category for this Plaid code. Read once per sync run in
-// buildRulesContext, incremented once per manual correction in
-// useTransactions.ts.
-export type CategoryPlaidStats = {
-  counts: Record<string, number>;
-  updatedAt?: unknown;
+  streak: number;
 };

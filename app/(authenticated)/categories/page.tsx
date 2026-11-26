@@ -4,6 +4,8 @@ import useAccounts from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
 import useCategories from "@/lib/hooks/useCategories";
 import type { Account, Category, CategoryKind, PaycheckDetails } from "@/lib/types/types";
+import { plaidCategoryLabel } from "@/lib/plaidCategories";
+import { STARTER_CATEGORIES } from "@/lib/starterCategories";
 import { formatCurrency } from "@/lib/utils";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
@@ -67,11 +69,13 @@ export default function CategoriesPage() {
     restoreCategory,
     checkCategoryIsolation,
     reconcileContributionTransfers,
+    addStarterCategories,
     categoriesLoading,
   } = useCategories(user, authLoading);
   const isLoading = categoriesLoading;
 
   const [isSaving, setIsSaving] = useState(false);
+  const [addingStarters, setAddingStarters] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -168,12 +172,25 @@ export default function CategoriesPage() {
     setFormError(null);
   }
 
+  async function handleAddStarters() {
+    setAddingStarters(true);
+    try {
+      await addStarterCategories();
+    } catch (err) {
+      console.error(err);
+      setError("Could not add the starter categories.");
+    } finally {
+      setAddingStarters(false);
+    }
+  }
+
   async function handleSaveCategoryForm(formData: {
     name: string;
     kind: CategoryKind;
     estimatedMonthly: number;
     description: string;
     transferAccountId: string | null;
+    plaidCategories: string[];
     paycheckDetails: PaycheckDetails | null;
     deductionBreakdown: { deductionId: string; linkedAccountId: string; monthlyAmount: number }[];
   }) {
@@ -204,6 +221,7 @@ export default function CategoriesPage() {
       estimatedMonthly: formData.estimatedMonthly,
       description: formData.description,
       transferAccountId: formData.kind === "transfer" ? formData.transferAccountId : null,
+      plaidCategories: formData.plaidCategories,
       paycheckDetails: formData.kind === "income" ? formData.paycheckDetails : null,
     };
 
@@ -477,6 +495,27 @@ export default function CategoriesPage() {
         </Stack>
       </Stack>
 
+      {!isLoading && categories.length === 0 && (
+        <Alert
+          severity="info"
+          sx={{ borderRadius: 3 }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={handleAddStarters}
+              disabled={addingStarters}
+              sx={{ textTransform: "none", fontWeight: 600, whiteSpace: "nowrap" }}
+            >
+              {addingStarters ? "Adding…" : "Add starter categories"}
+            </Button>
+          }
+        >
+          Start with {STARTER_CATEGORIES.length} common categories, each mapped to Plaid&apos;s categories, so most
+          transactions are categorized from your first sync. You can edit or archive any of them.
+        </Alert>
+      )}
+
       {/* Categories Table */}
       <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3, borderColor: "#e2e8f0", bgcolor: "#fff", overflow: "hidden" }}>
         <Table sx={{ minWidth: 550 }}>
@@ -521,6 +560,14 @@ export default function CategoriesPage() {
                               {category.description}
                             </Typography>
                           )}
+                          {(category.plaidCategories?.length ?? 0) > 0 && (
+                            <Typography
+                              variant="caption"
+                              sx={{ color: "#94a3b8", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 360 }}
+                            >
+                              Plaid: {category.plaidCategories?.map((code) => plaidCategoryLabel(code)).join(", ")}
+                            </Typography>
+                          )}
                         </Box>
                       </Box>
                     </TableCell>
@@ -558,6 +605,7 @@ export default function CategoriesPage() {
         isSaving={isSaving}
         editingCategory={selectedEditingCategory}
         accounts={accounts}
+        categories={categories}
         error={formError}
       />
 

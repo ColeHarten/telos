@@ -115,7 +115,7 @@ The automatic syncs come from `useAutoSync` in the signed-in layout. They run on
 | Plaid says | Telos does |
 |---|---|
 | **Added**, and it's new | Creates it. A posted transaction takes the category of its pending version, and a re-imported one takes its old copy's. Otherwise the rules engine picks one (see [Categorization](categorization.md)). |
-| **Added** or **modified**, and it exists | Updates the Plaid fields. Reruns the rules only if it has no category. |
+| **Added** or **modified**, and it exists | Updates the Plaid fields. Reruns the rules only if it has no category. Never touches your name, hiding, or notes. |
 | **Removed** | Marks it `removedByPlaid`, which hides it at once, and deletes it when the loop ends. A posted transaction in a later page can still copy the pending one's category. |
 | Anything on an account that doesn't sync | Ignored |
 

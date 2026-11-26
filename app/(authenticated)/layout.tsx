@@ -9,12 +9,14 @@ import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutl
 import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import SwapHorizOutlinedIcon from "@mui/icons-material/SwapHorizOutlined";
+import SyncStatusChip from "@/components/SyncStatusChip";
 import TelosLogo from "@/components/telos-logo";
-import { TransactionsProvider } from "@/components/TransactionsProvider";
+import { TransactionsProvider, useTransactionsStore } from "@/components/TransactionsProvider";
 import useAutoSync from "@/lib/hooks/useAutoSync";
 import {
   Avatar,
   Box,
+  Chip,
   CircularProgress,
   Container,
   Divider,
@@ -39,7 +41,7 @@ const navItems = [
   { label: "Categories", href: "/categories", icon: SwapHorizOutlinedIcon },
   { label: "Budgets", href: "/budgets", icon: PieChartOutlineOutlinedIcon },
   { label: "Transactions", href: "/transactions", icon: ReceiptLongOutlinedIcon },
-  {label: "Automations", href: "/automations", icon: BoltIcon},
+  { label: "Rules", href: "/rules", icon: BoltIcon },
   { label: "Settings", href: "/settings", icon: SettingsOutlinedIcon },
 ];
 
@@ -68,8 +70,8 @@ export default function AuthenticatedLayout({
     return () => unsubscribe();
   }, [router]);
 
-  // Keeps bank data fresh while Telos is open (see useAutoSync).
-  useAutoSync(user?.uid ?? null);
+  // Keeps bank data fresh while Telos is open (see useAutoSync), and reports each bank's status.
+  const connections = useAutoSync(user?.uid ?? null);
 
   if (isCheckingAuth) {
     return (
@@ -176,6 +178,7 @@ export default function AuthenticatedLayout({
               >
                 {item.label}
               </Typography>
+              {item.href === "/transactions" && <NeedsReviewBadge />}
             </ListItemButton>
           ))}
         </List>
@@ -208,94 +211,116 @@ export default function AuthenticatedLayout({
     </Box>
   );
 
+  // The provider wraps the nav too, for the Needs Review count.
   return (
-    <Box sx={{ minHeight: "100vh", bgcolor: "grey.50" }}>
-      <Drawer
-        variant="permanent"
-        sx={{
-          display: { xs: "none", md: "block" },
-          width: drawerWidth,
-          flexShrink: 0,
-          zIndex: (theme) => theme.zIndex.drawer + 2,
-          [`& .MuiDrawer-paper`]: {
-            width: drawerWidth,
-            boxSizing: "border-box",
-            borderRight: "1px solid",
-            borderColor: "divider",
-            bgcolor: "background.paper",
-            zIndex: (theme) => theme.zIndex.drawer + 2,
-          },
-        }}
-      >
-        {drawerContent}
-      </Drawer>
-
-      {/* Below md, the same navigation opens from the menu button. */}
-      <Drawer
-        variant="temporary"
-        open={mobileOpen}
-        onClose={() => setMobileOpen(false)}
-        sx={{
-          display: { xs: "block", md: "none" },
-          [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: "border-box" },
-        }}
-      >
-        {drawerContent}
-      </Drawer>
-
-      <Box
-        component="main"
-        sx={{
-          ml: { xs: 0, md: `${drawerWidth}px` },
-          minHeight: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          bgcolor: "grey.50",
-        }}
-      >
-        <Toolbar sx={{ display: { xs: "none", md: "flex" } }} />
-        <Box sx={{ display: { xs: "flex", md: "none" }, alignItems: "center", px: 2, pt: 2 }}>
-          <IconButton aria-label="Open menu" edge="start" onClick={() => setMobileOpen(true)}>
-            <MenuRoundedIcon />
-          </IconButton>
-        </Box>
-
-        <Container
-          maxWidth="lg"
+    <TransactionsProvider uid={user.uid}>
+      <Box sx={{ minHeight: "100vh", bgcolor: "grey.50" }}>
+        <Drawer
+          variant="permanent"
           sx={{
-            flexGrow: 1,
-            pb: 4,
+            display: { xs: "none", md: "block" },
+            width: drawerWidth,
+            flexShrink: 0,
+            zIndex: (theme) => theme.zIndex.drawer + 2,
+            [`& .MuiDrawer-paper`]: {
+              width: drawerWidth,
+              boxSizing: "border-box",
+              borderRight: "1px solid",
+              borderColor: "divider",
+              bgcolor: "background.paper",
+              zIndex: (theme) => theme.zIndex.drawer + 2,
+            },
           }}
         >
-          <TransactionsProvider uid={user.uid}>{children}</TransactionsProvider>
-        </Container>
+          {drawerContent}
+        </Drawer>
+
+        {/* Below md, the same navigation opens from the menu button. */}
+        <Drawer
+          variant="temporary"
+          open={mobileOpen}
+          onClose={() => setMobileOpen(false)}
+          sx={{
+            display: { xs: "block", md: "none" },
+            [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: "border-box" },
+          }}
+        >
+          {drawerContent}
+        </Drawer>
 
         <Box
-          component="footer"
+          component="main"
           sx={{
-            borderTop: "1px solid",
-            borderColor: "divider",
-            bgcolor: "background.paper",
-            py: 2,
+            ml: { xs: 0, md: `${drawerWidth}px` },
+            minHeight: "100vh",
+            display: "flex",
+            flexDirection: "column",
+            bgcolor: "grey.50",
           }}
         >
-          <Container maxWidth="lg">
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: { xs: "column", sm: "row" },
-                alignItems: { xs: "flex-start", sm: "center" },
-                justifyContent: "space-between",
-                gap: 1,
-              }}
-            >
-              <Typography variant="body2" color="text.secondary">
-                © 2026 Telos
-              </Typography>
+          <Toolbar sx={{ display: { xs: "none", md: "flex" }, justifyContent: "flex-end", px: { md: 4 } }}>
+            <SyncStatusChip connections={connections} />
+          </Toolbar>
+          <Box sx={{ display: { xs: "flex", md: "none" }, alignItems: "center", gap: 1, px: 2, pt: 2 }}>
+            <IconButton aria-label="Open menu" edge="start" onClick={() => setMobileOpen(true)}>
+              <MenuRoundedIcon />
+            </IconButton>
+            <Box sx={{ ml: "auto" }}>
+              <SyncStatusChip connections={connections} />
             </Box>
+          </Box>
+
+          <Container
+            maxWidth="lg"
+            sx={{
+              flexGrow: 1,
+              pb: 4,
+            }}
+          >
+            {children}
           </Container>
+
+          <Box
+            component="footer"
+            sx={{
+              borderTop: "1px solid",
+              borderColor: "divider",
+              bgcolor: "background.paper",
+              py: 2,
+            }}
+          >
+            <Container maxWidth="lg">
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: { xs: "column", sm: "row" },
+                  alignItems: { xs: "flex-start", sm: "center" },
+                  justifyContent: "space-between",
+                  gap: 1,
+                }}
+              >
+                <Typography variant="body2" color="text.secondary">
+                  © 2026 Telos
+                </Typography>
+              </Box>
+            </Container>
+          </Box>
         </Box>
       </Box>
-    </Box>
+    </TransactionsProvider>
+  );
+}
+
+/** How many transactions wait in Needs Review, beside Transactions in the nav. */
+function NeedsReviewBadge() {
+  const { needsReviewCount } = useTransactionsStore();
+  if (needsReviewCount === 0) return null;
+  return (
+    <Chip
+      size="small"
+      label={needsReviewCount > 999 ? "999+" : needsReviewCount}
+      aria-label={`${needsReviewCount} transactions need review`}
+      sx={{ ml: "auto", height: 20, fontSize: "0.7rem", fontWeight: 700, bgcolor: "#fef2f2", color: "#dc2626", borderRadius: "6px" }}
+    />
   );
 }

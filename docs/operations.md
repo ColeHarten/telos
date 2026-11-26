@@ -70,7 +70,7 @@ Filter on `scope` (the route or service name) and `level`. Plaid failures includ
 | An OAuth bank (Chase, Capital One) is missing from Link, or the return fails | `PLAID_REDIRECT_URI` must be set and listed under Allowed redirect URIs in the Plaid dashboard. Finish in the same browser you started in. |
 | Only the last month shows after linking | Normal. Plaid sends about 30 days first and the rest over minutes to hours; the card says "Importing history…" meanwhile. |
 | Transactions look wrong or incomplete | Rebuild from Plaid on the bank's card. It re-imports everything and keeps categories. Never clear the database. |
-| A category keeps not getting applied automatically | Automations match the merchant key exactly. Check the merchant on the Automations page. Learned defaults need 3 votes with a lead of 2. |
+| A category keeps not getting applied automatically | Check the Rules page: only the first matching rule applies, and "Merchant is" needs the whole name. Merchant memory needs the same pick twice in a row. A Plaid mapping assigns only when Plaid is confident; otherwise it's a suggestion in Needs Review. Rules apply to new transactions; use Apply to past for older ones. |
 | Permissions errors after changing `firestore.rules` | Deploy the rules. |
 | CSP warnings in the browser console | Unless `CSP_ENFORCE=true`, nothing is blocked. Add the missing source in `next.config.ts` if it's legitimate. |
 | Every route returns 500 at once | A server env var is missing or malformed. The log shows which, for example `ENCRYPTION_KEY is not set`. |
@@ -86,11 +86,11 @@ Only connections are irreversible: each new bank login uses one of the plan's co
 5. **Vercel.** Production gets `PLAID_ENV=production`, the production secret, `PLAID_REDIRECT_URI=https://<your domain>/oauth`, and the production Firebase values. Preview and Development keep the sandbox keys and the development project. Add the redirect URI under Allowed redirect URIs in the Plaid dashboard, and the domain under Authorized domains in Firebase.
 6. **Connections already used.** If the dashboard already counts some, set `plaidUsage/production.itemsCreated` to that number in the Firebase console. Set `PLAID_ITEM_LIMIT` if the plan's limit isn't 10.
 7. **Clean start.** Clear the production database for the last time, deploy, and sign in. Sign in with a second Google account too, and check it sees nothing of yours.
-8. **Before the first link.** Set up categories and automations, so transactions are categorized as they arrive.
+8. **Before the first link.** Add the starter categories (or your own, with Plaid mappings) and any rules, so transactions are categorized as they arrive.
 9. **First link.** Use a desktop browser and start with the least important bank. Wait for the card to stop saying "Importing history…", then check the accounts, balances, and transactions against the bank. Link the rest one at a time. Never link the same login twice: at Chase, PNC, Navy Federal, and Schwab, a second connection can break the first.
 10. **Enforce the CSP.** Once a full run-through leaves no CSP warnings in the console, set `CSP_ENFORCE=true` and redeploy.
 11. **From then on, never wipe.** Use Rebuild from Plaid, Manage accounts, and Reconnect. Disconnect only a bank you're done with.
 
 ### Backups
 
-What can't be rebuilt from Plaid is your own work (categories, assignments, budgets, automations), the balance snapshots, and the `plaidItems` docs with `ENCRYPTION_KEY`. The daily backups cover the database; the password manager covers the key. To restore, create a new database from a backup with `gcloud firestore databases restore`, or copy documents back from it.
+What can't be rebuilt from Plaid is your own work (categories, assignments, budgets, rules, merchant memory), the balance snapshots, and the `plaidItems` docs with `ENCRYPTION_KEY`. The daily backups cover the database; the password manager covers the key. To restore, create a new database from a backup with `gcloud firestore databases restore`, or copy documents back from it.

@@ -10,8 +10,8 @@ users/{uid}                          Profile
   transactions/{transactionId}       Transactions from Plaid
   categories/{categoryId}            Income, expense, and transfer categories
   budgets/{YYYY-MM}                  One budget per month
-  automations/{merchantKey}          Merchant-to-category rules
-  categoryPlaidStats/{plaidCode}     Learning votes
+  rules/{ruleId}                     Categorization rules
+  merchantMemory/{key}               The category you last chose per merchant
   settings/app                       App settings
   plaidItems/{itemId}                Bank connections (server only, secret)
   plaidItemStatus/{itemId}           Bank connection status (browser reads)
@@ -25,11 +25,11 @@ plaidUsage/{env}                     Connections created, across all users (serv
 |---|---|---|
 | `users/{uid}` | Browser | Read and write its own doc |
 | `accounts` | Both | Read; create manual accounts; edit non-Plaid fields. Never delete. |
-| `transactions` | Server | Read; change only the category fields |
-| `categories` | Browser | Read and write; `kind` must be valid and can't change |
+| `transactions` | Server | Read; change only the category fields, `customName`, `hidden`, and `notes` |
+| `categories` | Browser | Read and write; `kind` must be valid and can't change; `plaidCategories` must be a list |
 | `budgets` | Browser | Read and write |
-| `automations` | Browser | Read and write |
-| `categoryPlaidStats` | Browser | Read and write |
+| `rules` | Browser | Read and write, with the required fields |
+| `merchantMemory` | Browser | Read and write, with a positive `streak` |
 | `settings` | Browser | Read and write |
 | `plaidItems` | Server | Nothing |
 | `plaidItemStatus` | Server | Read |
@@ -73,7 +73,7 @@ Balances are positive numbers for both assets and liabilities. `normalBalance` s
 
 ## `transactions/{transactionId}`
 
-The doc id is Plaid's `transaction_id`. The server writes every field; the browser may change only `categoryKind`, `categoryId`, `transferAccountId`, and `updatedAt`.
+The doc id is Plaid's `transaction_id`. The server writes every field; the browser may change only the category fields (`categoryKind`, `categoryId`, `transferAccountId`, `categorySource`, `ruleId`, `suggestedCategoryId`), `customName`, `hidden`, `notes`, and `updatedAt`.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -96,9 +96,15 @@ The doc id is Plaid's `transaction_id`. The server writes every field; the brows
 | `categoryKind` | string or null | `income`, `expense`, `transfer`, or null (Needs Review) |
 | `categoryId` | string or null | The Telos category |
 | `transferAccountId` | string or null | For transfers, the destination account. Stored on the transaction so it survives if the category is later deleted. |
+| `categorySource` | string or null | Who set the category: `user`, `rule`, `merchant` (merchant memory), or `plaid` (a mapping). Automation never changes `user`. |
+| `ruleId` | string or null | The first rule that matched, whether or not it set the category |
+| `suggestedCategoryId` | string or null | A less confident Plaid match, shown in Needs Review to accept |
+| `customName` | string or null | Your name for the transaction (or a rule's), up to 120 characters |
+| `hidden` | boolean | Left out of budgets, cash flow, and Needs Review |
+| `notes` | string or null | Up to 1,000 characters |
 | `createdAt`, `updatedAt` | number or timestamp | |
 
-The browser shows `merchantName`, falling back to `rawName`. Pages read a mapped shape (`Transaction` in `types.ts`) built by `useTransactions`.
+The browser shows `customName`, then `merchantName`, then `rawName`. Pages read a mapped shape (`Transaction` in `types.ts`) built by `useTransactions`, which also adds `transferPairId` (the other leg of a transfer; computed, not stored). A posted transaction takes its pending version's category, `customName`, `hidden`, and `notes`.
 
 ## `categories/{categoryId}`
 
@@ -112,6 +118,7 @@ The browser shows `merchantName`, falling back to `rawName`. Pages read a mapped
 | `isDefault` | boolean | Optional |
 | `description` | string | Optional |
 | `groupId` | string or null | Optional |
+| `plaidCategories` | array of strings | Plaid category codes (primary or detailed) whose transactions land here. See [Categorization](categorization.md#plaid-mappings). |
 | `transferAccountId` | string or null | Transfer categories: the destination account |
 | `paycheckDetails` | object or null | Income categories only. See below. |
 | `sourceIncomeCategoryId`, `sourceDeductionId` | string or null | Set only on transfer categories created from a paycheck deduction |
@@ -138,27 +145,31 @@ One doc per month, for example `budgets/2026-11`.
 
 Line ids are `category_<categoryId>` for income and expense lines, and `account_<accountId>` for savings and debt lines. Each line is `{ id, lineType, categoryId, planned }`, where `categoryId` holds the category or account id. Each line is saved as its own field, so two tabs can't overwrite each other's lines.
 
-## `automations/{merchantKey}`
+## `rules/{ruleId}`
 
-The doc id is the normalized merchant key, so there is at most one automation per merchant.
+Your categorization rules. See [Categorization](categorization.md#rules).
 
 | Field | Type | Notes |
 |---|---|---|
-| `merchantKey` | string | `normalizeMerchant(merchant text)` |
-| `merchantLabel` | string | The original text, for display |
+| `enabled` | boolean | |
+| `priority` | number | Lowest runs first; new rules go on top |
+| `conditions` | map | `merchant` (`{ op: "is" or "contains", value }` or null), `description` (string or null), `accountIds` (array, empty for any), `amountMin` and `amountMax` (number or null, on the amount's size), `direction` (`in`, `out`, or null) |
+| `actions` | map | `categoryId` (string or null), `rename` (string or null), `hide` (boolean) |
+| `createdAt`, `updatedAt` | timestamp | |
+
+A rule with no conditions, or no actions, is ignored.
+
+## `merchantMemory/{key}`
+
+The category you last picked for a merchant. The key is `m_` plus Plaid's merchant id, or `n_` plus the merchant name without punctuation or digits.
+
+| Field | Type | Notes |
+|---|---|---|
+| `key` | string | Same as the doc id |
+| `label` | string | The merchant, for display |
 | `categoryId` | string | |
-| `createdAt` | timestamp | |
-
-## `categoryPlaidStats/{plaidDetailedCode}`
-
-Learning votes, one doc per Plaid detailed category code (for example `FOOD_AND_DRINK_COFFEE`).
-
-| Field | Type | Notes |
-|---|---|---|
-| `counts` | map | Category id to the number of times you picked it for this code |
+| `streak` | number | Picks of this category in a row. Applies to new transactions from 2. |
 | `updatedAt` | timestamp | |
-
-Older docs may also have literal top-level fields named `counts.<categoryId>`, from a past bug. The server reads both. See [Categorization](categorization.md).
 
 ## `settings/app`
 

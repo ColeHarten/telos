@@ -123,6 +123,8 @@ export default function AccountsPage() {
   function openConnectDialog() {
     setConnectDialogOpen(true);
     refreshUsage();
+    // Fetch the link token now, so Continue to Plaid opens Link right away.
+    connectLink.prepare();
   }
 
   function closeContributionPrompt() {

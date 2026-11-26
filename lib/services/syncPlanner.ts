@@ -1,5 +1,6 @@
+import { CATEGORY_SOURCES, type Assignment, type CategorizeInput } from "@/lib/categorization";
 import { normalizeMerchant } from "@/lib/merchant";
-import type { CategoryKind } from "@/lib/types/types";
+import type { CategoryKind, CategorySource } from "@/lib/types/types";
 import type { RemovedTransaction, Transaction as PlaidTransaction } from "plaid";
 
 /**
@@ -8,11 +9,23 @@ import type { RemovedTransaction, Transaction as PlaidTransaction } from "plaid"
  * No I/O, so it can be unit tested.
  */
 
-export type Assignment = {
-  categoryKind: CategoryKind | null;
-  categoryId: string | null;
-  transferAccountId: string | null;
+export type { Assignment } from "@/lib/categorization";
+
+/** Set by you or the rules engine, never by Plaid, and kept when Plaid changes a transaction. */
+export type UserFields = {
+  categorySource: CategorySource | null;
+  ruleId: string | null;
+  suggestedCategoryId: string | null;
+  customName: string | null;
+  hidden: boolean;
+  notes: string | null;
 };
+
+/** A transaction doc's category and user fields, as read before planning. */
+export type StoredTransaction = Assignment & Partial<UserFields>;
+
+/** What the rules engine returns. Fields it leaves out are stored empty. */
+export type Categorized = Assignment & Partial<Omit<UserFields, "notes">>;
 
 /** Fields copied from Plaid on every write. Never includes the category. */
 export type PlaidFields = {
@@ -39,11 +52,11 @@ export type PlaidFields = {
   plaidSeenAt: number;
 };
 
-export type NewTransactionDoc = PlaidFields & Assignment & { createdAt: number; updatedAt: number };
+export type NewTransactionDoc = PlaidFields & Assignment & UserFields & { createdAt: number; updatedAt: number };
 
 export type WriteOp =
   | { type: "create"; id: string; data: NewTransactionDoc }
-  | { type: "update"; id: string; data: PlaidFields & Partial<Assignment> & { updatedAt: number } }
+  | { type: "update"; id: string; data: PlaidFields & Partial<Assignment & UserFields> & { updatedAt: number } }
   | { type: "markRemoved"; id: string; data: { removedByPlaid: true; updatedAt: number } }
   | { type: "delete"; id: string };
 
@@ -55,7 +68,7 @@ export type LegacyTransaction = {
   amount: number;
   rawName: string;
   pending: boolean;
-  assignment: Assignment;
+  assignment: StoredTransaction;
 };
 
 /** Legacy transactions by legacyKey. Matches are removed as they are used. */
@@ -80,12 +93,12 @@ export type PlanInput = {
    * Existing transaction docs, keyed by id, including ones marked removed.
    * Must include the docs for every pending_transaction_id.
    */
-  existing: Map<string, Assignment>;
+  existing: Map<string, StoredTransaction>;
   /** The account doc for a Plaid account id, or null when that account doesn't sync. */
   accountDocIdFor: (plaidAccountId: string) => string | null;
   itemId: string;
   /** Rules engine: picks a category for an uncategorized transaction. */
-  categorize: (fields: PlaidFields) => Assignment;
+  categorize: (fields: PlaidFields) => Categorized;
   /** Older copies of transactions that are being imported again. */
   legacy?: LegacyIndex;
   now: number;
@@ -129,11 +142,74 @@ export function toPlaidFields(tx: PlaidTransaction, accountId: string, itemId: s
   };
 }
 
+/** The engine's view of a transaction the sync job is writing. */
+export function toCategorizeInput(fields: PlaidFields): CategorizeInput {
+  return {
+    accountId: fields.accountId,
+    amount: fields.amount,
+    merchantName: fields.merchantName,
+    merchantEntityId: fields.merchantEntityId,
+    rawName: fields.rawName,
+    originalDescription: fields.originalDescription,
+    plaidPrimary: fields.category?.primary ?? null,
+    plaidDetailed: fields.category?.detailed ?? null,
+    plaidConfidence: fields.category?.confidence_level ?? null,
+  };
+}
+
 export function isCategorized(assignment: Assignment | undefined): boolean {
   return Boolean(assignment?.categoryKind && assignment.categoryId);
 }
 
-const UNCATEGORIZED: Assignment = { categoryKind: null, categoryId: null, transferAccountId: null };
+const KINDS: readonly CategoryKind[] = ["income", "expense", "transfer"];
+
+function textOrNull(value: unknown): string | null {
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+/** A stored doc's category and user fields, with anything malformed read as empty. */
+export function toStoredTransaction(data: Record<string, unknown>): StoredTransaction {
+  return {
+    categoryKind: KINDS.find((kind) => kind === data.categoryKind) ?? null,
+    categoryId: textOrNull(data.categoryId),
+    transferAccountId: textOrNull(data.transferAccountId),
+    categorySource: CATEGORY_SOURCES.find((source) => source === data.categorySource) ?? null,
+    ruleId: textOrNull(data.ruleId),
+    suggestedCategoryId: textOrNull(data.suggestedCategoryId),
+    customName: textOrNull(data.customName),
+    hidden: data.hidden === true,
+    notes: textOrNull(data.notes),
+  };
+}
+
+const EMPTY: Assignment & UserFields = {
+  categoryKind: null,
+  categoryId: null,
+  transferAccountId: null,
+  categorySource: null,
+  ruleId: null,
+  suggestedCategoryId: null,
+  customName: null,
+  hidden: false,
+  notes: null,
+};
+
+const USER_EDITS = ["customName", "hidden", "notes"] as const;
+
+/** Your rename, hiding, and notes on the copy a new transaction replaces. */
+function userEdits(source: StoredTransaction | undefined): Partial<UserFields> {
+  const edits: Partial<UserFields> = {};
+  if (!source) return edits;
+  for (const key of USER_EDITS) {
+    if (source[key] !== undefined) Object.assign(edits, { [key]: source[key] });
+  }
+  return edits;
+}
+
+/** Only defined fields, so a doc never holds undefined (Firestore rejects it). */
+function defined<T extends object>(value: T): Partial<T> {
+  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Partial<T>;
+}
 
 /**
  * The older copy a re-imported transaction replaces: same account, date,
@@ -178,29 +254,53 @@ export function planSync(input: PlanInput): SyncPlan {
     const current = state.get(tx.transaction_id);
 
     if (current) {
-      // Plaid fields only. A category is never overwritten; rules run only
-      // when the transaction is still uncategorized.
-      const assignment = isCategorized(current) ? undefined : categorize(fields);
-      const nextAssignment = assignment && isCategorized(assignment) ? assignment : undefined;
-      ops.push({ type: "update", id: tx.transaction_id, data: { ...fields, ...nextAssignment, updatedAt: now } });
-      if (nextAssignment) state.set(tx.transaction_id, nextAssignment);
+      // Plaid fields only. A category is never overwritten, and your renames
+      // and notes are never touched; rules run only while the transaction
+      // is uncategorized.
+      let next: Partial<Assignment & UserFields> | undefined;
+      if (!isCategorized(current)) {
+        const result = categorize(fields);
+        if (isCategorized(result)) {
+          next = {
+            categoryKind: result.categoryKind,
+            categoryId: result.categoryId,
+            transferAccountId: result.transferAccountId,
+            categorySource: result.categorySource ?? null,
+            ruleId: result.ruleId ?? null,
+            suggestedCategoryId: null,
+          };
+        } else if ((result.suggestedCategoryId ?? null) !== (current.suggestedCategoryId ?? null)) {
+          next = { suggestedCategoryId: result.suggestedCategoryId ?? null };
+        }
+      }
+      ops.push({ type: "update", id: tx.transaction_id, data: { ...fields, ...next, updatedAt: now } });
+      if (next) state.set(tx.transaction_id, { ...current, ...next });
       if (isModified) modified += 1;
       return;
     }
 
     // A posted transaction keeps the category set on its pending version, and
-    // a re-imported one keeps the category of the copy it replaces.
+    // a re-imported one keeps the category of the copy it replaces. Either
+    // way your rename, hiding, and notes come along.
     const pendingSource = fields.pendingTransactionId ? state.get(fields.pendingTransactionId) : undefined;
     const older = takeLegacy(legacy, fields);
-    const assignment = isCategorized(pendingSource)
-      ? (pendingSource as Assignment)
+    const categorizedSource = isCategorized(pendingSource)
+      ? pendingSource
       : older && isCategorized(older.assignment)
         ? older.assignment
-        : categorize(fields);
+        : undefined;
+    const assignment = categorizedSource ?? categorize(fields);
 
-    const data: NewTransactionDoc = { ...fields, ...UNCATEGORIZED, ...assignment, createdAt: now, updatedAt: now };
+    const data: NewTransactionDoc = {
+      ...fields,
+      ...EMPTY,
+      ...defined(assignment),
+      ...defined(userEdits(pendingSource ?? older?.assignment)),
+      createdAt: now,
+      updatedAt: now,
+    };
     ops.push({ type: "create", id: tx.transaction_id, data });
-    state.set(tx.transaction_id, assignment);
+    state.set(tx.transaction_id, data);
     added += 1;
 
     if (older) {

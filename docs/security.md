@@ -21,16 +21,18 @@ How Telos protects user data. Five layers, from the database out:
 | `users/{uid}` | Owner | Owner | Owner | Owner |
 | `plaidItems` | No | No | No | No |
 | `plaidItemStatus`, `balanceSnapshots` | Owner | No | No | No |
-| `transactions` | Owner | No | Owner, category fields only, valid `categoryKind` | No |
+| `transactions` | Owner | No | Owner, category fields, name, hiding, and notes, with limits | No |
 | `accounts` | Owner | Owner, manual accounts only | Owner, with limits | No |
 | `categories` | Owner | Owner, valid `kind` | Owner, `kind` unchanged | Owner |
-| `budgets`, `automations`, `categoryPlaidStats`, `settings` | Owner | Owner | Owner | Owner |
+| `rules`, `merchantMemory` | Owner | Owner, required fields | Owner, required fields | Owner |
+| `budgets`, `settings` | Owner | Owner | Owner | Owner |
 | `rateLimits`, `plaidUsage` (top level) | No | No | No | No |
 
 The limits in detail:
 
-- **Transactions:** an update may change only `categoryKind`, `categoryId`, `transferAccountId`, and `updatedAt`, and `categoryKind` must be `income`, `expense`, `transfer`, or null. Amounts, dates, and the rest are Plaid's.
-- **Categories:** `kind` must be valid on create and can't change on update, because each transaction stores its category's kind.
+- **Transactions:** an update may change only the category fields (`categoryKind`, `categoryId`, `transferAccountId`, `categorySource`, `ruleId`, `suggestedCategoryId`), `customName`, `hidden`, `notes`, and `updatedAt`. `categoryKind` must be `income`, `expense`, `transfer`, or null; `categorySource` one of `user`, `rule`, `merchant`, `plaid`, or null; `customName` at most 120 characters and `notes` at most 1,000. A transfer needs a destination, and it can't be the transaction's own account. Amounts, dates, and the rest are Plaid's.
+- **Rules:** `enabled` is true or false, `priority` a number, and `conditions` and `actions` maps. **Merchant memory:** `categoryId` is a string and `streak` a whole number above 0.
+- **Categories:** `kind` must be valid on create and can't change on update, because each transaction stores its category's kind. `plaidCategories`, if present, must be a list.
 - **Account create:** `isManual` must be `true`, and `plaidItemId` and `plaidAccountId` must be empty. Only the server creates linked accounts.
 - **Account update:** may never change `isManual` or any Plaid field, including `plaidType`, `plaidSubtype`, `plaidName`, and `plaidClosed`. On a linked account, it also may not change `startingBalance`, `currentBalance`, or `balanceUpdatedAt`.
 - **Account delete:** server only, because deleting an account also deletes its transactions and must check what links to it.

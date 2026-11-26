@@ -24,8 +24,10 @@ They cover the pure logic, with no database or network.
 | `connections.test.ts` | Bank status, consent warnings, sync age, Last Synced, and when the browser syncs on its own |
 | `plaidEnv.test.ts` | Reading `PLAID_ENV` and spotting connections from the other environment |
 | `exportCsv.test.ts` | CSV quoting, the formula guard, and the export's order and signs |
-| `categorization.test.ts` | `normalizeMerchant`, `resolveWinner` thresholds, `readVotes` with old and new formats, `applyRules` order and fallthrough, and paycheck math |
-| `budgetCalculations.test.ts` | Month helpers, refunds netting, the zero floor, archived actuals, transfer detection, cash flow, and net worth |
+| `categorization.test.ts` | Merchant keys, rule matching (merchant, description, account, amount, direction), the engine's order (rules, merchant memory, Plaid mappings, suggestions), skipped categories, Apply to past and your picks, accepting suggestions, parsing stored rules and memory, starter categories, bulk edits (set category, hide, and a rule from a selection), and paycheck math |
+| `transfers.test.ts` | Transfer labels, and pairing: opposite amounts, the 5-day window, a transfer label on one leg, skipped categories and hidden transactions, destinations, and closest dates first |
+| `budgetCalculations.test.ts` | Month helpers, refunds netting, the zero floor, archived actuals, transfer detection (paired legs, card and loan payments), savings and debt actuals counted once, hidden transactions, Needs Review, uncategorized spending, cash flow, and net worth |
+| `budgetTools.test.ts` | Copy last month (estimates for lines never set, lines for removed categories ignored) and Fill from estimates |
 | `encryption.test.ts` | Round trip, tamper detection, the old format, key rotation, and key length checks |
 
 Server modules start with `import "server-only"`, which throws outside Next.js. `vitest.config.ts` swaps it for an empty stub (`tests/serverOnlyStub.ts`) so tests can import them.
@@ -38,9 +40,10 @@ Server modules start with `import "server-only"`, which throws outside Next.js. 
 |---|---|
 | Ownership | You can read your data; another user and a signed-out user can't |
 | Server-only data | `plaidItems`, `rateLimits`, and `plaidUsage` are fully denied; `plaidItemStatus` and `balanceSnapshots` are read-only |
-| Transactions | Category fields can change; Plaid fields can't; no create or delete |
+| Transactions | Category fields, name, hiding, and notes can change within limits; no transfer to the transaction's own account; Plaid fields can't change; no create or delete |
+| Rules and merchant memory | You can write your own with the required fields; another user can't |
 | Accounts | Only manual accounts can be created; a manual balance can be edited; a linked account's balance, Plaid fields, and what Plaid reports about it can't; no delete |
-| Categories | `kind` must be `income`, `expense`, or `transfer` |
+| Categories | `kind` must be `income`, `expense`, or `transfer`, and can't change; `plaidCategories` must be a list |
 
 **Change `firestore.rules`? Add a test** for the new behavior in this file, both an allowed case and a denied one.
 
@@ -71,10 +74,11 @@ Before a release, run through this on sandbox with `user_transactions_dynamic`:
 3. Link the same test user at the same bank again. Telos refuses before exchanging anything, and Connections used doesn't change.
 4. Press Manage accounts on the card, stop sharing one account, then share it again. It shows "Not shared", then syncs again.
 5. Press Sync, then Refresh on the card, then Rebuild from Plaid in its menu. Categories survive the rebuild.
-6. Categorize a transaction and accept the automation offer.
-7. Set a budget line, reload, and check it stuck.
-8. Export transactions from Settings and open the file.
-9. Archive an account, check it leaves net worth, then restore it.
-10. Disconnect the bank (type DISCONNECT). Its accounts become manual with history kept. Link it again: the accounts come back as linked, with their categories.
-11. Archive an account at a disconnected bank and delete it permanently.
-12. Sign in with a second Google account and check it sees none of the first one's data.
+6. Add the starter categories, then categorize a transaction and create the offered rule with Also apply to past transactions. Check the matches change and your own picks don't. Accept a suggestion, and check a paired transfer shows as a transfer on both accounts.
+7. Set a budget line, reload, and check it stuck. Use Copy last month and Fill from estimates, and check the Uncategorized line matches the Needs Review tab's money out for the month.
+8. On Transactions, select a few, set a category, hide them, and create a rule from them. Open a transaction's details, rename it, add a note, and reload. Check the menu's Needs Review count and the header sync chip, and narrow the window to check the cards.
+9. Export transactions from Settings and open the file.
+10. Archive an account, check it leaves net worth, then restore it.
+11. Disconnect the bank (type DISCONNECT). Its accounts become manual with history kept. Link it again: the accounts come back as linked, with their categories.
+12. Archive an account at a disconnected bank and delete it permanently.
+13. Sign in with a second Google account and check it sees none of the first one's data.

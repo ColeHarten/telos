@@ -9,6 +9,7 @@ import {
   Box,
   Button,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -38,7 +39,7 @@ export default function ConnectBankDialog({ open, onClose, connections, accounts
   const atLimit = usage !== null && usage.env === "production" && usage.used >= usage.limit;
 
   return (
-    <Dialog open={open} onClose={link.disabled ? undefined : onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem" }}>Connect a bank</DialogTitle>
       <DialogContent>
         <Stack spacing={2}>
@@ -123,12 +124,13 @@ export default function ConnectBankDialog({ open, onClose, connections, accounts
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
-        <Button onClick={onClose} disabled={link.disabled} sx={{ textTransform: "none", fontWeight: 700 }}>
+        <Button onClick={onClose} sx={{ textTransform: "none", fontWeight: 700 }}>
           Cancel
         </Button>
         <Button
           onClick={link.onClick}
           disabled={link.disabled}
+          startIcon={link.disabled ? <CircularProgress size={14} color="inherit" /> : undefined}
           variant="contained"
           disableElevation
           sx={{ textTransform: "none", fontWeight: 700, bgcolor: "#2563eb", "&:hover": { bgcolor: "#1d4ed8" } }}

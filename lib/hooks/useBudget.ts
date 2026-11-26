@@ -6,6 +6,7 @@ import {
   collection,
   doc,
   documentId,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -187,6 +188,36 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
     [selectedMonthKey, scheduleSave]
   );
 
+  /** Sets many lines at once (Copy last month, Fill from estimates), saved like typed edits. */
+  const setBudgetLinesBulk = useCallback(
+    (lines: readonly BudgetLine[]) => {
+      if (lines.length === 0) return;
+      const monthKey = selectedMonthKey;
+      const next: BudgetLines = {};
+      for (const line of lines) next[line.id] = line;
+      pendingRef.current[monthKey] = { ...(pendingRef.current[monthKey] ?? {}), ...next };
+
+      setBudgetValues((cur) => {
+        const values = { ...cur };
+        for (const line of lines) values[line.id] = String(line.planned);
+        return values;
+      });
+      setBudgetLines((cur) => ({ ...cur, ...next }));
+      scheduleSave();
+    },
+    [selectedMonthKey, scheduleSave]
+  );
+
+  /** One month's saved lines, read once. */
+  const readMonthLines = useCallback(
+    async (monthKey: string): Promise<BudgetLines> => {
+      if (!user) throw new Error("Not signed in");
+      const snapshot = await getDoc(doc(db, "users", user.uid, "budgets", monthKey));
+      return (snapshot.exists() ? snapshot.data().lines ?? {} : {}) as BudgetLines;
+    },
+    [user]
+  );
+
   const loadBudgetRange = useCallback(
     async (startMonthKey: string, endMonthKey: string) => {
       if (!user) throw new Error("Not signed in");
@@ -231,6 +262,8 @@ export function useBudget(user: AuthUser | null, authLoading: boolean, initialMo
     budgetValues,
     budgetLines,
     setBudgetValue,
+    setBudgetLinesBulk,
+    readMonthLines,
     saveStatus,
     flushSave,
     budgetLoading,

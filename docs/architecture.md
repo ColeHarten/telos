@@ -41,7 +41,7 @@ There are two paths to the database:
 | Plaid connections and access tokens | Server only | Secrets. The browser can't even read them. |
 | Transactions | Server, except the category fields | They come from Plaid. You only choose the category. |
 | Linked accounts' balances and Plaid fields | Server only | They come from Plaid. |
-| Manual accounts, categories, budgets, automations, and settings | Browser | Your own data, protected by owner checks in the rules. |
+| Manual accounts, categories, budgets, rules, merchant memory, and settings | Browser | Your own data, protected by owner checks in the rules. |
 
 Full details are in [Data model](data-model.md) and [Security](security.md).
 
@@ -50,7 +50,7 @@ Full details are in [Data model](data-model.md) and [Security](security.md).
 ```
 app/
   (authenticated)/       Signed-in pages. layout.tsx holds the nav and the sign-in guard.
-    dashboard/  accounts/  categories/  budgets/  transactions/  automations/  settings/
+    dashboard/  accounts/  categories/  budgets/  transactions/  rules/  settings/
     oauth/               Where banks that use OAuth send you back; resumes Plaid Link
   api/                   Server routes (see api-reference.md)
     plaid/               create-link-token, create-update-link-token, exchange-token, sync,
@@ -60,18 +60,21 @@ app/
   layout.tsx, providers.tsx, page.tsx (redirects to /dashboard), not-found.tsx
 
 components/              Shared UI: page header, month picker, logo, archive warning dialog,
+                         CategoryPicker, MerchantAvatar, SyncStatusChip (the header chip),
                          TransactionsProvider (one transactions listener per visit)
 
 lib/
   hooks/                 Browser data access, one hook per area
                          useAuth, useAccounts, useCategories, useBudget, useTransactions,
-                         useAutomations, useSettings, usePlaidAccountLink, useAutoSync
+                         useRules, useSettings, usePlaidAccountLink, useAutoSync,
+                         useSyncRunning
   services/              Server logic
                          plaidService, syncService, syncPlanner, syncLoop, linkGate,
                          accountReconcile, plaidEnv, plaidUsage, ruleEngine,
                          encryption, auth, rateLimit, logging
   api/handler.ts         withUser wrapper used by every route
   budgetCalculations.ts  Shared budget, cash-flow, and net-worth math
+  budgetTools.ts         Copy last month and Fill from estimates
   paycheck/paycheck.ts   Net pay and deduction math
   merchant.ts            normalizeMerchant, shared by browser and server
   connections.ts         Bank status, sync age, and when to sync automatically
@@ -102,10 +105,11 @@ firebase.json            Firebase CLI and emulator config
 | `lib/services/accountReconcile.ts` | Which account docs to create, reattach, close, or reopen |
 | `lib/connections.ts` | A bank's status, and when the browser should sync on its own |
 | `lib/exportCsv.ts` | The CSV export, including the guard against spreadsheet formulas |
-| `lib/services/ruleEngine.ts` (`applyRules`, `resolveWinner`, `readVotes`) | Which category a new transaction gets |
+| `lib/categorization.ts` | Which category a transaction gets: rules, merchant memory, and Plaid mappings, plus rule previews and Apply to past |
+| `lib/transfers.ts` | Pairing the two legs of a transfer between your accounts |
 | `lib/budgetCalculations.ts` | Budget actuals, cash flow, and net worth |
 | `lib/paycheck/paycheck.ts` | Net pay and deduction amounts |
-| `lib/merchant.ts` | The merchant key used by automations |
+| `lib/merchant.ts` | Normalizing merchant names for rules and merchant memory |
 
 **Server modules can't leak into the browser.** Every file in `lib/services/` except the pure ones (`syncPlanner.ts`, `syncLoop.ts`, `linkGate.ts`, `accountReconcile.ts`, and `plaidEnv.ts`), plus `lib/api/handler.ts` and `lib/firebaseAdmin.ts`, starts with `import "server-only"`, so the build fails if a page imports one.
 
@@ -113,7 +117,7 @@ firebase.json            Firebase CLI and emulator config
 
 **Every API route has the same shape.** `withUser` (`lib/api/handler.ts`) checks the sign-in token, applies the rate limit, and turns errors into `{ error, message }`. A route body only does its own job.
 
-**Live listeners over manual refetching.** Hooks subscribe to Firestore. After a sync or a link, the server writes and the page updates by itself. Transactions have one listener for the whole visit, in `TransactionsProvider` in the signed-in layout, so moving between pages doesn't read them all again.
+**Live listeners over manual refetching.** Hooks subscribe to Firestore. After a sync or a link, the server writes and the page updates by itself. Transactions have one listener for the whole visit, in `TransactionsProvider` in the signed-in layout, so moving between pages doesn't read them all again. The provider also pairs transfers once for every page and counts Needs Review for the menu. `useAutoSync`, also in the layout, listens to each bank's status and hands it to the header's sync chip, which reads whether a sync is running from `useSyncRunning`.
 
 **Category choices are never overwritten.** Sync only fills in categories that are empty. See [Plaid and sync](plaid-and-sync.md).
 
@@ -130,4 +134,4 @@ firebase.json            Firebase CLI and emulator config
 
 Webhooks (syncing while Telos is closed), a privacy policy and terms, and a delete-my-account option.
 
-Also out of scope for now: editing automations in place, showing learned defaults in the UI, vote decay, multi-currency, and error monitoring such as Sentry.
+Also out of scope for now: splits, tags, category groups, recurring transactions, multi-currency, and error monitoring such as Sentry.

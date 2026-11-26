@@ -1,6 +1,8 @@
+import { hasPlaidTransferLabel, isLoanMovement } from "@/lib/transfers";
 import type { Account, Category, Transaction } from "@/lib/types/types";
 
 // Pure budget and cash-flow math shared by the Dashboard and Budgets pages.
+// Hidden transactions are left out of every total.
 
 /** "YYYY-MM" for the current local month. */
 export function getCurrentMonthKey(): string {
@@ -41,7 +43,7 @@ export function categoryActuals(
 ): Map<string, number> {
   const net = new Map<string, number>();
   for (const tx of transactions) {
-    if (!tx.categoryId || !isInMonth(tx.date, monthKey)) continue;
+    if (tx.hidden || !tx.categoryId || !isInMonth(tx.date, monthKey)) continue;
     if (tx.categoryKind !== "income" && tx.categoryKind !== "expense") continue;
     if (!categoriesById.has(tx.categoryId)) continue;
     const signed = tx.categoryKind === "income" ? -tx.amount : tx.amount;
@@ -76,38 +78,65 @@ export function archivedCategoryActuals(
   }
   let transactionCount = 0;
   for (const tx of transactions) {
-    if (!tx.categoryId || !isInMonth(tx.date, monthKey)) continue;
+    if (tx.hidden || !tx.categoryId || !isInMonth(tx.date, monthKey)) continue;
     if (tx.categoryKind !== "income" && tx.categoryKind !== "expense") continue;
     if (categoriesById.get(tx.categoryId)?.isArchived) transactionCount += 1;
   }
   return { income, expense, total: income + expense, transactionCount };
 }
 
-/** Transfers into each destination account for one month. */
-export function transferActualsByAccount(transactions: readonly Transaction[], monthKey: string): Map<string, number> {
-  const map = new Map<string, number>();
-  for (const tx of transactions) {
-    if (tx.categoryKind !== "transfer" || !tx.transferAccountId || !isInMonth(tx.date, monthKey)) continue;
-    map.set(tx.transferAccountId, (map.get(tx.transferAccountId) ?? 0) + Math.abs(tx.amount));
-  }
-  return map;
-}
-
-const PLAID_TRANSFER_PRIMARY = new Set(["TRANSFER_IN", "TRANSFER_OUT"]);
-const PLAID_TRANSFER_DETAILED = new Set(["LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"]);
+type TransferFields = Pick<
+  Transaction,
+  "categoryKind" | "plaidCategoryPrimary" | "plaidCategoryDetailed" | "transferPairId"
+>;
 
 /**
- * True for money moving between the user's own accounts: anything categorized
- * as a transfer, plus uncategorized transactions Plaid labels as a transfer
- * or a credit-card payment.
+ * True for money moving between your own accounts: anything categorized as a
+ * transfer, and uncategorized transactions that are paired with their other
+ * leg or that Plaid labels a transfer or a card or loan payment.
  */
-export function isTransfer(tx: Pick<Transaction, "categoryKind" | "plaidCategoryPrimary" | "plaidCategoryDetailed">): boolean {
+export function isTransfer(tx: TransferFields): boolean {
   if (tx.categoryKind === "transfer") return true;
   if (tx.categoryKind) return false;
-  return (
-    PLAID_TRANSFER_PRIMARY.has(tx.plaidCategoryPrimary ?? "") ||
-    PLAID_TRANSFER_DETAILED.has(tx.plaidCategoryDetailed ?? "")
-  );
+  return Boolean(tx.transferPairId) || hasPlaidTransferLabel(tx);
+}
+
+/**
+ * Waiting for you to categorize: uncategorized, not hidden, and not a paired
+ * transfer or a card or loan payment (those are transfers already).
+ */
+export function needsReview(tx: TransferFields & Pick<Transaction, "hidden">): boolean {
+  if (tx.categoryKind || tx.hidden || tx.transferPairId) return false;
+  return !isLoanMovement(tx);
+}
+
+/**
+ * Net money moved into each account by transfers in one month, counted once:
+ * a linked account from its own transactions, and a manual account (which
+ * has none) from the transfers categorized to it. Withdrawals count against
+ * the account, and each total is floored at 0.
+ */
+export function transferActualsByAccount(
+  transactions: readonly Transaction[],
+  accounts: readonly Pick<Account, "id" | "isManual">[],
+  monthKey: string
+): Map<string, number> {
+  const linked = new Set(accounts.filter((account) => !account.isManual).map((account) => account.id));
+  const net = new Map<string, number>();
+  const add = (accountId: string, value: number) => net.set(accountId, (net.get(accountId) ?? 0) + value);
+
+  for (const tx of transactions) {
+    if (tx.hidden || !isInMonth(tx.date, monthKey) || !isTransfer(tx)) continue;
+    // Plaid amounts are positive for money out, so money in is -amount.
+    if (linked.has(tx.originAccId)) add(tx.originAccId, -tx.amount);
+    if (tx.categoryKind === "transfer" && tx.transferAccountId && !linked.has(tx.transferAccountId)) {
+      add(tx.transferAccountId, tx.amount);
+    }
+  }
+
+  const floored = new Map<string, number>();
+  for (const [id, value] of net) floored.set(id, Math.max(0, value));
+  return floored;
 }
 
 export type CashFlow = { inflow: number; outflow: number; net: number };
@@ -126,12 +155,30 @@ export function plannedAmount(
   return Number.isFinite(value) ? value : 0;
 }
 
-/** Inflow and outflow for one month, excluding transfers. */
+/**
+ * Money out in one month that has no category yet (Needs Review). Budgets
+ * show it as its own line, so their actuals add up to cash flow.
+ */
+export function uncategorizedSpending(
+  transactions: readonly Transaction[],
+  monthKey: string
+): { total: number; count: number } {
+  let total = 0;
+  let count = 0;
+  for (const tx of transactions) {
+    if (tx.amount <= 0 || !isInMonth(tx.date, monthKey) || !needsReview(tx)) continue;
+    total += tx.amount;
+    count += 1;
+  }
+  return { total: Math.round(total * 100) / 100, count };
+}
+
+/** Inflow and outflow for one month, excluding transfers and hidden transactions. */
 export function monthCashFlow(transactions: readonly Transaction[], monthKey: string): CashFlow {
   let inflow = 0;
   let outflow = 0;
   for (const tx of transactions) {
-    if (!isInMonth(tx.date, monthKey) || isTransfer(tx)) continue;
+    if (tx.hidden || !isInMonth(tx.date, monthKey) || isTransfer(tx)) continue;
     if (tx.amount < 0) inflow += -tx.amount;
     else outflow += tx.amount;
   }

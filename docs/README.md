@@ -38,6 +38,8 @@ It is a Next.js 16 app (App Router) on Firebase Auth and Firestore, with Plaid f
 | **Not shared** | A linked account the bank no longer shares with Telos. It keeps its history, and Manage accounts can share it again. |
 | **Category kind** | `income`, `expense`, or `transfer`. |
 | **Transfer** | Money moving between your own accounts, such as a savings deposit or a credit-card payment. Transfers are left out of cash flow. |
-| **Automation** | A rule that sends every transaction from one merchant to one category. |
-| **Learned default** | A category Telos picks for a Plaid category code after you've chosen it several times. |
+| **Rule** | Conditions (merchant, description, account, amount, direction) and actions (category, rename, hide) applied to new transactions, top rule first. |
+| **Merchant memory** | The category you've picked for a merchant twice in a row, applied to its new transactions. |
+| **Plaid mapping** | The Plaid categories listed on one of your categories; their transactions land there. |
+| **Paired transfer** | Two transactions in your accounts with opposite amounts within 5 days, treated as one transfer. |
 | **Archive** | Hide something but keep its history. Archived items can be restored. |

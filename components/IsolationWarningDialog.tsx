@@ -30,7 +30,7 @@ interface IsolationWarningDialogProps {
 /**
  * Shared confirmation dialog shown before archiving an account or category
  * that checkAccountIsolation / checkCategoryIsolation found still has live
- * references elsewhere (transaction history, automations, linked
+ * references elsewhere (transaction history, rules, linked
  * deductions, dependent transfer categories, etc).
  *
  * Unlike DeleteAccountDialog, this never blocks the action — every reason

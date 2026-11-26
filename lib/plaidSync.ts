@@ -28,6 +28,24 @@ export type PlaidUsage = { env: "sandbox" | "production"; used: number; limit: n
 const MAX_ROUNDS = 10;
 
 let running: Promise<SyncSummary> | null = null;
+const runningListeners = new Set<() => void>();
+
+function setRunning(next: Promise<SyncSummary> | null): void {
+  running = next;
+  for (const listener of runningListeners) listener();
+}
+
+/** Whether a sync is running in this tab (see useSyncRunning). */
+export function isSyncRunning(): boolean {
+  return running !== null;
+}
+
+export function subscribeSyncRunning(listener: () => void): () => void {
+  runningListeners.add(listener);
+  return () => {
+    runningListeners.delete(listener);
+  };
+}
 
 function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
@@ -93,9 +111,9 @@ export function runSync(itemId?: string, options: { afterCurrent?: boolean } = {
     .catch(() => undefined)
     .then(() => syncRounds(itemId))
     .finally(() => {
-      if (running === run) running = null;
+      if (running === run) setRunning(null);
     });
-  running = run;
+  setRunning(run);
   return run;
 }
 

@@ -2,6 +2,60 @@
 
 Running log for the `production-hardening` branch: one section and one commit per stage.
 
+## Stage 8: UX polish
+
+The last stage before go-live, in the same look. No new dependencies, no Firestore rules changes, and no new indexes.
+
+### Added
+- **Transactions: bulk select.** Checkboxes on every row, a page checkbox in the header, and Select all for every match. The bar that appears sets a category (`planBulkCategory`, which skips a transfer category on its own account), hides or unhides (`planBulkHidden`), or creates a rule from the selection (`draftRuleFor`: their shared merchant and category).
+- **Transactions: detail drawer** (`TransactionDrawer.tsx`): category with why it has it (the rule's wording when a rule set it), your own name, notes, Hide from budgets, and the bank's description, merchant, authorized date, Plaid category, and website. Create rule starts from the transaction's merchant. A new rule from the drawer or a selection offers Apply to past, as on the Rules page.
+- **Transactions: Needs Review tab** with its count, **merchant logos** (`components/MerchantAvatar.tsx`: Plaid's logo, else the old icons), and **cards on phones**.
+- **Searchable category picker** in every row (`CategoryPicker`, grouped into expenses, income, and transfers), replacing the plain list. Clearing it sends a transaction back to Needs Review.
+- **Needs Review count** next to Transactions in the menu. `TransactionsProvider` now wraps the whole signed-in layout, pairs transfers once for every page, and counts Needs Review.
+- **Header sync chip** (`components/SyncStatusChip.tsx`): "Synced 5m ago" (the bank synced longest ago), "Syncing…", "Importing history…", or "1 bank needs attention". Click to sync, or to open Accounts. `useAutoSync` now returns each bank's status, and `useSyncRunning` reports whether a sync is running in the tab (the Transactions Sync button follows it too).
+- **Dashboard setup checklist** (`SetupChecklist.tsx`): categories, rules, first bank, Needs Review, and a budget, until every step is done once. Hide checklist remembers in the browser.
+- **Budgets:** Copy last month and Fill from estimates (`lib/budgetTools.ts`, both confirmed first), and an **Uncategorized** line under Expenses (`uncategorizedSpending`), so actuals add up to cash flow.
+- `authorizedDate` and `website` are read into transactions for the drawer.
+- Tests: bulk edits and rule drafts (`categorization.test.ts`), uncategorized spending (`budgetCalculations.test.ts`), and `budgetTools.test.ts`.
+
+### Fixed
+- **Connect a bank** fetches the link token when the dialog opens, and Continue to Plaid shows a spinner until it's ready, so nothing seems to happen for a second. A prepared token older than 30 minutes is replaced. Cancel works while it loads.
+- Docs: Budgets shows money on archived categories in a warning above the lines, not as its own line (Using Telos and Calculations said otherwise), and the Dashboard's planned figures include category estimates, not only amounts saved on Budgets.
+
+### Notes
+- Setting a category on selected transactions counts as your pick but doesn't teach merchant memory, like Accept all.
+- `docs/`: Using Telos, Calculations, Categorization, Architecture, Data model, and Testing updated for this stage.
+
+## Stage 7: Categorization v2
+
+Monarch-style rules, merchant memory, Plaid mappings, and transfer pairing. No new dependencies or Firestore indexes. Deploy `firestore.rules` with this stage. Nothing is migrated: automations and learning votes are replaced, and the database is cleared at go-live.
+
+### Added
+- **Engine** (`lib/categorization.ts`, pure, shared by sync and the browser): your rules, then merchant memory, then Plaid mappings, then Needs Review. A category is skipped when archived, deleted, or a transfer to the transaction's own account.
+- **Rules** (`rules/{ruleId}`, Rules page): conditions on merchant (is or contains, ignoring digits), description, accounts, amount range, and direction; actions to set a category, rename, and hide. Priority order with move up and down, an on/off switch, editing in place, and a live match count.
+- **Rule prompt** after you categorize a transaction, with "Also apply to past transactions". **Apply to past** on the Rules page: a preview of matches and changes, your own picks left alone unless included. Runs in the browser on the loaded 24 months (`planRuleApplication`, `applyUpdates`).
+- **Merchant memory** (`merchantMemory/{key}`): the same pick twice in a row applies to that merchant's new transactions. Keyed on Plaid's merchant id, or the name without digits. Never learns transfers.
+- **Plaid mappings** on categories (`plaidCategories`), with the version 2 taxonomy in `lib/plaidCategories.ts`. A detailed mapping beats a primary one. Only confident matches assign; others become suggestions, with one-click accept and **Accept all**.
+- **Starter categories** (`lib/starterCategories.ts`): 25 categories with mappings, offered on an empty Categories page.
+- **Transfer pairing** (`lib/transfers.ts`): opposite amounts in two of your accounts within 5 days, where one leg looks like a transfer. Paired legs count as transfers and leave Needs Review.
+- Transaction fields: `categorySource`, `ruleId`, `suggestedCategoryId`, `customName`, `hidden`, and `notes`. A posted transaction keeps its pending version's name, hiding, and notes, and sync never touches them.
+- Tests: `transfers` unit tests; the engine, rules, memory, Apply to past, and starter categories in `categorization`; savings and debt actuals, hidden transactions, and Needs Review in `budgetCalculations`; new fields in `syncPlanner`; rules tests for the new fields, self-transfers, rules, and merchant memory.
+
+### Changed
+- Savings and debt actuals count each movement once and net of withdrawals: a linked account from its own transactions, a manual one from transfers categorized to it (was the absolute amount of every transfer categorized to the account).
+- Card and loan payments, and loan disbursements, are transfers when uncategorized (was credit-card payments only), and stay out of Needs Review.
+- Hidden transactions are left out of budgets, cash flow, summary cards, and Needs Review.
+- `firestore.rules`: transactions accept the new fields with type and length checks, and refuse a transfer to the transaction's own account; `rules` and `merchantMemory` replace `automations` and `categoryPlaidStats`; `plaidCategories` must be a list.
+- Transactions page: the rule prompt replaces the automation offer; suggestions, a note on how each category was set, Plaid category labels, dimmed hidden rows, and search over the bank's description.
+- Archiving a category warns when a rule assigns it.
+- `docs/`: Categorization rewritten; the other pages are updated for this stage.
+
+### Removed
+- Automations (the page, `useAutomations`, and the prompt) and learning votes (`categoryPlaidStats`, `resolveWinner`, `readVotes`).
+
+### Not in this stage
+- Bulk editing, the detail drawer (notes and renaming by hand), the header sync chip, and the dashboard checklist (Stage 8).
+
 ## Stage 6: Production Plaid safety
 
 Everything that has to be right before a real bank is linked. No new dependencies. Deploy `firestore.rules` with this stage. No new Firestore indexes.

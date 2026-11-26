@@ -2,42 +2,60 @@
 
 import { syncStatusCaption } from "@/lib/connections";
 import { runSync } from "@/lib/plaidSync";
-import { isTransfer } from "@/lib/budgetCalculations";
+import { isTransfer, needsReview } from "@/lib/budgetCalculations";
 import { useAccounts } from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
 import { useCategories } from "@/lib/hooks/useCategories";
-import useAutomations from "@/lib/hooks/useAutomations";
+import useRules, { type RuleDraft } from "@/lib/hooks/useRules";
+import useSyncRunning from "@/lib/hooks/useSyncRunning";
 import useTransactions from "@/lib/hooks/useTransactions";
-import { normalizeMerchant } from "@/lib/merchant";
-import AutomationPromptDialog from "./automationsPromptDialog";
+import {
+  draftRuleFor,
+  emptyActions,
+  emptyConditions,
+  findRuleFor,
+  planAcceptSuggestions,
+  planBulkCategory,
+  planBulkHidden,
+  planRuleApplication,
+  type TransactionChanges,
+} from "@/lib/categorization";
+import { plaidCategoryLabel } from "@/lib/plaidCategories";
+import type { Account, Rule, Transaction } from "@/lib/types/types";
+import { categoryNote } from "./categoryNote";
+import RulePromptDialog from "./RulePromptDialog";
+import TransactionDrawer from "./TransactionDrawer";
+import ApplyRuleDialog from "../rules/ApplyRuleDialog";
+import RuleDialog from "../rules/RuleDialog";
+import { describeActions, describeConditions } from "../rules/ruleText";
+import CategoryPicker from "@/components/CategoryPicker";
+import MerchantAvatar from "@/components/MerchantAvatar";
 import PageHeader from "@/components/PageHeader";
 
 // Icons
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
+import BoltIcon from "@mui/icons-material/Bolt";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowLeftIcon from "@mui/icons-material/KeyboardArrowLeft";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
-import LocalGasStationOutlinedIcon from "@mui/icons-material/LocalGasStationOutlined";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
-import MovieOutlinedIcon from "@mui/icons-material/MovieOutlined";
-import MusicNoteOutlinedIcon from "@mui/icons-material/MusicNoteOutlined";
 import NorthEastIcon from "@mui/icons-material/NorthEast";
-import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
 import SearchIcon from "@mui/icons-material/Search";
-import ShoppingCartOutlinedIcon from "@mui/icons-material/ShoppingCartOutlined";
 import SouthWestIcon from "@mui/icons-material/SouthWest";
-import StorefrontOutlinedIcon from "@mui/icons-material/StorefrontOutlined";
 import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import SyncIcon from "@mui/icons-material/Sync";
+import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 
 import {
   Alert,
   Avatar,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Divider,
@@ -61,6 +79,8 @@ import {
   Tabs,
   TextField,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 
@@ -72,12 +92,14 @@ type StatusFilter = "all" | "pending" | "posted";
 type DateRangePreset = "all" | "7d" | "30d" | "mtd" | "ytd" | "ltm" | "custom";
 // "credit" = money coming in (i.e. tx.amount < 0 in this schema)
 // "debit" = money going out (i.e. tx.amount > 0 in this schema)
-type FlowFilter = "all" | "credit" | "debit";
+// "review" = waiting in Needs Review
+type FlowFilter = "all" | "credit" | "debit" | "review";
 
 const FLOW_FILTER_TABS: { value: FlowFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "credit", label: "Money In" },
   { value: "debit", label: "Money Out" },
+  { value: "review", label: "Needs Review" },
 ];
 
 const DATE_RANGE_PRESETS: { value: DateRangePreset; label: string }[] = [
@@ -86,34 +108,6 @@ const DATE_RANGE_PRESETS: { value: DateRangePreset; label: string }[] = [
   { value: "ytd", label: "This Year" },
   { value: "custom", label: "Custom Range" },
 ];
-
-// ---- Presentation helpers (visual mapping only — data itself is untouched/placeholder) ----
-
-function getMerchantAvatar(name: string = "") {
-  const n = name.toLowerCase();
-
-  if (n.includes("costco")) {
-    return { bgcolor: "#dc2626", color: "#fff", icon: <ShoppingCartOutlinedIcon sx={{ fontSize: 18 }} /> };
-  }
-  if (n.includes("spotify")) {
-    return { bgcolor: "#16a34a", color: "#fff", icon: <MusicNoteOutlinedIcon sx={{ fontSize: 18 }} /> };
-  }
-  if (n.includes("paycheck") || n.includes("payroll") || n.includes("deposit")) {
-    return { bgcolor: "#2563eb", color: "#fff", icon: <PaidOutlinedIcon sx={{ fontSize: 18 }} /> };
-  }
-  if (n.includes("shell") || n.includes("gas") || n.includes("chevron") || n.includes("exxon")) {
-    return { bgcolor: "#ea580c", color: "#fff", icon: <LocalGasStationOutlinedIcon sx={{ fontSize: 18 }} /> };
-  }
-  if (n.includes("netflix")) {
-    return { bgcolor: "#dc2626", color: "#fff", icon: <MovieOutlinedIcon sx={{ fontSize: 18 }} /> };
-  }
-  if (n.includes("chase") || n.includes("bank")) {
-    return { bgcolor: "#0f172a", color: "#fff", icon: <AccountBalanceOutlinedIcon sx={{ fontSize: 18 }} /> };
-  }
-
-  // Fallback: neutral avatar with storefront icon
-  return { bgcolor: "#f1f5f9", color: "#64748b", icon: <StorefrontOutlinedIcon sx={{ fontSize: 18 }} /> };
-}
 
 function buildPaginationItems(currentPage: number, totalPages: number) {
   if (totalPages <= MAX_VISIBLE_PAGES) {
@@ -240,10 +234,16 @@ export default function TransactionsPage() {
     hasOlderTransactions,
     loadOlderTransactions,
     updateTransactionAssignment,
+    applyUpdates,
   } = useTransactions(user, authLoading, accounts);
 
   const { categories = [] } = useCategories(user, authLoading);
-  const { automations, createAutomation } = useAutomations(user, authLoading);
+  const { rules, createRule } = useRules(user, authLoading);
+  const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
+  const accountsById = useMemo(() => new Map<string, Account>(accounts.map((account) => [account.id, account])), [accounts]);
+  const syncRunning = useSyncRunning();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"), { noSsr: true });
 
   const [syncing, setSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
@@ -262,14 +262,38 @@ export default function TransactionsPage() {
   const [minAmount, setMinAmount] = useState("");
   const [maxAmount, setMaxAmount] = useState("");
 
-  // Pending automation prompt — set right after a user manually assigns a
-  // transaction's category, offering to turn that one-off choice into a
-  // standing merchant -> category automation (see useAutomations).
-  const [pendingAutomation, setPendingAutomation] = useState<{
+  // Rule prompt, shown right after you categorize a transaction: offers a rule
+  // for its merchant. The data outlives `open` so the dialog closes smoothly,
+  // and a new key each time starts the dialog fresh.
+  const [rulePrompt, setRulePrompt] = useState<{
+    key: number;
+    transactionId: string;
+    merchant: string;
     merchantLabel: string;
     categoryId: string;
     categoryLabel: string;
   } | null>(null);
+  const [rulePromptOpen, setRulePromptOpen] = useState(false);
+  const [acceptingAll, setAcceptingAll] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // Bulk selection. Only selected transactions that match the filters count.
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  // A new key resets the bulk category picker after each use.
+  const [bulkPickerKey, setBulkPickerKey] = useState(0);
+
+  // The detail drawer, by transaction id so it follows live updates.
+  const [drawerTxId, setDrawerTxId] = useState<string | null>(null);
+  const drawerTx = drawerTxId ? transactions.find((tx) => tx.id === drawerTxId) ?? null : null;
+
+  // Create rule (from the drawer or a selection), then offer to apply it to past transactions.
+  const [ruleDialog, setRuleDialog] = useState<{ key: number; open: boolean; initial: RuleDraft | null }>({
+    key: 0,
+    open: false,
+    initial: null,
+  });
+  const [applying, setApplying] = useState<{ key: number; open: boolean; rule: Rule | null }>({ key: 0, open: false, rule: null });
 
   // Active accounts only. Archiving the selected account resets the filter to All Accounts.
   const selectableAccounts = useMemo(() => accounts.filter((account) => !account.isArchived), [accounts]);
@@ -327,11 +351,13 @@ export default function TransactionsPage() {
     const normalizedSearch = searchTerm.trim().toLowerCase();
 
     return scopedTransactions.filter((transaction) => {
-      if (normalizedSearch && !transaction.displayName.toLowerCase().includes(normalizedSearch)) return false;
+      const searchable = `${transaction.displayName} ${transaction.rawName ?? ""}`.toLowerCase();
+      if (normalizedSearch && !searchable.includes(normalizedSearch)) return false;
       if (statusFilter === "pending" && !transaction.pending) return false;
       if (statusFilter === "posted" && transaction.pending) return false;
       if (flowFilter === "credit" && transaction.amount >= 0) return false;
       if (flowFilter === "debit" && transaction.amount < 0) return false;
+      if (flowFilter === "review" && !needsReview(transaction)) return false;
 
       const amount = Math.abs(transaction.amount);
       if (min !== null && !Number.isNaN(min) && amount < min) return false;
@@ -340,6 +366,11 @@ export default function TransactionsPage() {
       return true;
     });
   }, [scopedTransactions, searchTerm, statusFilter, flowFilter, minAmount, maxAmount]);
+  const reviewCount = useMemo(() => scopedTransactions.filter(needsReview).length, [scopedTransactions]);
+  const selectedTransactions = useMemo(
+    () => filteredTransactions.filter((transaction) => selectedIds.has(transaction.id)),
+    [filteredTransactions, selectedIds]
+  );
   const hasActiveFilters = Boolean(searchTerm || hasDateRange || statusFilter !== "all" || flowFilter !== "all" || minAmount || maxAmount || selectedAccount);
 
   // Summary metrics recompute from the top-tier scope only (account + date range),
@@ -352,7 +383,7 @@ export default function TransactionsPage() {
     let outflowCount = 0;
 
     for (const transaction of scopedTransactions) {
-      if (isTransfer(transaction)) continue;
+      if (transaction.hidden || isTransfer(transaction)) continue;
       if (transaction.amount > 0) {
         outflows += transaction.amount;
         outflowCount += 1;
@@ -400,10 +431,9 @@ export default function TransactionsPage() {
   }
 
   /**
-   * Applies a manual category assignment ("" clears it, back to Needs Review),
-   * then offers to make it a standing automation, unless the change failed or
-   * that automation already exists. tx.displayName is derived the same way the
-   * sync job derives it, so the automation matches future transactions.
+   * Applies your category pick ("" clears it, back to Needs Review), then
+   * offers a rule for the merchant, unless the change failed or an enabled
+   * rule already gives this merchant that category.
    */
   async function handleCategoryChange(tx: (typeof transactions)[number], categoryId: string) {
     if (!categoryId) {
@@ -411,28 +441,166 @@ export default function TransactionsPage() {
       return;
     }
 
-    const category = categories.find((c) => c.id === categoryId);
+    const category = categoriesById.get(categoryId);
     if (!category) return;
     // Only transfer categories carry a destination account.
     const transferAccountId = category.kind === "transfer" ? category.transferAccountId ?? null : null;
 
     const saved = await updateTransactionAssignment(tx.id, category.kind, categoryId, transferAccountId);
-    if (!saved) return;
+    if (!saved || findRuleFor(rules, tx, categoryId)) return;
 
-    const merchantKey = normalizeMerchant(tx.displayName);
-    const alreadyAutomated = automations.some(
-      (automation) => automation.merchantKey === merchantKey && automation.categoryId === categoryId
-    );
-    if (alreadyAutomated) return;
-
-    setPendingAutomation({
-      merchantLabel: tx.displayName,
+    setRulePrompt((prev) => ({
+      key: (prev?.key ?? 0) + 1,
+      transactionId: tx.id,
+      merchant: tx.merchantName || tx.rawName || tx.displayName,
+      merchantLabel: tx.merchantName || tx.displayName,
       categoryId,
       categoryLabel: category.name,
-    });
+    }));
+    setRulePromptOpen(true);
+  }
+
+  // The rule the prompt offers, and what it would change among the other loaded transactions.
+  const promptPlan = useMemo(() => {
+    if (!rulePrompt) return null;
+    const rule: Rule = {
+      id: "draft",
+      enabled: true,
+      priority: 0,
+      conditions: { ...emptyConditions(), merchant: { op: "is", value: rulePrompt.merchant } },
+      actions: { ...emptyActions(), categoryId: rulePrompt.categoryId },
+    };
+    const others = transactions.filter((tx) => tx.id !== rulePrompt.transactionId);
+    const plan = planRuleApplication(rule, others, categoriesById, false);
+    return { rule, others, pastMatches: plan.updates.length, userPicks: plan.userPicks };
+  }, [rulePrompt, transactions, categoriesById]);
+
+  async function handleCreatePromptRule(applyToPast: boolean, includeUserPicks: boolean) {
+    if (!promptPlan) return;
+    const { rule, others } = promptPlan;
+    const id = await createRule({ conditions: rule.conditions, actions: rule.actions });
+    setRulePromptOpen(false);
+    if (!id) {
+      setTransactionsError("Could not save the rule.");
+      return;
+    }
+    if (!applyToPast) return;
+    const { updates } = planRuleApplication({ ...rule, id }, others, categoriesById, includeUserPicks);
+    const saved = await applyUpdates(updates);
+    if (saved > 0) setNotice(`Rule created and applied to ${saved} past ${saved === 1 ? "transaction" : "transactions"}.`);
+  }
+
+  // Plaid's less confident guesses, waiting in Needs Review.
+  const suggestionUpdates = useMemo(() => planAcceptSuggestions(transactions, categoriesById), [transactions, categoriesById]);
+
+  /** Accepts one suggestion as your own pick, which also feeds merchant memory. */
+  async function acceptSuggestion(tx: (typeof transactions)[number]) {
+    const category = tx.suggestedCategoryId ? categoriesById.get(tx.suggestedCategoryId) : undefined;
+    if (!category) return;
+    const transferAccountId = category.kind === "transfer" ? category.transferAccountId ?? null : null;
+    await updateTransactionAssignment(tx.id, category.kind, category.id, transferAccountId);
+  }
+
+  async function handleAcceptAllSuggestions() {
+    setAcceptingAll(true);
+    const saved = await applyUpdates(suggestionUpdates);
+    setAcceptingAll(false);
+    if (saved > 0) setNotice(`Accepted ${saved} ${saved === 1 ? "suggestion" : "suggestions"}.`);
   }
 
   const isLoading = authLoading || transactionsLoading;
+
+  // ---- Selection
+  const pageIds = paginatedTransactions.map((tx) => tx.id);
+  const pageSelectedCount = pageIds.filter((id) => selectedIds.has(id)).length;
+  const allSelectedHidden = selectedTransactions.length > 0 && selectedTransactions.every((tx) => tx.hidden);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function togglePage() {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      const selectAll = pageIds.some((id) => !next.has(id));
+      for (const id of pageIds) {
+        if (selectAll) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  /** Your category on every selected transaction (a transfer is skipped on its own account). */
+  async function handleBulkCategory(categoryId: string) {
+    const category = categoriesById.get(categoryId);
+    setBulkPickerKey((key) => key + 1);
+    if (!category) return;
+    const { updates, skipped } = planBulkCategory(selectedTransactions, categoryId, categoriesById);
+    setBulkBusy(true);
+    const saved = await applyUpdates(updates);
+    setBulkBusy(false);
+    if (saved === updates.length) clearSelection();
+    const parts: string[] = [];
+    if (saved > 0) parts.push(`Moved ${plural(saved, "transaction", "transactions")} to ${category.name}.`);
+    if (skipped > 0) parts.push(`Skipped ${plural(skipped, "transfer", "transfers")} to its own account.`);
+    if (parts.length > 0) setNotice(parts.join(" "));
+  }
+
+  async function handleBulkHidden(hidden: boolean) {
+    const updates = planBulkHidden(selectedTransactions, hidden);
+    setBulkBusy(true);
+    const saved = await applyUpdates(updates);
+    setBulkBusy(false);
+    if (saved === updates.length) clearSelection();
+    if (saved > 0) setNotice(`${hidden ? "Hid" : "Unhid"} ${plural(saved, "transaction", "transactions")}.`);
+  }
+
+  // ---- Drawer and rules
+  async function saveTransactionChanges(tx: Transaction, changes: TransactionChanges): Promise<boolean> {
+    return (await applyUpdates([{ id: tx.id, changes }])) === 1;
+  }
+
+  function openRuleDialog(initial: RuleDraft) {
+    setDrawerTxId(null);
+    setRuleDialog((prev) => ({ key: prev.key + 1, open: true, initial }));
+  }
+
+  async function handleRuleSave(draft: RuleDraft): Promise<boolean> {
+    const id = await createRule(draft);
+    if (!id) return false;
+    const created: Rule = { id, enabled: true, priority: 0, ...draft };
+    // Offer to apply the new rule to the transactions it already matches.
+    if (planRuleApplication(created, transactions, categoriesById, false).updates.length > 0) {
+      setApplying((prev) => ({ key: prev.key + 1, open: true, rule: created }));
+    } else {
+      setNotice("Rule created.");
+    }
+    return true;
+  }
+
+  async function handleApplyRule(rule: Rule, includeUserPicks: boolean) {
+    const { updates } = planRuleApplication(rule, transactions, categoriesById, includeUserPicks);
+    const saved = await applyUpdates(updates);
+    if (saved > 0) setNotice(`Rule applied to ${plural(saved, "transaction", "transactions")}.`);
+  }
+
+  // A transfer category can't send money to the account it came from.
+  const excludeOwnTransfer = (tx: Transaction) => (category: { kind: string; transferAccountId?: string | null }) =>
+    category.kind === "transfer" && category.transferAccountId === tx.originAccId;
+
+  function formatAmount(tx: Transaction) {
+    return tx.amount > 0 ? `(${tx.amount.toFixed(2)})` : Math.abs(tx.amount).toFixed(2);
+  }
 
   const formatDateString = (dateInput: string) => {
     try {
@@ -505,9 +673,9 @@ export default function TransactionsPage() {
 
           <Button
             variant="outlined"
-            startIcon={syncing ? <CircularProgress size={14} color="inherit" /> : <SyncIcon sx={{ color: "#2563eb", fontSize: 18 }} />}
+            startIcon={syncing || syncRunning ? <CircularProgress size={14} color="inherit" /> : <SyncIcon sx={{ color: "#2563eb", fontSize: 18 }} />}
             onClick={handleSync}
-            disabled={syncing || isLoading}
+            disabled={syncing || syncRunning || isLoading}
             sx={{
               borderColor: "#bfdbfe",
               color: "#2563eb",
@@ -522,7 +690,7 @@ export default function TransactionsPage() {
               "&:hover": { borderColor: "#93c5fd", bgcolor: "#eff6ff" },
             }}
           >
-            {syncing ? "Syncing..." : "Sync Transactions"}
+            {syncing || syncRunning ? "Syncing..." : "Sync Transactions"}
           </Button>
         </Stack>
       </PageHeader>
@@ -774,6 +942,8 @@ export default function TransactionsPage() {
         <Tabs
           value={flowFilter}
           onChange={(_event, value) => setFlowFilter(value as FlowFilter)}
+          variant="scrollable"
+          scrollButtons={false}
           sx={{
             minHeight: 40,
             bgcolor: "#fff",
@@ -781,6 +951,7 @@ export default function TransactionsPage() {
             border: "1px solid #e2e8f0",
             p: 0.5,
             width: "fit-content",
+            maxWidth: "100%",
             "& .MuiTabs-indicator": { display: "none" },
           }}
         >
@@ -788,7 +959,7 @@ export default function TransactionsPage() {
             <Tab
               key={tab.value}
               value={tab.value}
-              label={tab.label}
+              label={tab.value === "review" && reviewCount > 0 ? `${tab.label} (${reviewCount})` : tab.label}
               disableRipple
               sx={{
                 minHeight: 32,
@@ -920,7 +1091,28 @@ export default function TransactionsPage() {
         </Alert>
       )}
 
-      {/* 4. Transactions Data Grid Core View */}
+      {suggestionUpdates.length > 0 && (
+        <Alert
+          severity="info"
+          sx={{ borderRadius: 3 }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={handleAcceptAllSuggestions}
+              disabled={acceptingAll}
+              sx={{ textTransform: "none", fontWeight: 600 }}
+            >
+              {acceptingAll ? "Accepting…" : "Accept all"}
+            </Button>
+          }
+        >
+          Plaid suggests a category for {suggestionUpdates.length} uncategorized{" "}
+          {suggestionUpdates.length === 1 ? "transaction" : "transactions"}. Accept them below one at a time, or all at once.
+        </Alert>
+      )}
+
+      {/* 4. Transactions: a table, or cards on small screens */}
       {isLoading ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 12 }}>
           <CircularProgress size={40} thickness={4} sx={{ color: "#2563eb" }} />
@@ -928,18 +1120,160 @@ export default function TransactionsPage() {
       ) : filteredTransactions.length === 0 ? (
         <Paper variant="outlined" sx={{ p: 8, textAlign: "center", borderRadius: 3, borderStyle: "dashed", bgcolor: "#fff" }}>
           <Typography color="text.secondary" variant="body2">
-            {transactions.length === 0 && !hasActiveFilters ? "No transaction histories mapped yet." : "No transactions match the current filters."}
+            {transactions.length === 0 && !hasActiveFilters
+              ? "No transactions yet. Connect a bank on the Accounts page, or add a manual account."
+              : flowFilter === "review"
+                ? "Nothing needs review."
+                : "No transactions match the current filters."}
           </Typography>
         </Paper>
       ) : (
         <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden", bgcolor: "#fff", borderColor: "#e2e8f0" }}>
+          {/* Bulk actions for the selected transactions */}
+          {selectedTransactions.length > 0 && (
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 1.5,
+                px: 2.5,
+                py: 1.5,
+                bgcolor: "#eff6ff",
+                borderBottom: "1px solid #bfdbfe",
+              }}
+            >
+              <Typography sx={{ fontWeight: 700, color: "#1e3a8a", fontSize: "0.85rem" }}>
+                {selectedTransactions.length} selected
+              </Typography>
+              {selectedTransactions.length < filteredTransactions.length && (
+                <Button
+                  size="small"
+                  onClick={() => setSelectedIds(new Set(filteredTransactions.map((tx) => tx.id)))}
+                  sx={{ textTransform: "none", fontWeight: 600 }}
+                >
+                  Select all {filteredTransactions.length}
+                </Button>
+              )}
+              <Box sx={{ width: 240, bgcolor: "#fff", borderRadius: 1 }}>
+                <CategoryPicker
+                  key={bulkPickerKey}
+                  categories={categories}
+                  value={null}
+                  onChange={(categoryId) => {
+                    if (categoryId) void handleBulkCategory(categoryId);
+                  }}
+                  placeholder="Set category"
+                  disabled={bulkBusy}
+                />
+              </Box>
+              <Button
+                size="small"
+                startIcon={<VisibilityOffOutlinedIcon sx={{ fontSize: 18 }} />}
+                onClick={() => void handleBulkHidden(!allSelectedHidden)}
+                disabled={bulkBusy}
+                sx={{ textTransform: "none", fontWeight: 600 }}
+              >
+                {allSelectedHidden ? "Unhide" : "Hide"}
+              </Button>
+              <Button
+                size="small"
+                startIcon={<BoltIcon sx={{ fontSize: 18 }} />}
+                onClick={() => openRuleDialog(draftRuleFor(selectedTransactions))}
+                disabled={bulkBusy}
+                sx={{ textTransform: "none", fontWeight: 600 }}
+              >
+                Create rule
+              </Button>
+              <Box sx={{ flex: 1 }} />
+              {bulkBusy && <CircularProgress size={18} />}
+              <IconButton aria-label="Clear selection" size="small" onClick={clearSelection}>
+                <CloseRoundedIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          )}
+
+          {isMobile ? (
+            <Box>
+              {paginatedTransactions.map((tx) => {
+                const category = tx.categoryId ? categoriesById.get(tx.categoryId) : undefined;
+                const waiting = needsReview(tx);
+                const note = categoryNote(tx);
+                const selected = selectedIds.has(tx.id);
+
+                return (
+                  <Box
+                    key={tx.id}
+                    onClick={() => setDrawerTxId(tx.id)}
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1.25,
+                      px: 1.5,
+                      py: 1.25,
+                      borderBottom: "1px solid #f1f5f9",
+                      cursor: "pointer",
+                      opacity: tx.hidden ? 0.55 : 1,
+                      bgcolor: selected ? "#f8fbff" : "#fff",
+                    }}
+                  >
+                    <Checkbox
+                      size="small"
+                      checked={selected}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={() => toggleSelected(tx.id)}
+                      slotProps={{ input: { "aria-label": `Select ${tx.displayName}` } }}
+                      sx={{ p: 0.5 }}
+                    />
+                    <MerchantAvatar name={tx.displayName} logoUrl={tx.logoUrl} />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography noWrap sx={{ fontWeight: 600, color: "#0f172a", fontSize: "0.875rem" }}>
+                        {tx.displayName}
+                      </Typography>
+                      <Typography noWrap variant="caption" sx={{ color: "#94a3b8", display: "block", fontSize: "0.75rem" }}>
+                        {formatDateString(tx.date)} · {tx.originAccName}
+                        {tx.pending ? " · Pending" : ""}
+                      </Typography>
+                      {category ? (
+                        <Typography noWrap variant="caption" sx={{ color: "#2563eb", display: "block", fontWeight: 600, fontSize: "0.75rem" }}>
+                          {category.name}
+                        </Typography>
+                      ) : waiting ? (
+                        <Typography noWrap variant="caption" sx={{ color: "#dc2626", display: "block", fontWeight: 600, fontSize: "0.75rem" }}>
+                          Needs Review
+                        </Typography>
+                      ) : (
+                        note && (
+                          <Typography noWrap variant="caption" sx={{ color: "#94a3b8", display: "block", fontSize: "0.75rem" }}>
+                            {note}
+                          </Typography>
+                        )
+                      )}
+                    </Box>
+                    <Typography
+                      sx={{ fontWeight: 700, fontSize: "0.875rem", color: tx.amount > 0 ? "#dc2626" : "#16a34a", whiteSpace: "nowrap" }}
+                    >
+                      {formatAmount(tx)}
+                    </Typography>
+                  </Box>
+                );
+              })}
+            </Box>
+          ) : (
           <TableContainer>
             <Table>
               <TableHead>
                 <TableRow sx={{ borderBottom: "1px solid #e2e8f0" }}>
-                  <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>
-                    Date <Box component="span" sx={{ fontSize: 11, ml: 0.25, color: "#cbd5e1" }}>↕</Box>
+                  <TableCell padding="checkbox" sx={{ pl: 1.5 }}>
+                    <Checkbox
+                      size="small"
+                      checked={pageIds.length > 0 && pageSelectedCount === pageIds.length}
+                      indeterminate={pageSelectedCount > 0 && pageSelectedCount < pageIds.length}
+                      onChange={togglePage}
+                      slotProps={{ input: { "aria-label": "Select this page" } }}
+                    />
                   </TableCell>
+                  <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Date</TableCell>
                   <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Description</TableCell>
                   <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Account</TableCell>
                   <TableCell sx={{ fontWeight: 500, color: "#94a3b8", py: 1.75, fontSize: "0.8rem" }}>Category</TableCell>
@@ -952,30 +1286,45 @@ export default function TransactionsPage() {
               <TableBody>
                 {paginatedTransactions.map((tx) => {
                   const isExpense = tx.amount > 0;
-                  const merchant = getMerchantAvatar(tx.displayName);
+                  const suggestion = !tx.categoryId && tx.suggestedCategoryId ? categoriesById.get(tx.suggestedCategoryId) : undefined;
+                  const note = categoryNote(tx);
+                  const selected = selectedIds.has(tx.id);
 
                   return (
-                    <TableRow key={tx.id} sx={{ "&:hover": { backgroundColor: "#f8fafc" }, "& td": { py: 1.75, borderBottom: "1px solid #f1f5f9" } }}>
+                    <TableRow
+                      key={tx.id}
+                      selected={selected}
+                      sx={{
+                        opacity: tx.hidden ? 0.55 : 1,
+                        "&:hover": { backgroundColor: "#f8fafc" },
+                        "&.Mui-selected, &.Mui-selected:hover": { backgroundColor: "#f8fbff" },
+                        "& td": { py: 1.75, borderBottom: "1px solid #f1f5f9" },
+                      }}
+                    >
+                      <TableCell padding="checkbox" sx={{ pl: 1.5 }}>
+                        <Checkbox
+                          size="small"
+                          checked={selected}
+                          onChange={() => toggleSelected(tx.id)}
+                          slotProps={{ input: { "aria-label": `Select ${tx.displayName}` } }}
+                        />
+                      </TableCell>
 
                       {/* Date */}
                       <TableCell sx={{ color: "#334155", fontWeight: 500, whiteSpace: "nowrap", fontSize: "0.85rem" }}>
                         {formatDateString(tx.date)}
                       </TableCell>
 
-                      {/* Description / Merchant */}
-                      <TableCell>
+                      {/* Description / Merchant: opens the detail drawer */}
+                      <TableCell onClick={() => setDrawerTxId(tx.id)} sx={{ cursor: "pointer" }}>
                         <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-                          <Avatar
-                            sx={{ width: 34, height: 34, bgcolor: merchant.bgcolor, color: merchant.color }}
-                          >
-                            {merchant.icon}
-                          </Avatar>
-                          <Box>
+                          <MerchantAvatar name={tx.displayName} logoUrl={tx.logoUrl} />
+                          <Box sx={{ minWidth: 0 }}>
                             <Typography sx={{ fontWeight: 600, color: "#0f172a", fontSize: "0.875rem", lineHeight: 1.3 }}>
                               {tx.displayName}
                             </Typography>
                             <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", fontSize: "0.75rem" }}>
-                              {tx.plaidCategoryPrimary || "General Entry"}
+                              {tx.notes ? tx.notes : plaidCategoryLabel(tx.plaidCategoryDetailed ?? tx.plaidCategoryPrimary) || "No Plaid category"}
                             </Typography>
                           </Box>
                         </Stack>
@@ -983,44 +1332,45 @@ export default function TransactionsPage() {
 
                       {/* Account */}
                       <TableCell>
-                        <Stack sx={{ flexDirection: "row", alignItems: "center", gap: 1 }}>
-                          <Typography sx={{ fontWeight: 500, color: "#334155", fontSize: "0.85rem" }}>
-                            {tx.originAccName || "Plaid Account"}
-                          </Typography>
-                        </Stack>
+                        <Typography sx={{ fontWeight: 500, color: "#334155", fontSize: "0.85rem" }}>
+                          {tx.originAccName || "Plaid Account"}
+                        </Typography>
                       </TableCell>
 
                       {/* Category */}
-                      <TableCell>
-                        <Select
-                          size="small"
-                          value={tx.categoryId ?? ""}
-                          onChange={(event) => handleCategoryChange(tx, event.target.value)}
-                          displayEmpty
-                          sx={{
-                            minWidth: 160,
-                            height: 32,
-                            fontSize: "0.8rem",
-                            bgcolor: "#fff",
-                            "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e2e8f0" },
-                          }}
-                        >
-                          <MenuItem value="" sx={{ fontSize: "0.8rem" }}>
-                            <em>Unassigned</em>
-                          </MenuItem>
-                          {categories
-                            // Archived categories stop being offered for new/changed
-                            // assignments — but a transaction already sitting on one
-                            // still needs its option present, or the Select would
-                            // render blank instead of the category's actual name.
-                            .filter((category) => !category.isArchived || category.id === tx.categoryId)
-                            .map((category) => (
-                              <MenuItem key={category.id} value={category.id} sx={{ fontSize: "0.8rem" }}>
-                                {category.name}
-                                {category.isArchived ? " (archived)" : ""}
-                              </MenuItem>
-                            ))}
-                        </Select>
+                      <TableCell sx={{ minWidth: 210 }}>
+                        <Stack spacing={0.5} sx={{ alignItems: "flex-start" }}>
+                          <Box
+                            sx={{
+                              width: 210,
+                              "& .MuiAutocomplete-inputRoot": { py: "1px", fontSize: "0.8rem", bgcolor: "#fff" },
+                              "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e2e8f0" },
+                            }}
+                          >
+                            <CategoryPicker
+                              categories={categories}
+                              value={tx.categoryId ?? null}
+                              onChange={(categoryId) => void handleCategoryChange(tx, categoryId ?? "")}
+                              placeholder="Needs Review"
+                              exclude={excludeOwnTransfer(tx)}
+                            />
+                          </Box>
+                          {suggestion ? (
+                            <Chip
+                              size="small"
+                              icon={<CheckRoundedIcon sx={{ fontSize: 14 }} />}
+                              label={`Suggested: ${suggestion.name}`}
+                              onClick={() => acceptSuggestion(tx)}
+                              sx={{ height: 22, fontSize: "0.72rem", fontWeight: 600, bgcolor: "#eff6ff", color: "#2563eb", borderRadius: 1.5 }}
+                            />
+                          ) : (
+                            note && (
+                              <Typography variant="caption" sx={{ color: "#94a3b8", fontSize: "0.72rem" }}>
+                                {note}
+                              </Typography>
+                            )
+                          )}
+                        </Stack>
                       </TableCell>
 
                       {/* Status */}
@@ -1041,12 +1391,12 @@ export default function TransactionsPage() {
 
                       {/* Amount */}
                       <TableCell align="right" sx={{ fontWeight: 700, fontSize: "0.875rem", color: isExpense ? "#dc2626" : "#16a34a", pr: 3 }}>
-                        {isExpense ? `(${tx.amount.toFixed(2)})` : `${Math.abs(tx.amount).toFixed(2)}`}
+                        {formatAmount(tx)}
                       </TableCell>
 
-                      {/* Actions */}
+                      {/* Details */}
                       <TableCell align="center">
-                        <IconButton size="small" sx={{ color: "#94a3b8" }}>
+                        <IconButton size="small" aria-label="Details" onClick={() => setDrawerTxId(tx.id)} sx={{ color: "#94a3b8" }}>
                           <MoreHorizIcon fontSize="small" />
                         </IconButton>
                       </TableCell>
@@ -1056,6 +1406,7 @@ export default function TransactionsPage() {
               </TableBody>
             </Table>
           </TableContainer>
+          )}
 
           {/* 5. Pagination View */}
           <Stack
@@ -1151,17 +1502,63 @@ export default function TransactionsPage() {
         </Box>
       )}
 
-      <AutomationPromptDialog
-        open={pendingAutomation !== null}
-        merchantLabel={pendingAutomation?.merchantLabel ?? ""}
-        cashflowLabel={pendingAutomation?.categoryLabel ?? ""}
-        onDismiss={() => setPendingAutomation(null)}
-        onConfirm={async () => {
-          if (!pendingAutomation) return;
-          await createAutomation(pendingAutomation.merchantLabel, pendingAutomation.categoryId);
-          setPendingAutomation(null);
-        }}
+      <TransactionDrawer
+        transaction={drawerTx}
+        categories={categories}
+        rules={rules}
+        accountsById={accountsById}
+        categoriesById={categoriesById}
+        onClose={() => setDrawerTxId(null)}
+        onCategoryChange={(tx, categoryId) => void handleCategoryChange(tx, categoryId)}
+        onAcceptSuggestion={(tx) => void acceptSuggestion(tx)}
+        onSave={saveTransactionChanges}
+        onCreateRule={(tx) => openRuleDialog(draftRuleFor([tx]))}
       />
+
+      <RuleDialog
+        key={`rule-${ruleDialog.key}`}
+        open={ruleDialog.open}
+        rule={null}
+        initial={ruleDialog.initial}
+        categories={categories}
+        accounts={accounts}
+        transactions={transactions}
+        onClose={() => setRuleDialog((prev) => ({ ...prev, open: false }))}
+        onSave={handleRuleSave}
+      />
+
+      <ApplyRuleDialog
+        key={`apply-${applying.key}`}
+        open={applying.open}
+        rule={applying.rule}
+        summary={applying.rule ? `${describeConditions(applying.rule, accountsById)} → ${describeActions(applying.rule, categoriesById)}` : ""}
+        transactions={transactions}
+        categoriesById={categoriesById}
+        onClose={() => setApplying((prev) => ({ ...prev, open: false }))}
+        onApply={handleApplyRule}
+      />
+
+      <RulePromptDialog
+        key={rulePrompt?.key ?? 0}
+        open={rulePromptOpen}
+        merchantLabel={rulePrompt?.merchantLabel ?? ""}
+        categoryLabel={rulePrompt?.categoryLabel ?? ""}
+        pastMatches={promptPlan?.pastMatches ?? 0}
+        userPicks={promptPlan?.userPicks ?? 0}
+        onDismiss={() => setRulePromptOpen(false)}
+        onConfirm={handleCreatePromptRule}
+      />
+
+      <Snackbar
+        open={notice !== null}
+        autoHideDuration={4000}
+        onClose={() => setNotice(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+      >
+        <Alert severity="success" variant="filled" onClose={() => setNotice(null)} sx={{ borderRadius: 2.5 }}>
+          {notice}
+        </Alert>
+      </Snackbar>
 
       <Snackbar
         open={syncSuccess}

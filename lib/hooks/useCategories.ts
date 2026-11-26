@@ -15,27 +15,9 @@ import {
   limit,
   query,
   where,
-  FieldPath,
-  deleteField,
 } from "firebase/firestore";
+import { missingStarterCategories } from "@/lib/starterCategories";
 import type { AuthUser, Category, CategoryKind, Deduction, PaycheckDetails } from "../types/types";
-
-// Removes a deleted category's learning votes, in both the nested format and
-// the old literal "counts.<id>" fields.
-async function pruneCategoryVotes(uid: string, categoryId: string): Promise<void> {
-  const snap = await getDocs(collection(db, "users", uid, "categoryPlaidStats"));
-  const batch = writeBatch(db);
-  let writes = 0;
-  snap.docs.forEach((d) => {
-    const data = d.data();
-    const counts = data.counts as Record<string, unknown> | undefined;
-    const hasVote = Boolean(counts && categoryId in counts) || `counts.${categoryId}` in data;
-    if (!hasVote) return;
-    batch.update(d.ref, new FieldPath("counts", categoryId), deleteField(), new FieldPath(`counts.${categoryId}`), deleteField());
-    writes += 1;
-  });
-  if (writes > 0) await batch.commit();
-}
 
 type AddCategoryPayload = {
   name: string;
@@ -44,6 +26,8 @@ type AddCategoryPayload = {
   description?: string;
   transferAccountId?: string | null;
   paycheckDetails?: PaycheckDetails | null;
+  /** Plaid categories (primary or detailed codes) whose transactions land here. */
+  plaidCategories?: string[];
   // Set only when this category is being auto-created by
   // reconcileContributionTransfers, below — never set from the manual
   // category form.
@@ -128,6 +112,7 @@ export function useCategories(user: AuthUser | null, authLoading: boolean) {
         kind: payload.kind,
         estimatedMonthly: payload.estimatedMonthly,
         description: payload.description ?? "",
+        plaidCategories: payload.plaidCategories ?? [],
         transferAccountId: payload.kind === "transfer" ? payload.transferAccountId ?? null : null,
         paycheckDetails: payload.kind === "income" ? payload.paycheckDetails ?? null : null,
         sourceIncomeCategoryId: payload.sourceIncomeCategoryId ?? null,
@@ -163,12 +148,12 @@ export function useCategories(user: AuthUser | null, authLoading: boolean) {
    * Reasons surfaced:
    *   - The category has transaction history. Those transactions keep their
    *     existing assignment, but the category stops being offered for new
-   *     ones (see ruleEngine.ts's applyRules and the Transactions page's
-   *     category picker) — worth knowing before archiving something still
-   *     actively in use.
-   *   - One or more automations still point at this category. They'll stop
-   *     having any effect the moment it's archived (see applyRules), rather
-   *     than erroring or being cleaned up automatically.
+   *     ones (see usableCategory in lib/categorization.ts and the Transactions
+   *     page's category picker) — worth knowing before archiving something
+   *     still actively in use.
+   *   - One or more rules still assign this category. They'll stop having any
+   *     effect on the category the moment it's archived, rather than erroring
+   *     or being cleaned up automatically.
    *   - This is an income category with auto-created, deduction-linked
    *     transfer categories still attached (see reconcileContributionTransfers).
    *     These are archived automatically alongside the parent — see
@@ -193,17 +178,15 @@ export function useCategories(user: AuthUser | null, authLoading: boolean) {
         );
       }
 
-      const automationsSnap = await getDocs(
+      const rulesSnap = await getDocs(
         query(
-          collection(db, "users", user.uid, "automations"),
-          where("categoryId", "==", categoryId),
+          collection(db, "users", user.uid, "rules"),
+          where("actions.categoryId", "==", categoryId),
           limit(1)
         )
       );
-      if (!automationsSnap.empty) {
-        reasons.push(
-          "One or more automations point at it. They'll stop assigning new transactions here once it's archived."
-        );
+      if (!rulesSnap.empty) {
+        reasons.push("One or more rules assign it. They'll stop assigning new transactions here once it's archived.");
       }
 
       const dependentTransfers = categories.filter(
@@ -312,9 +295,6 @@ export function useCategories(user: AuthUser | null, authLoading: boolean) {
     async (id: string) => {
       if (!user) throw new Error("Not signed in");
       await deleteDoc(doc(db, "users", user.uid, "categories", id));
-      await pruneCategoryVotes(user.uid, id).catch((err: unknown) => {
-        console.error("[useCategories] Could not prune learning votes:", err);
-      });
     },
     [user]
   );
@@ -356,7 +336,6 @@ export function useCategories(user: AuthUser | null, authLoading: boolean) {
 
       // One batch, so a failure never leaves half the transfers updated.
       const batch = writeBatch(db);
-      const removedIds: string[] = [];
 
       for (const entry of deductionBreakdown) {
         const deduction = deductions.find((d) => d.id === entry.deductionId);
@@ -393,20 +372,43 @@ export function useCategories(user: AuthUser | null, authLoading: boolean) {
       for (const [deductionId, category] of existingByDeductionId) {
         if (!linkedDeductionIds.has(deductionId)) {
           batch.delete(doc(categoriesRef, category.id));
-          removedIds.push(category.id);
         }
       }
 
       await batch.commit();
-
-      for (const id of removedIds) {
-        await pruneCategoryVotes(user.uid, id).catch((err: unknown) => {
-          console.error("[useCategories] Could not prune learning votes:", err);
-        });
-      }
     },
     [user, categories]
   );
+
+  /** Adds the starter categories (with their Plaid mappings) you don't have yet. Returns how many. */
+  const addStarterCategories = useCallback(async (): Promise<number> => {
+    if (!user) throw new Error("Not signed in");
+    const missing = missingStarterCategories(categories.map((c) => c.name));
+    if (missing.length === 0) return 0;
+    const categoriesRef = collection(db, "users", user.uid, "categories");
+    const batch = writeBatch(db);
+    const base = Date.now();
+    missing.forEach((starter, index) => {
+      batch.set(doc(categoriesRef), {
+        name: starter.name,
+        kind: starter.kind,
+        estimatedMonthly: 0,
+        description: "",
+        plaidCategories: starter.plaidCategories,
+        transferAccountId: null,
+        paycheckDetails: null,
+        sourceIncomeCategoryId: null,
+        sourceDeductionId: null,
+        sortOrder: base + index,
+        isDefault: false,
+        isArchived: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    });
+    await batch.commit();
+    return missing.length;
+  }, [user, categories]);
 
   return {
     categories,
@@ -419,6 +421,7 @@ export function useCategories(user: AuthUser | null, authLoading: boolean) {
     checkCategoryIsolation,
     deleteCategory,
     reconcileContributionTransfers,
+    addStarterCategories,
   };
 }
 

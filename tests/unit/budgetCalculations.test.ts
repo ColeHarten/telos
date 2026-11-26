@@ -6,10 +6,12 @@ import {
   isTransfer,
   monthCashFlow,
   monthKeysEndingAt,
+  needsReview,
   netWorth,
   plannedAmount,
   shiftMonthKey,
   transferActualsByAccount,
+  uncategorizedSpending,
 } from "@/lib/budgetCalculations";
 import type { Account, Category, Transaction } from "@/lib/types/types";
 
@@ -131,12 +133,79 @@ describe("transfers and cash flow", () => {
     expect(monthCashFlow(transactions, "2026-03")).toEqual({ inflow: 3020, outflow: 50, net: 2970 });
   });
 
-  it("sums transfers by destination account", () => {
+  it("treats paired legs and card and loan payments as transfers", () => {
+    expect(isTransfer(tx({ transferPairId: "other" }))).toBe(true);
+    expect(isTransfer(tx({ plaidCategoryPrimary: "LOAN_PAYMENTS" }))).toBe(true);
+    expect(isTransfer(tx({ plaidCategoryDetailed: "LOAN_DISBURSEMENTS_AUTO" }))).toBe(true);
+    expect(isTransfer(tx({ categoryKind: "expense", transferPairId: "other" }))).toBe(false);
+  });
+
+  it("counts a manual account's transfers from the sending side, net of withdrawals", () => {
+    const accounts = [account({ id: "checking" }), account({ id: "savings" })];
     const transactions = [
       tx({ categoryKind: "transfer", transferAccountId: "savings", amount: 200 }),
       tx({ categoryKind: "transfer", transferAccountId: "savings", amount: -50 }),
     ];
-    expect(transferActualsByAccount(transactions, "2026-03").get("savings")).toBe(250);
+    expect(transferActualsByAccount(transactions, accounts, "2026-03").get("savings")).toBe(150);
+  });
+
+  it("counts a linked account from its own transactions, once", () => {
+    const accounts = [
+      account({ id: "checking", isManual: false }),
+      account({ id: "savings", isManual: false }),
+      account({ id: "card", isManual: false, normalBalance: "liability" }),
+    ];
+    const transactions = [
+      // Checking to savings: the sending leg is categorized, the receiving leg is paired.
+      tx({ id: "a", categoryKind: "transfer", transferAccountId: "savings", amount: 300 }),
+      tx({ id: "b", originAccId: "savings", amount: -300, transferPairId: "a" }),
+      // A withdrawal from savings counts against it.
+      tx({ id: "c", originAccId: "savings", amount: 100, plaidCategoryPrimary: "TRANSFER_OUT" }),
+      // A card payment, seen on the card.
+      tx({ id: "d", originAccId: "card", amount: -500, plaidCategoryPrimary: "LOAN_PAYMENTS" }),
+      // Interest is income, and hidden transactions never count.
+      tx({ id: "e", originAccId: "savings", amount: -5, categoryKind: "income", categoryId: "salary" }),
+      tx({ id: "f", originAccId: "savings", amount: -1000, plaidCategoryPrimary: "TRANSFER_IN", hidden: true }),
+    ];
+    const actuals = transferActualsByAccount(transactions, accounts, "2026-03");
+    expect(actuals.get("savings")).toBe(200);
+    expect(actuals.get("card")).toBe(500);
+    expect(actuals.get("checking")).toBe(0);
+  });
+
+  it("leaves hidden transactions out of totals", () => {
+    const transactions = [
+      tx({ categoryKind: "expense", categoryId: "food", amount: 50 }),
+      tx({ categoryKind: "expense", categoryId: "food", amount: 70, hidden: true }),
+      tx({ amount: 30, hidden: true }),
+    ];
+    expect(categoryActuals(transactions, categories, "2026-03").get("food")).toBe(50);
+    expect(monthCashFlow(transactions, "2026-03").outflow).toBe(50);
+  });
+
+  it("puts only uncategorized, visible, unpaired, non-loan transactions in Needs Review", () => {
+    expect(needsReview(tx({}))).toBe(true);
+    expect(needsReview(tx({ categoryKind: "expense", categoryId: "food" }))).toBe(false);
+    expect(needsReview(tx({ hidden: true }))).toBe(false);
+    expect(needsReview(tx({ transferPairId: "other" }))).toBe(false);
+    expect(needsReview(tx({ plaidCategoryPrimary: "LOAN_PAYMENTS" }))).toBe(false);
+    expect(needsReview(tx({ plaidCategoryPrimary: "TRANSFER_OUT" }))).toBe(true);
+  });
+});
+
+describe("uncategorizedSpending", () => {
+  it("adds up money out waiting in Needs Review this month", () => {
+    const txs = [
+      tx({ id: "a", amount: 20 }),
+      tx({ id: "b", amount: 5.25 }),
+      tx({ id: "c", amount: -100 }),
+      tx({ id: "d", amount: 30, categoryKind: "expense", categoryId: "food" }),
+      tx({ id: "e", amount: 40, hidden: true }),
+      tx({ id: "f", amount: 50, transferPairId: "g" }),
+      tx({ id: "h", amount: 60, plaidCategoryPrimary: "LOAN_PAYMENTS" }),
+      tx({ id: "i", amount: 70, date: "2026-04-01" }),
+    ];
+    expect(uncategorizedSpending(txs, "2026-03")).toEqual({ total: 25.25, count: 2 });
   });
 });
 

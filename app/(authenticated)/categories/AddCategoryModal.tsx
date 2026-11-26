@@ -10,6 +10,7 @@ import type {
   PaycheckDetails,
 } from "@/lib/types/types";
 import { calculateWithholdings, payFrequencyOptions } from "@/lib/paycheck/paycheck";
+import { PLAID_CATEGORIES, plaidCategoryLabel } from "@/lib/plaidCategories";
 import { formatCurrency } from "@/lib/utils";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import DeleteRoundedIcon from "@mui/icons-material/DeleteRounded";
@@ -94,12 +95,15 @@ interface AddCategoryModalProps {
     estimatedMonthly: number;
     description: string;
     transferAccountId: string | null;
+    plaidCategories: string[];
     paycheckDetails: PaycheckDetails | null;
     deductionBreakdown: { deductionId: string; linkedAccountId: string; monthlyAmount: number }[];
   }) => Promise<void>;
   isSaving: boolean;
   editingCategory: Category | null;
   accounts: Account[];
+  /** Every category, to show which Plaid categories are already mapped elsewhere. */
+  categories: Category[];
   error?: string | null;
 }
 
@@ -110,12 +114,14 @@ export default function AddCategoryModal({
   isSaving,
   editingCategory,
   accounts,
+  categories,
   error,
 }: AddCategoryModalProps) {
   const [name, setName] = useState("");
   const [kind, setKind] = useState<CategoryKind>("expense");
   const [estimatedMonthly, setEstimatedMonthly] = useState("0");
   const [description, setDescription] = useState("");
+  const [plaidCategories, setPlaidCategories] = useState<string[]>([]);
   const [transferAccountId, setTransferAccountId] = useState("");
   const [destinationError, setDestinationError] = useState<string | null>(null);
 
@@ -149,6 +155,19 @@ export default function AddCategoryModal({
   // here (see the "UI-locked" decision in the roadmap doc).
   const isAutoLinkedTransfer = kind === "transfer" && Boolean(editingCategory?.sourceDeductionId);
 
+  // Plaid categories other categories already map. When two map the same
+  // one, the category listed first wins.
+  const mappedElsewhere = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const category of categories) {
+      if (category.id === editingCategory?.id || category.isArchived) continue;
+      for (const code of category.plaidCategories ?? []) {
+        if (!map.has(code)) map.set(code, category.name);
+      }
+    }
+    return map;
+  }, [categories, editingCategory]);
+
   useEffect(() => {
     if (!open) return;
 
@@ -158,6 +177,7 @@ export default function AddCategoryModal({
       setEstimatedMonthly(String(editingCategory.estimatedMonthly ?? 0));
       setDescription(editingCategory.description ?? "");
       setTransferAccountId(editingCategory.transferAccountId ?? "");
+      setPlaidCategories(editingCategory.plaidCategories ?? []);
 
       if (editingCategory.paycheckDetails) {
         setUsePaycheckProfile(true);
@@ -185,6 +205,7 @@ export default function AddCategoryModal({
       setEstimatedMonthly("0");
       setDescription("");
       setTransferAccountId("");
+      setPlaidCategories([]);
       setUsePaycheckProfile(false);
       setPayFrequency("biweekly");
       setGrossSalary("0");
@@ -458,6 +479,7 @@ export default function AddCategoryModal({
       estimatedMonthly: finalEstimatedMonthly,
       description: description.trim(),
       transferAccountId: kind === "transfer" ? transferAccountId : null,
+      plaidCategories,
       paycheckDetails,
       deductionBreakdown,
     });
@@ -689,6 +711,34 @@ export default function AddCategoryModal({
               }}
             />
           )}
+
+          <Box>
+            <Autocomplete
+              multiple
+              size="small"
+              options={PLAID_CATEGORIES}
+              value={PLAID_CATEGORIES.filter((option) => plaidCategories.includes(option.code))}
+              onChange={(_, next) => setPlaidCategories(next.map((option) => option.code))}
+              getOptionLabel={(option) => {
+                const elsewhere = mappedElsewhere.get(option.code);
+                return elsewhere ? `${option.label} (in ${elsewhere})` : option.label;
+              }}
+              isOptionEqualToValue={(option, current) => option.code === current.code}
+              groupBy={(option) => plaidCategoryLabel(option.primary)}
+              disabled={isSaving}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Plaid categories"
+                  placeholder={plaidCategories.length ? "" : "e.g., Food and drink › Groceries"}
+                  sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                />
+              )}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+              Transactions Plaid puts in these land here automatically. A detailed category beats a broad one.
+            </Typography>
+          </Box>
 
           <TextField
             fullWidth

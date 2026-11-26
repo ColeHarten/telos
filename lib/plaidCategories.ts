@@ -1,0 +1,186 @@
+/**
+ * Plaid's personal finance categories (version 2, which Telos pins), for
+ * mapping them to your categories. Generated from Plaid's taxonomy CSV;
+ * regenerate rather than edit by hand.
+ */
+
+export type PlaidCategoryOption = {
+  code: string;
+  /** The primary code; equal to `code` for a primary category. */
+  primary: string;
+  label: string;
+};
+
+const PRIMARY_LABELS: Record<string, string> = {
+  INCOME: "Income",
+  LOAN_DISBURSEMENTS: "Loan disbursements",
+  LOAN_PAYMENTS: "Loan payments",
+  TRANSFER_IN: "Transfer in",
+  TRANSFER_OUT: "Transfer out",
+  BANK_FEES: "Bank fees",
+  ENTERTAINMENT: "Entertainment",
+  FOOD_AND_DRINK: "Food and drink",
+  GENERAL_MERCHANDISE: "General merchandise",
+  HOME_IMPROVEMENT: "Home improvement",
+  MEDICAL: "Medical",
+  PERSONAL_CARE: "Personal care",
+  GENERAL_SERVICES: "General services",
+  GOVERNMENT_AND_NON_PROFIT: "Government and nonprofit",
+  TRANSPORTATION: "Transportation",
+  TRAVEL: "Travel",
+  RENT_AND_UTILITIES: "Rent and utilities",
+  OTHER: "Other",
+};
+
+// [primary, detailed code, detailed label]
+const DETAILED: readonly [string, string, string][] = [
+  ["INCOME", "INCOME_CHILD_SUPPORT", "Child support"],
+  ["INCOME", "INCOME_CONTRACTOR", "Contractor"],
+  ["INCOME", "INCOME_DIVIDENDS", "Dividends"],
+  ["INCOME", "INCOME_GIG_ECONOMY", "Gig economy"],
+  ["INCOME", "INCOME_INTEREST_EARNED", "Interest earned"],
+  ["INCOME", "INCOME_LONG_TERM_DISABILITY", "Long term disability"],
+  ["INCOME", "INCOME_MILITARY", "Military"],
+  ["INCOME", "INCOME_RENTAL", "Rental"],
+  ["INCOME", "INCOME_RETIREMENT_PENSION", "Retirement pension"],
+  ["INCOME", "INCOME_SALARY", "Salary"],
+  ["INCOME", "INCOME_TAX_REFUND", "Tax refund"],
+  ["INCOME", "INCOME_UNEMPLOYMENT", "Unemployment"],
+  ["INCOME", "INCOME_OTHER", "Other"],
+  ["LOAN_DISBURSEMENTS", "LOAN_DISBURSEMENTS_AUTO", "Auto"],
+  ["LOAN_DISBURSEMENTS", "LOAN_DISBURSEMENTS_CASH_ADVANCES", "Cash advances"],
+  ["LOAN_DISBURSEMENTS", "LOAN_DISBURSEMENTS_EWA", "EWA"],
+  ["LOAN_DISBURSEMENTS", "LOAN_DISBURSEMENTS_MORTGAGE", "Mortgage"],
+  ["LOAN_DISBURSEMENTS", "LOAN_DISBURSEMENTS_PERSONAL", "Personal"],
+  ["LOAN_DISBURSEMENTS", "LOAN_DISBURSEMENTS_STUDENT", "Student"],
+  ["LOAN_DISBURSEMENTS", "LOAN_DISBURSEMENTS_OTHER_DISBURSEMENT", "Other disbursement"],
+  ["LOAN_PAYMENTS", "LOAN_PAYMENTS_BNPL", "BNPL"],
+  ["LOAN_PAYMENTS", "LOAN_PAYMENTS_CAR_PAYMENT", "Car payment"],
+  ["LOAN_PAYMENTS", "LOAN_PAYMENTS_CASH_ADVANCES", "Cash advances"],
+  ["LOAN_PAYMENTS", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", "Credit card payment"],
+  ["LOAN_PAYMENTS", "LOAN_PAYMENTS_EWA", "EWA"],
+  ["LOAN_PAYMENTS", "LOAN_PAYMENTS_MORTGAGE_PAYMENT", "Mortgage payment"],
+  ["LOAN_PAYMENTS", "LOAN_PAYMENTS_PERSONAL_LOAN_PAYMENT", "Personal loan payment"],
+  ["LOAN_PAYMENTS", "LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT", "Student loan payment"],
+  ["LOAN_PAYMENTS", "LOAN_PAYMENTS_OTHER_PAYMENT", "Other payment"],
+  ["TRANSFER_IN", "TRANSFER_IN_ACCOUNT_TRANSFER", "Account transfer"],
+  ["TRANSFER_IN", "TRANSFER_IN_DEPOSIT", "Deposit"],
+  ["TRANSFER_IN", "TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS", "Investment and retirement funds"],
+  ["TRANSFER_IN", "TRANSFER_IN_SAVINGS", "Savings"],
+  ["TRANSFER_IN", "TRANSFER_IN_TRANSFER_IN_FROM_APPS", "Transfer in from apps"],
+  ["TRANSFER_IN", "TRANSFER_IN_WIRE", "Wire"],
+  ["TRANSFER_IN", "TRANSFER_IN_OTHER_TRANSFER_IN", "Other transfer in"],
+  ["TRANSFER_OUT", "TRANSFER_OUT_ACCOUNT_TRANSFER", "Account transfer"],
+  ["TRANSFER_OUT", "TRANSFER_OUT_CRYPTO", "Crypto"],
+  ["TRANSFER_OUT", "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS", "Investment and retirement funds"],
+  ["TRANSFER_OUT", "TRANSFER_OUT_SAVINGS", "Savings"],
+  ["TRANSFER_OUT", "TRANSFER_OUT_TRANSFER_OUT_FROM_APPS", "Transfer out from apps"],
+  ["TRANSFER_OUT", "TRANSFER_OUT_WIRE", "Wire"],
+  ["TRANSFER_OUT", "TRANSFER_OUT_WITHDRAWAL", "Withdrawal"],
+  ["TRANSFER_OUT", "TRANSFER_OUT_OTHER_TRANSFER_OUT", "Other transfer out"],
+  ["BANK_FEES", "BANK_FEES_ATM_FEES", "ATM fees"],
+  ["BANK_FEES", "BANK_FEES_INSUFFICIENT_FUNDS", "Insufficient funds"],
+  ["BANK_FEES", "BANK_FEES_INTEREST_CHARGE", "Interest charge"],
+  ["BANK_FEES", "BANK_FEES_FOREIGN_TRANSACTION_FEES", "Foreign transaction fees"],
+  ["BANK_FEES", "BANK_FEES_OVERDRAFT_FEES", "Overdraft fees"],
+  ["BANK_FEES", "BANK_FEES_LATE_FEES", "Late fees"],
+  ["BANK_FEES", "BANK_FEES_CASH_ADVANCE", "Cash advance"],
+  ["BANK_FEES", "BANK_FEES_OTHER_BANK_FEES", "Other bank fees"],
+  ["ENTERTAINMENT", "ENTERTAINMENT_CASINOS_AND_GAMBLING", "Casinos and gambling"],
+  ["ENTERTAINMENT", "ENTERTAINMENT_MUSIC_AND_AUDIO", "Music and audio"],
+  ["ENTERTAINMENT", "ENTERTAINMENT_SPORTING_EVENTS_AMUSEMENT_PARKS_AND_MUSEUMS", "Sporting events amusement parks and museums"],
+  ["ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES", "TV and movies"],
+  ["ENTERTAINMENT", "ENTERTAINMENT_VIDEO_GAMES", "Video games"],
+  ["ENTERTAINMENT", "ENTERTAINMENT_OTHER_ENTERTAINMENT", "Other entertainment"],
+  ["FOOD_AND_DRINK", "FOOD_AND_DRINK_BEER_WINE_AND_LIQUOR", "Beer wine and liquor"],
+  ["FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE", "Coffee"],
+  ["FOOD_AND_DRINK", "FOOD_AND_DRINK_FAST_FOOD", "Fast food"],
+  ["FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES", "Groceries"],
+  ["FOOD_AND_DRINK", "FOOD_AND_DRINK_RESTAURANT", "Restaurant"],
+  ["FOOD_AND_DRINK", "FOOD_AND_DRINK_VENDING_MACHINES", "Vending machines"],
+  ["FOOD_AND_DRINK", "FOOD_AND_DRINK_OTHER_FOOD_AND_DRINK", "Other food and drink"],
+  ["GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_BOOKSTORES_AND_NEWSSTANDS", "Bookstores and newsstands"],
+  ["GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_CLOTHING_AND_ACCESSORIES", "Clothing and accessories"],
+  ["GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_CONVENIENCE_STORES", "Convenience stores"],
+  ["GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_DEPARTMENT_STORES", "Department stores"],
+  ["GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_DISCOUNT_STORES", "Discount stores"],
+  ["GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_ELECTRONICS", "Electronics"],
+  ["GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_GIFTS_AND_NOVELTIES", "Gifts and novelties"],
+  ["GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_OFFICE_SUPPLIES", "Office supplies"],
+  ["GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_ONLINE_MARKETPLACES", "Online marketplaces"],
+  ["GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_PET_SUPPLIES", "Pet supplies"],
+  ["GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_SPORTING_GOODS", "Sporting goods"],
+  ["GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_SUPERSTORES", "Superstores"],
+  ["GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_TOBACCO_AND_VAPE", "Tobacco and vape"],
+  ["GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_OTHER_GENERAL_MERCHANDISE", "Other general merchandise"],
+  ["HOME_IMPROVEMENT", "HOME_IMPROVEMENT_FURNITURE", "Furniture"],
+  ["HOME_IMPROVEMENT", "HOME_IMPROVEMENT_HARDWARE", "Hardware"],
+  ["HOME_IMPROVEMENT", "HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE", "Repair and maintenance"],
+  ["HOME_IMPROVEMENT", "HOME_IMPROVEMENT_SECURITY", "Security"],
+  ["HOME_IMPROVEMENT", "HOME_IMPROVEMENT_OTHER_HOME_IMPROVEMENT", "Other home improvement"],
+  ["MEDICAL", "MEDICAL_DENTAL_CARE", "Dental care"],
+  ["MEDICAL", "MEDICAL_EYE_CARE", "Eye care"],
+  ["MEDICAL", "MEDICAL_NURSING_CARE", "Nursing care"],
+  ["MEDICAL", "MEDICAL_PHARMACIES_AND_SUPPLEMENTS", "Pharmacies and supplements"],
+  ["MEDICAL", "MEDICAL_PRIMARY_CARE", "Primary care"],
+  ["MEDICAL", "MEDICAL_VETERINARY_SERVICES", "Veterinary services"],
+  ["MEDICAL", "MEDICAL_OTHER_MEDICAL", "Other medical"],
+  ["PERSONAL_CARE", "PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS", "Gyms and fitness centers"],
+  ["PERSONAL_CARE", "PERSONAL_CARE_HAIR_AND_BEAUTY", "Hair and beauty"],
+  ["PERSONAL_CARE", "PERSONAL_CARE_LAUNDRY_AND_DRY_CLEANING", "Laundry and dry cleaning"],
+  ["PERSONAL_CARE", "PERSONAL_CARE_OTHER_PERSONAL_CARE", "Other personal care"],
+  ["GENERAL_SERVICES", "GENERAL_SERVICES_ACCOUNTING_AND_FINANCIAL_PLANNING", "Accounting and financial planning"],
+  ["GENERAL_SERVICES", "GENERAL_SERVICES_AUTOMOTIVE", "Automotive"],
+  ["GENERAL_SERVICES", "GENERAL_SERVICES_CHILDCARE", "Childcare"],
+  ["GENERAL_SERVICES", "GENERAL_SERVICES_CONSULTING_AND_LEGAL", "Consulting and legal"],
+  ["GENERAL_SERVICES", "GENERAL_SERVICES_EDUCATION", "Education"],
+  ["GENERAL_SERVICES", "GENERAL_SERVICES_INSURANCE", "Insurance"],
+  ["GENERAL_SERVICES", "GENERAL_SERVICES_POSTAGE_AND_SHIPPING", "Postage and shipping"],
+  ["GENERAL_SERVICES", "GENERAL_SERVICES_STORAGE", "Storage"],
+  ["GENERAL_SERVICES", "GENERAL_SERVICES_OTHER_GENERAL_SERVICES", "Other general services"],
+  ["GOVERNMENT_AND_NON_PROFIT", "GOVERNMENT_AND_NON_PROFIT_DONATIONS", "Donations"],
+  ["GOVERNMENT_AND_NON_PROFIT", "GOVERNMENT_AND_NON_PROFIT_GOVERNMENT_DEPARTMENTS_AND_AGENCIES", "Government departments and agencies"],
+  ["GOVERNMENT_AND_NON_PROFIT", "GOVERNMENT_AND_NON_PROFIT_TAX_PAYMENT", "Tax payment"],
+  ["GOVERNMENT_AND_NON_PROFIT", "GOVERNMENT_AND_NON_PROFIT_OTHER_GOVERNMENT_AND_NON_PROFIT", "Other government and non profit"],
+  ["TRANSPORTATION", "TRANSPORTATION_BIKES_AND_SCOOTERS", "Bikes and scooters"],
+  ["TRANSPORTATION", "TRANSPORTATION_GAS", "Gas"],
+  ["TRANSPORTATION", "TRANSPORTATION_PARKING", "Parking"],
+  ["TRANSPORTATION", "TRANSPORTATION_PUBLIC_TRANSIT", "Public transit"],
+  ["TRANSPORTATION", "TRANSPORTATION_TAXIS_AND_RIDE_SHARES", "Taxis and ride shares"],
+  ["TRANSPORTATION", "TRANSPORTATION_TOLLS", "Tolls"],
+  ["TRANSPORTATION", "TRANSPORTATION_OTHER_TRANSPORTATION", "Other transportation"],
+  ["TRAVEL", "TRAVEL_FLIGHTS", "Flights"],
+  ["TRAVEL", "TRAVEL_LODGING", "Lodging"],
+  ["TRAVEL", "TRAVEL_RENTAL_CARS", "Rental cars"],
+  ["TRAVEL", "TRAVEL_OTHER_TRAVEL", "Other travel"],
+  ["RENT_AND_UTILITIES", "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY", "Gas and electricity"],
+  ["RENT_AND_UTILITIES", "RENT_AND_UTILITIES_INTERNET_AND_CABLE", "Internet and cable"],
+  ["RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT", "Rent"],
+  ["RENT_AND_UTILITIES", "RENT_AND_UTILITIES_SEWAGE_AND_WASTE_MANAGEMENT", "Sewage and waste management"],
+  ["RENT_AND_UTILITIES", "RENT_AND_UTILITIES_TELEPHONE", "Telephone"],
+  ["RENT_AND_UTILITIES", "RENT_AND_UTILITIES_WATER", "Water"],
+  ["RENT_AND_UTILITIES", "RENT_AND_UTILITIES_OTHER_UTILITIES", "Other utilities"],
+  ["OTHER", "OTHER_OTHER", "Other"],
+];
+
+/** Every primary category followed by its detailed ones, in Plaid's order. */
+export const PLAID_CATEGORIES: readonly PlaidCategoryOption[] = Object.keys(PRIMARY_LABELS).flatMap((primary) => [
+  { code: primary, primary, label: PRIMARY_LABELS[primary] },
+  ...DETAILED.filter(([p]) => p === primary).map(([, code, label]) => ({
+    code,
+    primary,
+    label: `${PRIMARY_LABELS[primary]} › ${label}`,
+  })),
+]);
+
+const LABEL_BY_CODE = new Map(PLAID_CATEGORIES.map((option) => [option.code, option.label]));
+
+export function isPlaidCategoryCode(code: string): boolean {
+  return LABEL_BY_CODE.has(code);
+}
+
+/** A readable label for a Plaid code, or the code itself if it is unknown. */
+export function plaidCategoryLabel(code: string | null | undefined): string {
+  if (!code) return "";
+  return LABEL_BY_CODE.get(code) ?? code;
+}

@@ -13,6 +13,30 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
 
+    // Absent, null, or a string no longer than maxSize.
+    function optionalText(data, field, maxSize) {
+      return data.get(field, null) == null
+        || (data[field] is string && data[field].size() <= maxSize);
+    }
+
+    // What a transaction may hold after a browser edit. A transfer needs a
+    // destination, and never the transaction's own account.
+    function validTransactionEdits(data, stored) {
+      return (data.get('categoryKind', null) == null
+              || data.categoryKind in ['income', 'expense', 'transfer'])
+        && (data.get('categorySource', null) == null
+              || data.categorySource in ['user', 'rule', 'merchant', 'plaid'])
+        && data.get('hidden', false) is bool
+        && optionalText(data, 'customName', 120)
+        && optionalText(data, 'notes', 1000)
+        && optionalText(data, 'categoryId', 200)
+        && optionalText(data, 'ruleId', 200)
+        && optionalText(data, 'suggestedCategoryId', 200)
+        && (data.get('categoryKind', null) != 'transfer'
+              || (data.get('transferAccountId', null) is string
+                  && data.transferAccountId != stored.get('accountId', null)));
+    }
+
     match /users/{uid} {
       allow read, write: if isOwner(uid);
 
@@ -31,13 +55,14 @@ service cloud.firestore {
         allow write: if false;
       }
 
-      // Written by the sync job. The browser may only change the assignment.
+      // Written by the sync job. The browser may change the category, your
+      // name for the transaction, hiding, and notes; never what Plaid reported.
       match /transactions/{transactionId} {
         allow read: if isOwner(uid);
         allow update: if isOwner(uid)
-          && changedKeys().hasOnly(['categoryKind', 'categoryId', 'transferAccountId', 'updatedAt'])
-          && (request.resource.data.get('categoryKind', null) == null
-              || request.resource.data.categoryKind in ['income', 'expense', 'transfer']);
+          && changedKeys().hasOnly(['categoryKind', 'categoryId', 'transferAccountId', 'categorySource', 'ruleId',
+                                    'suggestedCategoryId', 'customName', 'hidden', 'notes', 'updatedAt'])
+          && validTransactionEdits(request.resource.data, resource.data);
       }
 
       match /accounts/{accountId} {
@@ -69,10 +94,12 @@ service cloud.firestore {
       match /categories/{categoryId} {
         allow read, delete: if isOwner(uid);
         allow create: if isOwner(uid)
-          && request.resource.data.get('kind', 'expense') in ['income', 'expense', 'transfer'];
+          && request.resource.data.get('kind', 'expense') in ['income', 'expense', 'transfer']
+          && request.resource.data.get('plaidCategories', []) is list;
         // The kind is fixed: transactions store it, so changing it would misstate history.
         allow update: if isOwner(uid)
-          && request.resource.data.get('kind', 'expense') == resource.data.get('kind', 'expense');
+          && request.resource.data.get('kind', 'expense') == resource.data.get('kind', 'expense')
+          && request.resource.data.get('plaidCategories', []) is list;
       }
 
       match /settings/{settingsId} {
@@ -83,12 +110,23 @@ service cloud.firestore {
         allow read, write: if isOwner(uid);
       }
 
-      match /automations/{merchantKey} {
-        allow read, write: if isOwner(uid);
+      // Categorization rules. You manage them; the sync job reads them.
+      match /rules/{ruleId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && request.resource.data.enabled is bool
+          && request.resource.data.priority is number
+          && request.resource.data.conditions is map
+          && request.resource.data.actions is map;
       }
 
-      match /categoryPlaidStats/{plaidCategoryCode} {
-        allow read, write: if isOwner(uid);
+      // The category you last chose for each merchant, written when you categorize.
+      match /merchantMemory/{merchantKey} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && request.resource.data.categoryId is string
+          && request.resource.data.streak is int
+          && request.resource.data.streak > 0;
       }
     }
 

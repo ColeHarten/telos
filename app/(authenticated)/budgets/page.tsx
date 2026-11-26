@@ -1,12 +1,19 @@
 "use client";
 
-import MonthPickerControl, { getCurrentMonthKey } from "@/components/MonthPickerControl";
+import MonthPickerControl, { formatMonthLabel, getCurrentMonthKey } from "@/components/MonthPickerControl";
 import useAccounts from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
 import useBudget from "@/lib/hooks/useBudget";
 import useCategories from "@/lib/hooks/useCategories";
 import useTransactions from "@/lib/hooks/useTransactions";
-import { archivedCategoryActuals, categoryActuals, transferActualsByAccount } from "@/lib/budgetCalculations";
+import {
+  archivedCategoryActuals,
+  categoryActuals,
+  shiftMonthKey,
+  transferActualsByAccount,
+  uncategorizedSpending,
+} from "@/lib/budgetCalculations";
+import { copyLines, estimateLines, type BudgetSlot } from "@/lib/budgetTools";
 import { formatCurrency } from "@/lib/utils";
 import PageHeader from "@/components/PageHeader";
 
@@ -24,6 +31,10 @@ import {
   Button,
   Card,
   CardContent,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Grid,
   InputAdornment,
   LinearProgress,
@@ -39,7 +50,7 @@ import {
   Typography,
 } from "@mui/material";
 import Link from "next/link";
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 type BudgetLineType = "income" | "expense" | "transfer";
 
@@ -84,10 +95,16 @@ export default function BudgetsPage() {
     setSelectedMonthKey: setMonthKey,
     budgetValues,
     setBudgetValue,
+    setBudgetLinesBulk,
+    readMonthLines,
     saveStatus,
     flushSave,
     error,
   } = useBudget(user, authLoading);
+  const [shortcut, setShortcut] = useState<"copy" | "estimates" | null>(null);
+  const [shortcutBusy, setShortcutBusy] = useState(false);
+  const [shortcutError, setShortcutError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   // Loads far enough back to cover the month on screen.
   const { transactions = [], transactionsLoading } = useTransactions(user, authLoading, accounts, monthKey);
   const isLoading = authLoading;
@@ -139,7 +156,11 @@ export default function BudgetsPage() {
     [transactions, categoriesById, monthKey]
   );
 
-  const actualByAccountId = useMemo(() => transferActualsByAccount(transactions, monthKey), [transactions, monthKey]);
+  // Net money moved into each account, counted once (see transferActualsByAccount).
+  const actualByAccountId = useMemo(
+    () => transferActualsByAccount(transactions, accounts, monthKey),
+    [transactions, accounts, monthKey]
+  );
 
   // Money on archived categories, which the budget lines below don't show.
   const archivedActuals = useMemo(
@@ -227,6 +248,46 @@ export default function BudgetsPage() {
     ]
   );
 
+  // Money out this month still in Needs Review, shown as its own line under Expenses.
+  const uncategorized = useMemo(() => uncategorizedSpending(transactions, monthKey), [transactions, monthKey]);
+
+  // Every line on the page, with what it shows when it was never set.
+  const slots: BudgetSlot[] = useMemo(
+    () =>
+      budgetGroups.flatMap((group) =>
+        group.items.map((item) => ({
+          id: item.id,
+          lineType: item.lineType,
+          categoryId: item.categoryOrAccountId,
+          fallback: item.lineType === "transfer" ? 0 : Number(categoriesById.get(item.categoryOrAccountId)?.estimatedMonthly ?? 0),
+        }))
+      ),
+    [budgetGroups, categoriesById]
+  );
+
+  const previousMonthKey = shiftMonthKey(monthKey, -1);
+
+  async function applyShortcut() {
+    if (!shortcut) return;
+    setShortcutBusy(true);
+    setShortcutError(null);
+    try {
+      if (shortcut === "copy") {
+        setBudgetLinesBulk(copyLines(await readMonthLines(previousMonthKey), slots));
+        setNotice(`Copied the ${formatMonthLabel(previousMonthKey)} budget.`);
+      } else {
+        setBudgetLinesBulk(estimateLines(slots));
+        setNotice("Income and expenses now match your category estimates.");
+      }
+      setShortcut(null);
+    } catch (err) {
+      console.error(err);
+      setShortcutError("Could not read last month's budget. Try again.");
+    } finally {
+      setShortcutBusy(false);
+    }
+  }
+
   // Totals add up the amounts shown on the lines, including unset lines
   // that show the category's estimate.
   const summary = useMemo(() => {
@@ -267,7 +328,7 @@ export default function BudgetsPage() {
     <Stack spacing={3} sx={{ p: 4 }}>
       <Stack spacing={1.5}>
         <PageHeader title="Budgets">
-          <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "8px" }}>
+          <Box sx={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
             <MonthPickerControl monthKey={monthKey} onChange={setMonthKey} ariaLabelPrefix="Budgets " />
             {!isCurrentMonth && (
               <Button
@@ -279,6 +340,22 @@ export default function BudgetsPage() {
                 Today
               </Button>
             )}
+            <Button
+              onClick={() => setShortcut("copy")}
+              variant="text"
+              size="small"
+              sx={{ borderRadius: "8px", textTransform: "none", fontWeight: 600 }}
+            >
+              Copy last month
+            </Button>
+            <Button
+              onClick={() => setShortcut("estimates")}
+              variant="text"
+              size="small"
+              sx={{ borderRadius: "8px", textTransform: "none", fontWeight: 600 }}
+            >
+              Fill from estimates
+            </Button>
           </Box>
         </PageHeader>
 
@@ -499,6 +576,26 @@ export default function BudgetsPage() {
                           </TableRow>
                         );
                       })}
+                      {group.title === "Expenses" && uncategorized.total > 0 && (
+                        <TableRow sx={{ "& td": { borderBottom: "1px solid", borderColor: "divider", py: 1.5 } }}>
+                          <TableCell>
+                            <Typography sx={{ fontWeight: 500, color: "#0f172a", fontSize: "0.875rem" }}>Uncategorized</Typography>
+                            <Typography
+                              component={Link}
+                              href="/transactions"
+                              variant="caption"
+                              sx={{ color: "#2563eb", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
+                            >
+                              {uncategorized.count} {uncategorized.count === 1 ? "transaction" : "transactions"} in Needs Review
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right" sx={{ color: "#94a3b8" }}>Not planned</TableCell>
+                          <TableCell align="right" sx={{ color: "#475569" }}>
+                            {transactionsLoading ? "…" : formatCurrency(uncategorized.total)}
+                          </TableCell>
+                          <TableCell />
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 </TableContainer>
@@ -507,6 +604,49 @@ export default function BudgetsPage() {
           </Card>
         ))
       )}
+
+      <Dialog open={shortcut !== null} onClose={shortcutBusy ? undefined : () => setShortcut(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700, fontSize: "1.05rem" }}>
+          {shortcut === "copy" ? "Copy last month" : "Fill from estimates"}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: "#334155" }}>
+            {shortcut === "copy"
+              ? `Every line for ${formatMonthLabel(monthKey)} takes the amount it had in ${formatMonthLabel(previousMonthKey)}, replacing what's there now.`
+              : `Every income and expense line for ${formatMonthLabel(monthKey)} takes its category's monthly estimate. Savings and debt lines stay as they are.`}
+          </Typography>
+          {shortcutError && (
+            <Alert severity="error" sx={{ mt: 2, borderRadius: 2 }}>
+              {shortcutError}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
+          <Button onClick={() => setShortcut(null)} disabled={shortcutBusy} sx={{ textTransform: "none", fontWeight: 700 }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={applyShortcut}
+            disabled={shortcutBusy}
+            variant="contained"
+            disableElevation
+            sx={{ textTransform: "none", fontWeight: 700, bgcolor: "#2563eb", "&:hover": { bgcolor: "#1d4ed8" } }}
+          >
+            {shortcut === "copy" ? "Copy" : "Fill"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={notice !== null}
+        autoHideDuration={4000}
+        onClose={() => setNotice(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+      >
+        <Alert severity="success" variant="filled" onClose={() => setNotice(null)} sx={{ borderRadius: 2.5 }}>
+          {notice}
+        </Alert>
+      </Snackbar>
     </Stack>
   );
 }

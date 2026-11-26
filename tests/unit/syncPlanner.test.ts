@@ -3,10 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildLegacyIndex,
   planSync,
+  toCategorizeInput,
   toPlaidFields,
+  toStoredTransaction,
   type Assignment,
   type LegacyTransaction,
   type PlanInput,
+  type StoredTransaction,
   type WriteOp,
 } from "@/lib/services/syncPlanner";
 
@@ -166,6 +169,93 @@ describe("planSync", () => {
     expect(opFor(result.ops, "t-new")).toMatchObject({ type: "create", data: { categoryId: "dining" } });
     expect(opFor(result.ops, "old-1")).toBeUndefined();
     expect(result.carriedOver).toBe(0);
+  });
+});
+
+describe("planSync with Stage 7 fields", () => {
+  it("stores the engine's source, rule, rename, and hiding on a new transaction", () => {
+    const result = plan({
+      added: [plaidTx("t1")],
+      categorize: () => ({ ...DINING, categorySource: "rule", ruleId: "r1", customName: "Cafe", hidden: true }),
+    });
+    const op = opFor(result.ops, "t1");
+    expect(op).toMatchObject({
+      type: "create",
+      data: { categoryId: "dining", categorySource: "rule", ruleId: "r1", customName: "Cafe", hidden: true, notes: null },
+    });
+    expect(op && op.type === "create" ? Object.values(op.data).includes(undefined) : true).toBe(false);
+  });
+
+  it("fills empty user fields when the engine leaves them out", () => {
+    const result = plan({ added: [plaidTx("t1")], categorize: () => NONE });
+    expect(opFor(result.ops, "t1")).toMatchObject({
+      data: { categorySource: null, ruleId: null, suggestedCategoryId: null, customName: null, hidden: false, notes: null },
+    });
+  });
+
+  it("carries your rename, hiding, and notes from the pending copy", () => {
+    const pending: StoredTransaction = { ...FOOD, categorySource: "user", customName: "Lunch", hidden: true, notes: "With Sam" };
+    const result = plan({
+      added: [plaidTx("posted", { pending_transaction_id: "pending" })],
+      existing: new Map([["pending", pending]]),
+    });
+    expect(opFor(result.ops, "posted")).toMatchObject({
+      data: { categoryId: "food", categorySource: "user", customName: "Lunch", hidden: true, notes: "With Sam" },
+    });
+  });
+
+  it("saves Plaid's suggestion on an uncategorized update, and only when it changes", () => {
+    const suggest = () => ({ ...NONE, suggestedCategoryId: "food" });
+    const first = plan({ modified: [plaidTx("t1")], existing: new Map([["t1", NONE]]), categorize: suggest });
+    expect(opFor(first.ops, "t1")).toMatchObject({ data: { suggestedCategoryId: "food" } });
+
+    const again = plan({
+      modified: [plaidTx("t1")],
+      existing: new Map([["t1", { ...NONE, suggestedCategoryId: "food" }]]),
+      categorize: suggest,
+    });
+    const op = opFor(again.ops, "t1");
+    expect(op && op.type === "update" ? "suggestedCategoryId" in op.data : true).toBe(false);
+  });
+
+  it("never touches your rename or notes on an update", () => {
+    const result = plan({
+      modified: [plaidTx("t1", { amount: 13 })],
+      existing: new Map([["t1", { ...FOOD, customName: "Lunch", notes: "Keep" }]]),
+    });
+    const op = opFor(result.ops, "t1");
+    expect(op && op.type === "update" ? "customName" in op.data || "notes" in op.data : true).toBe(false);
+  });
+});
+
+describe("toStoredTransaction", () => {
+  it("reads malformed fields as empty", () => {
+    expect(
+      toStoredTransaction({ categoryKind: "savings", categoryId: 4, categorySource: "magic", hidden: "yes", customName: "" })
+    ).toEqual({
+      categoryKind: null,
+      categoryId: null,
+      transferAccountId: null,
+      categorySource: null,
+      ruleId: null,
+      suggestedCategoryId: null,
+      customName: null,
+      hidden: false,
+      notes: null,
+    });
+  });
+});
+
+describe("toCategorizeInput", () => {
+  it("passes Plaid's category and confidence to the engine", () => {
+    const input = toCategorizeInput(toPlaidFields(plaidTx("t1"), "acc-1", "item-1", 5));
+    expect(input).toMatchObject({
+      accountId: "acc-1",
+      merchantName: "Coffee Shop",
+      plaidPrimary: "FOOD_AND_DRINK",
+      plaidDetailed: "FOOD_AND_DRINK_COFFEE",
+      plaidConfidence: "HIGH",
+    });
   });
 });
 

@@ -1,71 +1,89 @@
 # Categorization
 
-How transactions get their categories: by you, by your automations, or by what Telos has learned from your choices. Also covers the transfer categories made from paycheck deductions.
+How transactions get their categories: from your rules, from merchant memory, from Plaid mappings on your categories, or from you. Also covers transfers between your own accounts and the transfer categories made from paycheck deductions. The engine is `lib/categorization.ts`; it's pure, and the sync job and the browser run the same code.
 
 ## Who categorizes what
 
 | When | Who | Where |
 |---|---|---|
-| A new transaction arrives in a sync | The rules engine | Server: `applyRules` in `lib/services/ruleEngine.ts` |
-| An uncategorized transaction is updated by Plaid | The rules engine, again | Server |
-| A pending transaction posts | Copies the pending version's category | Server: `planSync` |
-| You pick a category | You | Browser: `updateTransactionAssignment` in `useTransactions` |
+| A new transaction arrives in a sync | The engine | Server: `categorizeTransaction`, called from `planSync` |
+| Plaid updates a transaction that has no category | The engine, again (category and suggestion only) | Server |
+| A pending transaction posts | Copies the pending version's category, rename, hiding, and notes | Server: `planSync` |
+| You pick a category, or accept a suggestion | You | Browser: `updateTransactionAssignment` in `useTransactions` |
+| You set a category on selected transactions | You | Browser: `planBulkCategory`, saved by `applyUpdates` |
+| You apply a rule to past transactions | The rule, in the browser | `planRuleApplication`, saved by `applyUpdates` |
 
-Rules only fill in **empty** categories. Once a transaction has a category, sync never changes it. Only you can.
+Once a transaction has a category, sync never changes it. Each transaction records who set its category in `categorySource`: `user`, `rule`, `merchant`, or `plaid`. Automation never changes a `user` category; applying a rule to past transactions changes one only if you tick the box to include them.
 
-## The rules engine
+## The engine
 
-For each transaction that needs a category, the engine tries these in order and stops at the first match:
+For each transaction, the engine tries these in order and stops at the first that gives a category:
 
-| Step | Source | Matches on |
-|---|---|---|
-| 1 | **Automation** | The merchant key, from `merchantName`, or `rawName` if there's no merchant name |
-| 2 | **Learned default** | Plaid's detailed category code, such as `FOOD_AND_DRINK_COFFEE` |
-| 3 | **None** | Left uncategorized, so it shows in Needs Review |
+| Step | Source | Matches on | `categorySource` |
+|---|---|---|---|
+| 1 | **Your rules**, top first | The rule's conditions (below). Only the first matching rule applies. | `rule` |
+| 2 | **Merchant memory** | The merchant, once you've picked the same category for it twice in a row | `merchant` |
+| 3 | **Plaid mappings** on your categories | Plaid's detailed category, then its primary one | `plaid` |
+| 4 | **Nothing** | Left for Needs Review | null |
 
-If a step points at a category that has been deleted or archived, it's skipped and the next step runs. An archived category never receives new transactions automatically.
+At step 3, only a match Plaid is confident about (`HIGH` or `VERY_HIGH`) assigns the category. A less confident one is saved as `suggestedCategoryId`, and the Transactions page shows it as a suggestion to accept with one click, or all at once.
 
-When the matched category is a transfer category, the transaction also gets that category's destination account in `transferAccountId`.
+A category is skipped, and the next step tried, when it's archived, deleted, or a transfer to the transaction's own account. So an archived category never receives new transactions automatically.
 
-The engine reads your categories, automations, and learning votes once per sync, not once per transaction (`buildRulesContext`).
+The first matching rule's rename and hiding apply even when a later step sets the category. The transaction stores that rule's id in `ruleId`.
 
-## Automations
+The engine reads your categories, rules, and merchant memory once per sync, not once per transaction (`buildRulesContext` in `lib/services/ruleEngine.ts`).
 
-An automation says "every transaction from this merchant goes to this category".
+## Rules
 
-- **Creating one:** after you categorize a transaction by hand, the Transactions page offers to create an automation for that merchant.
-- **One per merchant:** the doc id is the merchant key, so a new automation for the same merchant replaces the old one.
-- **Managing them:** the Automations page lists, searches, and deletes them.
-- **Scope:** they apply to new transactions in later syncs, and to uncategorized transactions Plaid updates. They don't change transactions that already have a category.
+A rule has conditions and actions, and lives in `rules/{ruleId}`.
 
-### Merchant keys
+| Condition | Matches when |
+|---|---|
+| Merchant is | The merchant name (or the bank's description, if there's no merchant name) equals the text, ignoring case, punctuation, and digits |
+| Merchant contains | The same, but the text appears anywhere in it |
+| Description contains | The text appears in the bank's description or original description (case is ignored, digits count) |
+| Accounts | The transaction is in one of them |
+| Amount from / to | The amount's size is within the bounds, inclusive |
+| Money in or out | The direction matches |
 
-`normalizeMerchant` (`lib/merchant.ts`) turns merchant text into a key: lowercase, letters, digits, and spaces only, with runs of spaces collapsed. For example, "Blue Bottle Coffee #12" becomes `blue bottle coffee 12`.
+Every condition that's set must hold, and a rule needs at least one. Digits are ignored in merchant matching so that "Zelle payment to John 81234" and "Zelle payment to John 99120" are the same merchant.
 
-The browser uses it when creating an automation, and the server uses it when matching. Both import the same function. If they ever normalized differently, automations would silently stop matching, which is why there's a unit test for it.
+| Action | Effect |
+|---|---|
+| Set category | Assigns the category, unless it's archived, deleted, or a transfer to the transaction's own account |
+| Rename to | Sets `customName`, which shows instead of the merchant |
+| Hide from budgets | Sets `hidden`: left out of budgets, cash flow, and Needs Review, but still listed |
 
-## Learned defaults
+**Order.** Rules run top to bottom (lowest `priority` first). A new rule goes at the top. Move rules with the arrows on the Rules page; that renumbers them 0, 1, 2, and so on.
 
-Telos learns from your corrections, per Plaid category code.
+**Creating one.** On the Rules page, or from the prompt after you categorize a transaction ("Always categorize this way?"), which makes a "Merchant is" rule. The prompt doesn't appear if an enabled rule already gives that merchant that category.
 
-**Voting.** When you set a category that differs from the old one, on a transaction that has a Plaid detailed code, the browser adds one vote:
+**Apply to past.** New rules apply to new transactions as they sync. To apply one to transactions you already have, use the prompt's checkbox, or Apply to past transactions on the Rules page (offered right after you create a rule that matches anything). It works on the loaded transactions (the last 24 months), shows how many match and would change, and leaves your own picks alone unless you include them. Renames and hiding apply to every match.
 
-```
-categoryPlaidStats/{detailedCode}.counts.{categoryId} += 1
-```
+## Merchant memory
 
-Clearing a category, or picking the same one again, doesn't vote. A failed vote never blocks the categorization itself.
+`merchantMemory/{key}` holds the category you last picked for a merchant and how many times in a row (`streak`). When you pick a category yourself, the browser adds one to the streak, or starts it again at 1 if the category changed. From a streak of 2, new transactions from that merchant get the category.
 
-**Deciding.** `resolveWinner` picks a category for a code only when both are true:
+The key is `m_` plus Plaid's merchant id when there is one, otherwise `n_` plus the merchant name without punctuation or digits (`merchantKey`). Picking a transfer category never updates memory, and neither do Accept all and setting a category on selected transactions.
 
-- The top category has **at least 3 votes**.
-- It leads the runner-up by **at least 2 votes**.
+## Plaid mappings
 
-So 3 to 0 wins, 4 to 2 wins, and 4 to 3 doesn't. This stops one odd transaction from taking over a whole code.
+Each category can list Plaid categories in `plaidCategories`, primary (`FOOD_AND_DRINK`) or detailed (`FOOD_AND_DRINK_GROCERIES`). Pick them in the category form; the list of codes is `lib/plaidCategories.ts`, generated from Plaid's taxonomy. A detailed mapping beats a primary one, so Groceries can take `FOOD_AND_DRINK_GROCERIES` while Restaurants takes the rest of `FOOD_AND_DRINK`. When two categories map the same code, the one listed first wins, and the form shows where a code is already used.
 
-**Old votes.** An earlier version wrote votes as literal field names like `counts.abc123` instead of inside the `counts` map, so the server never saw them. `readVotes` reads both forms, so those old votes still count.
+**Starter categories.** An empty Categories page offers 25 common categories with mappings (`lib/starterCategories.ts`), so most transactions are categorized from the first sync. They're ordinary categories once added.
 
-**Cleanup.** Hard-deleting a category removes its votes from every `categoryPlaidStats` doc.
+## Transfers between your accounts
+
+`pairTransfers` (`lib/transfers.ts`) finds both legs of a transfer in the loaded transactions:
+
+- Opposite amounts, to the cent, in two different accounts.
+- Posted within 5 days of each other.
+- At least one leg looks like a transfer: Plaid labels it a transfer, a card or loan payment, or a loan disbursement, or you categorized it as a transfer.
+- Neither leg is categorized as income or expense, or hidden. A leg categorized as a transfer pairs only with its destination account.
+- Each transaction pairs once, closest dates first.
+
+Pairs are worked out in the browser each time transactions load and aren't stored. A paired transaction (`transferPairId`) counts as a transfer and leaves Needs Review. So do uncategorized card and loan payments. See [Calculations](calculations.md#savings-and-debt-actuals) for how transfers count toward savings and debt.
 
 ## Paycheck transfers
 
@@ -87,12 +105,13 @@ Transactions already categorized as one of these transfers keep their `transferA
 
 ## Rules for a valid assignment
 
-The browser checks these before saving, and the Firestore rules limit which fields it can change:
+The browser checks these before saving, and the Firestore rules enforce them:
 
 - A category kind needs a category id, and a category id needs a kind.
 - A transfer needs a destination account, and it can't be the account the transaction came from.
 - Clearing an assignment sets all three fields to null.
+- `customName` is at most 120 characters, `notes` at most 1,000, `hidden` is true or false, and `categorySource` is one of the four values.
 
 ## Plaid's category version
 
-Every sync asks for version 2 of Plaid's personal finance categories, so the codes Telos stores and learns from don't change underneath it. Version 2 adds codes version 1 lacks, such as `LOAN_DISBURSEMENTS_OTHER_DISBURSEMENT` and `TRANSFER_IN_WIRE`.
+Every sync asks for version 2 of Plaid's personal finance categories, so the codes Telos stores and maps don't change underneath it. Version 2 adds codes version 1 lacks, such as `LOAN_DISBURSEMENTS_OTHER_DISBURSEMENT` and `TRANSFER_IN_WIRE`.

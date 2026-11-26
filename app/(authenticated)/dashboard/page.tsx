@@ -8,6 +8,7 @@ import {
   getCurrentMonthKey,
   monthCashFlow,
   monthKeysEndingAt,
+  needsReview,
   netWorth as computeNetWorth,
   plannedAmount,
   shiftMonthKey,
@@ -16,10 +17,12 @@ import useAccounts from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
 import useBudget from "@/lib/hooks/useBudget";
 import useCategories from "@/lib/hooks/useCategories";
+import useRules from "@/lib/hooks/useRules";
 import useTransactions from "@/lib/hooks/useTransactions";
 import { toDateOrNull } from "@/lib/connections";
 import { formatCurrency } from "@/lib/utils";
 import PageHeader from "@/components/PageHeader";
+import SetupChecklist, { type SetupStep } from "./SetupChecklist";
 
 import { Box, Card, CardContent, Chip, LinearProgress, Typography } from "@mui/material";
 import Link from "next/link";
@@ -92,6 +95,7 @@ export default function DashboardPage() {
   const { user, authLoading } = useAuth();
   const { accounts = [] } = useAccounts(user, authLoading);
   const { categories = [] } = useCategories(user, authLoading);
+  const { rules, rulesLoading } = useRules(user, authLoading);
   const { rangeBudgets, rangeLoading, loadBudgetRange } = useBudget(user, authLoading);
   const [monthKey, setMonthKey] = useState<string>(() => getCurrentMonthKey());
   // Loads far enough back to cover the six-month trend.
@@ -174,18 +178,17 @@ export default function DashboardPage() {
 
   const currentMonthCashFlow = cashFlowTrend[cashFlowTrend.length - 1] ?? { inflow: 0, outflow: 0, net: 0 };
 
-  // Needs review — "uncategorized" means categoryKind is undefined, not the
-  // string "uncategorized" (there is no such CategoryKind value).
+  // Needs review: uncategorized, not hidden, and not a recognized transfer.
   const needsReviewTransactions = useMemo(
     () =>
       transactions
-        .filter((tx) => !tx.categoryKind)
+        .filter(needsReview)
         .sort((a, b) => (a.date < b.date ? 1 : -1))
         .slice(0, 5),
     [transactions]
   ) as Transaction[];
   const needsReviewTotal = useMemo(
-    () => transactions.filter((tx) => !tx.categoryKind).length,
+    () => transactions.filter(needsReview).length,
     [transactions]
   );
 
@@ -197,7 +200,43 @@ export default function DashboardPage() {
 
   const activeAccounts = useMemo(() => accounts.filter((a) => !a.isArchived), [accounts]);
 
-  const isLoading = authLoading || rangeLoading || transactionsLoading;
+  // Getting started, shown until every step is done once.
+  const setupSteps: SetupStep[] = [
+    {
+      label: "Set up categories",
+      detail: "Start with the starter set, or make your own.",
+      done: activeCategories.length > 0,
+      href: "/categories",
+    },
+    {
+      label: "Add rules",
+      detail: "Rules categorize, rename, or hide new transactions as they arrive.",
+      done: rules.length > 0,
+      href: "/rules",
+    },
+    {
+      label: "Connect your first bank",
+      detail: "Start with your least important bank, and link each login once.",
+      done: accounts.some((account) => !account.isManual),
+      href: "/accounts",
+    },
+    {
+      label: "Clear Needs Review",
+      detail: "Categorize what your rules and Plaid didn't, once your history has imported.",
+      done: transactions.length > 0 && needsReviewTotal === 0,
+      href: "/transactions",
+    },
+    {
+      label: "Plan a budget",
+      detail: "Set monthly estimates on your categories, or plan this month on Budgets.",
+      done:
+        activeCategories.some((category) => Number(category.estimatedMonthly) > 0) ||
+        Object.keys(rangeBudgets?.[monthKey] ?? {}).length > 0,
+      href: "/budgets",
+    },
+  ];
+
+  const isLoading = authLoading || rangeLoading || transactionsLoading || rulesLoading;
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: "20px", bgcolor: "#f8fafc", minHeight: "100vh", p: 4 }}>
@@ -214,6 +253,8 @@ export default function DashboardPage() {
         </Card>
       ) : (
         <>
+          <SetupChecklist steps={setupSteps} />
+
           {/* Net worth */}
           <Card variant="outlined" sx={CARD_SX}>
             <CardContent sx={{ p: "24px" }}>

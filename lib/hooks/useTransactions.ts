@@ -3,9 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTransactionsStore } from "@/components/TransactionsProvider";
 import { db } from "@/lib/firebaseClient";
-import { monthsSince } from "@/lib/transactionDocs";
-import { doc, increment, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import { merchantKey, nextMemory, parseMemory, transactionInput, type TransactionUpdate } from "@/lib/categorization";
+import { monthsSince, type RawTransaction } from "@/lib/transactionDocs";
+import { doc, runTransaction, serverTimestamp, updateDoc, writeBatch } from "firebase/firestore";
 import type { AuthUser, Account, Transaction, CategoryKind } from "../types/types";
+
+// Firestore allows 500 writes per batch.
+const BATCH_SIZE = 400;
 
 /**
  * Strict invariant check used before writing an assignment. An invalid
@@ -78,6 +82,9 @@ export default function useTransactions(
     return map;
   }, [accounts]);
 
+  // Both legs of each transfer between your accounts, found in the loaded window.
+  const transferPairs = store.transferPairs;
+
   // Account names are joined in memory, so an accounts update never re-reads transactions.
   const transactions = useMemo<Transaction[]>(() => {
     return rawTransactions.map((tx) => {
@@ -88,29 +95,30 @@ export default function useTransactions(
         console.warn(`[useTransactions] Transaction ${tx.id} transfers to unknown account "${tx.transferAccountId}".`);
       }
 
-      return { ...tx, originAccName };
+      return { ...tx, originAccName, transferPairId: transferPairs.get(tx.id) ?? null };
     });
-  }, [rawTransactions, accountNameById]);
+  }, [rawTransactions, accountNameById, transferPairs]);
 
   /**
-   * Records one learning vote: transactions with this Plaid `detailed` code
-   * belong in this category. Best-effort; a failed write never affects the
-   * categorization itself.
+   * Merchant memory: records the category you chose for this merchant. The
+   * second time in a row, new transactions from it get that category too.
+   * Best-effort; a failed write never affects the categorization itself.
    */
-  const recordCategorySignal = useCallback(
-    async (plaidDetailedCode: string, categoryId: string) => {
+  const rememberMerchant = useCallback(
+    async (tx: RawTransaction, categoryId: string) => {
       if (!user?.uid) return;
+      const key = merchantKey(transactionInput(tx));
+      if (!key) return;
+      const ref = doc(db, "users", user.uid, "merchantMemory", key);
       try {
-        const statsRef = doc(db, "users", user.uid, "categoryPlaidStats", plaidDetailedCode);
-        // A nested map, not a dotted key: setDoc treats "counts.<id>" as a
-        // literal field name, which the server never read.
-        await setDoc(
-          statsRef,
-          { counts: { [categoryId]: increment(1) }, updatedAt: serverTimestamp() },
-          { merge: true }
-        );
+        await runTransaction(db, async (t) => {
+          const snap = await t.get(ref);
+          const current = snap.exists() ? parseMemory(snap.id, snap.data()) : null;
+          const label = tx.merchantName ?? tx.rawName ?? tx.displayName;
+          t.set(ref, { ...nextMemory(current, key, label, categoryId), updatedAt: serverTimestamp() });
+        });
       } catch (err) {
-        console.error("[useTransactions] Failed to record category signal:", err);
+        console.error("[useTransactions] Failed to update merchant memory:", err);
       }
     },
     [user]
@@ -123,7 +131,8 @@ export default function useTransactions(
    * account-deletion check still work if the category is later deleted.
    *
    * The live listener shows the change immediately and reverts it if the
-   * write is rejected. A genuine correction also records a learning vote.
+   * write is rejected. Your pick is marked as yours, so automation never
+   * changes it, and a new pick feeds merchant memory (never for transfers).
    * Returns whether the change was saved.
    */
   const updateTransactionAssignment = useCallback(
@@ -158,6 +167,8 @@ export default function useTransactions(
           categoryKind: categoryKind ?? null,
           categoryId: categoryId ?? null,
           transferAccountId: normalizedTransferAccountId,
+          categorySource: categoryKind ? "user" : null,
+          ...(categoryKind ? { suggestedCategoryId: null } : {}),
           updatedAt: serverTimestamp(),
         });
       } catch (err) {
@@ -166,16 +177,42 @@ export default function useTransactions(
         return false;
       }
 
-      // Vote only for a real category that differs from before, on a
-      // transaction with a Plaid code to learn from.
-      const isRealAssignment = Boolean(categoryKind) && Boolean(categoryId);
       const isActuallyDifferent = target.categoryKind !== categoryKind || target.categoryId !== categoryId;
-      if (isRealAssignment && isActuallyDifferent && target.plaidCategoryDetailed && categoryId) {
-        void recordCategorySignal(target.plaidCategoryDetailed, categoryId);
+      if (categoryKind && categoryKind !== "transfer" && categoryId && isActuallyDifferent) {
+        void rememberMerchant(target, categoryId);
       }
       return true;
     },
-    [user, rawTransactions, recordCategorySignal]
+    [user, rawTransactions, rememberMerchant]
+  );
+
+  /**
+   * Saves changes to many transactions in batches (a rule applied to past
+   * transactions, or accepted suggestions). Returns how many were saved.
+   */
+  const applyUpdates = useCallback(
+    async (updates: readonly TransactionUpdate[]): Promise<number> => {
+      if (!user?.uid || updates.length === 0) return 0;
+      let saved = 0;
+      try {
+        for (let i = 0; i < updates.length; i += BATCH_SIZE) {
+          const chunk = updates.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(db);
+          for (const { id, changes } of chunk) {
+            batch.update(doc(db, "users", user.uid, "transactions", id), { ...changes, updatedAt: serverTimestamp() });
+          }
+          await batch.commit();
+          saved += chunk.length;
+        }
+      } catch (err) {
+        console.error("[useTransactions] Failed to save changes:", err);
+        setActionError(
+          saved > 0 ? `Saved ${saved} of ${updates.length} changes. The rest failed; try again.` : "Failed to save changes."
+        );
+      }
+      return saved;
+    },
+    [user]
   );
 
   return {
@@ -186,5 +223,6 @@ export default function useTransactions(
     hasOlderTransactions: store.hasOlder,
     loadOlderTransactions: store.loadOlder,
     updateTransactionAssignment,
+    applyUpdates,
   };
 }

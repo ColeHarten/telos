@@ -1,7 +1,9 @@
 "use client";
 
+import { needsReview } from "@/lib/budgetCalculations";
 import { db } from "@/lib/firebaseClient";
 import { cutoffDate, toTransaction, type RawTransaction, type TransactionDocData } from "@/lib/transactionDocs";
+import { pairTransfers } from "@/lib/transfers";
 import { collection, getDocs, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
@@ -25,6 +27,10 @@ export type TransactionsStore = {
   loadOlder: () => void;
   /** Widens the window to cover at least this many months back. */
   ensureMonths: (months: number) => void;
+  /** Each paired transfer leg's partner id, found in the loaded window. */
+  transferPairs: ReadonlyMap<string, string>;
+  /** Transactions waiting in Needs Review, for the nav. */
+  needsReviewCount: number;
 };
 
 const TransactionsContext = createContext<TransactionsStore | null>(null);
@@ -101,9 +107,16 @@ export function TransactionsProvider({ uid, children }: { uid: string | null; ch
     []
   );
 
+  // Both legs of each transfer between your accounts, computed once for every page.
+  const transferPairs = useMemo(() => pairTransfers(items), [items]);
+  const needsReviewCount = useMemo(
+    () => items.filter((tx) => !transferPairs.has(tx.id) && needsReview(tx)).length,
+    [items, transferPairs]
+  );
+
   const value = useMemo<TransactionsStore>(
-    () => ({ items, loading, error, months, hasOlder, loadOlder, ensureMonths }),
-    [items, loading, error, months, hasOlder, loadOlder, ensureMonths]
+    () => ({ items, loading, error, months, hasOlder, loadOlder, ensureMonths, transferPairs, needsReviewCount }),
+    [items, loading, error, months, hasOlder, loadOlder, ensureMonths, transferPairs, needsReviewCount]
   );
 
   return <TransactionsContext.Provider value={value}>{children}</TransactionsContext.Provider>;

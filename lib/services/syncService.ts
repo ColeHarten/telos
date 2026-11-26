@@ -28,14 +28,17 @@ import {
   removeItem,
   syncTransactionsPage,
 } from "./plaidService";
-import { applyRules, buildRulesContext } from "./ruleEngine";
+import { categorizeTransaction } from "@/lib/categorization";
+import { buildRulesContext } from "./ruleEngine";
 import { importStatusOf, runSyncLoop, type ImportStatus } from "./syncLoop";
 import {
   buildLegacyIndex,
   planSync,
-  type Assignment,
+  toCategorizeInput,
+  toStoredTransaction,
   type LegacyIndex,
   type LegacyTransaction,
+  type StoredTransaction,
   type WriteOp,
 } from "./syncPlanner";
 
@@ -402,20 +405,15 @@ export async function reconcileItemAccounts(
 
 // ---------------------------------------------------------------- transactions
 
-async function readExisting(txCollection: CollectionReference, ids: string[]): Promise<Map<string, Assignment>> {
-  const existing = new Map<string, Assignment>();
+async function readExisting(txCollection: CollectionReference, ids: string[]): Promise<Map<string, StoredTransaction>> {
+  const existing = new Map<string, StoredTransaction>();
   const unique = [...new Set(ids)];
   for (let i = 0; i < unique.length; i += MAX_GET_ALL) {
     const refs = unique.slice(i, i + MAX_GET_ALL).map((id) => txCollection.doc(id));
     const snaps = await getAdminDb().getAll(...refs);
     for (const snap of snaps) {
       if (!snap.exists) continue;
-      const data = snap.data() ?? {};
-      existing.set(snap.id, {
-        categoryKind: data.categoryKind ?? null,
-        categoryId: data.categoryId ?? null,
-        transferAccountId: data.transferAccountId ?? null,
-      });
+      existing.set(snap.id, toStoredTransaction(snap.data() ?? {}));
     }
   }
   return existing;
@@ -475,11 +473,7 @@ async function loadLegacy(
         amount: typeof data.amount === "number" ? data.amount : 0,
         rawName: typeof data.rawName === "string" ? data.rawName : "",
         pending: data.pending === true,
-        assignment: {
-          categoryKind: data.categoryKind ?? null,
-          categoryId: data.categoryId ?? null,
-          transferAccountId: data.transferAccountId ?? null,
-        },
+        assignment: toStoredTransaction(data),
       });
     }
   }
@@ -608,10 +602,7 @@ export async function syncPlaidItem(uid: string, itemId: string, deadline: numbe
             existing,
             accountDocIdFor: (plaidAccountId) => accounts.docIdByPlaidId.get(plaidAccountId) ?? null,
             itemId,
-            categorize: (fields) => {
-              const result = applyRules({ ...fields, categoryKind: null, categoryId: null, transferAccountId: null }, rulesContext);
-              return { categoryKind: result.categoryKind, categoryId: result.categoryId, transferAccountId: result.transferAccountId };
-            },
+            categorize: (fields) => categorizeTransaction(toCategorizeInput(fields), rulesContext),
             legacy,
             now: Date.now(),
           });

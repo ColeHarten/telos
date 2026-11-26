@@ -5,7 +5,7 @@ import { db } from "@/lib/firebaseClient";
 import { runSync } from "@/lib/plaidSync";
 import type { PlaidConnection } from "@/lib/types/types";
 import { collection, onSnapshot } from "firebase/firestore";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 const TICK_MS = 5 * 1000;
 
@@ -14,8 +14,11 @@ const TICK_MS = 5 * 1000;
  * more than six hours old, continues a large import until it's done, and
  * checks every two minutes while a bank is importing history or refreshing.
  * Nothing runs while the tab is hidden. See autoSyncDue for the rules.
+ * Returns each bank's status, for the header sync chip.
  */
-export default function useAutoSync(uid: string | null): void {
+export default function useAutoSync(uid: string | null): PlaidConnection[] {
+  const [latest, setLatest] = useState<{ uid: string; connections: PlaidConnection[] } | null>(null);
+
   useEffect(() => {
     if (!uid) return;
 
@@ -31,6 +34,7 @@ export default function useAutoSync(uid: string | null): void {
       (snapshot) => {
         connections = snapshot.docs.map((d) => toPlaidConnection(d.id, d.data()));
         loaded = true;
+        setLatest({ uid, connections });
       },
       (err) => console.error("[useAutoSync] Could not load connection status:", err)
     );
@@ -58,4 +62,6 @@ export default function useAutoSync(uid: string | null): void {
       unsubscribe();
     };
   }, [uid]);
+
+  return latest && latest.uid === uid ? latest.connections : [];
 }
