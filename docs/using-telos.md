@@ -32,7 +32,7 @@ A one-screen summary of the current month:
 - **Needs Review:** uncategorized transactions waiting for you.
 - **Recent transactions** and your **accounts,** with links to the full pages.
 
-The Dashboard reads only budget amounts you've saved. A Budgets line still showing its default estimate counts as 0 here until you enter an amount.
+Planned figures match the Budgets page: your amount, or the category's monthly estimate until you set one.
 
 ## Accounts
 
@@ -63,6 +63,7 @@ Archiving shows the same list as a warning, but lets you go ahead.
 ## Categories
 
 - **Add, edit, archive, and restore** income, expense, and transfer categories. Archived categories stop receiving new automatic assignments, and their past money still shows on the Budgets page in a separate line.
+- **Type** (income, expense, or transfer) is set when you create the category and can't be changed later, because each transaction keeps its type. To switch, create a new category and move the transactions.
 - **Estimated monthly** is the starting budget amount for the category.
 - **Paycheck details** (income categories only): enter gross pay per paycheck, pay frequency, and deductions (taxes, pre-tax, and post-tax). Telos works out net pay and the monthly estimate.
 - **Deductions linked to an account** (for example, a 401(k) contribution) automatically create a matching transfer category. It's renamed, updated, or removed whenever you change the deduction. These show under their income category and are marked "Managed by income category".
@@ -78,15 +79,16 @@ Pick a month. Lines are grouped into:
 | Savings | Each active asset account | Transfers into the account |
 | Debt | Each active liability account | Transfers into the account (payments) |
 
-Type a planned amount and it saves on its own a moment later. A category line you haven't set yet shows the category's monthly estimate; an account line shows 0. Edits in two browser tabs don't overwrite each other.
+Type a planned amount and it saves on its own a moment later. A category line you haven't set yet shows the category's monthly estimate, and the totals count it; an account line shows 0. Edits in two browser tabs don't overwrite each other.
 
 If any money this month landed on archived categories, it shows in a separate line so totals still add up.
 
 ## Transactions
 
 - **Search and filter** by text, date range, status (pending or posted), flow (in or out), amount, and account.
-- **Categorize** a transaction by picking a category. Clearing the choice sends it back to Needs Review.
-- After you categorize one, Telos may offer to **create an automation** so future transactions from that merchant go to the same category.
+- **Categorize** a transaction by picking a category. Pick **Unassigned** to send it back to Needs Review.
+- After you categorize one, Telos may offer to **create an automation** so future transactions from that merchant go to the same category. It doesn't offer if that automation already exists.
+- **Summary cards** (inflows, outflows, and net) cover the selected account and dates, and leave out transfers between your own accounts.
 - **Sync** pulls new and changed transactions from every bank. **Last Synced** shows when that last finished, and "Syncing…" while it runs. If a bank needs reconnecting or fails, a message says so; the other banks still sync.
 - The page loads the last 24 months. **Load older transactions** adds 12 months at a time.
 
@@ -100,7 +102,7 @@ Automations apply to new transactions in later syncs, and to uncategorized trans
 
 ## Settings
 
-Shows the Google account you're signed in with.
+Shows the Google account you're signed in with, and a **Sign Out** button.
 
 ## Signing in and out
 

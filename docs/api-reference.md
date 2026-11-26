@@ -99,6 +99,7 @@ Disconnects a bank. Its accounts become manual accounts with their history and l
 
 - **Body:** `{ "itemId": "..." }`
 - **Returns:** `{ "success": true, "convertedAccounts": 2 }`
+- **Errors:** 409 `sync_in_progress` if that bank is syncing right now.
 - **Rate limit:** 10 per minute
 
 A connection that's already gone still succeeds.
@@ -113,6 +114,7 @@ Permanently deletes an archived account and its own transactions.
   - 404 `not_found` if the account doesn't exist.
   - 409 `not_archived` if the account isn't archived.
   - 409 `account_in_use` if transactions, a transfer category, or a paycheck deduction point at it. The message lists which.
+  - 409 `sync_in_progress` if the account's bank is syncing right now.
 - **Rate limit:** 10 per minute
 
 ## Adding a route

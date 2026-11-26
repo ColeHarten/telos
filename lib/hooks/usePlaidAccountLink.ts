@@ -44,49 +44,48 @@ async function fetchLinkToken(updateModeItemId: string | undefined): Promise<str
   return data.linkToken;
 }
 
+/**
+ * Opens Plaid Link. The link token is requested when the button is clicked,
+ * not when the page loads, and is dropped when Link closes, so every session
+ * starts with a fresh token and idle pages make no requests.
+ */
 export default function usePlaidAccountLink(options: PlaidAccountLinkOptions): PlaidAccountLinkTrigger {
   const { updateModeItemId } = options;
   const isUpdateMode = Boolean(updateModeItemId);
 
   const [token, setToken] = useState<string | null>(null);
-  const [tokenFailed, setTokenFailed] = useState(false);
-  const isFetching = useRef(false);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
 
-  // The latest callbacks, read when they fire. Callers often pass inline
-  // functions, and depending on them would re-request link tokens every render.
+  // Set by a click; Link opens as soon as its token is ready.
+  const openRequested = useRef(false);
+
+  // The latest callbacks, read when they fire, so inline callbacks from the
+  // caller don't rebuild the Link config every render.
   const callbacks = useRef(options);
   useEffect(() => {
     callbacks.current = options;
   });
 
-  // A failed request is not retried automatically; the button offers "Try again".
   const requestToken = useCallback(() => {
-    if (isFetching.current) return;
-    isFetching.current = true;
-
+    setLoading(true);
+    setFailed(false);
     fetchLinkToken(updateModeItemId)
-      .then((linkToken) => {
-        setToken(linkToken);
-        setTokenFailed(false);
-      })
+      .then(setToken)
       .catch((error: unknown) => {
         console.error(error);
-        setTokenFailed(true);
+        openRequested.current = false;
+        setFailed(true);
         callbacks.current.onLinkError?.("Could not prepare the bank connection.");
       })
-      .finally(() => {
-        isFetching.current = false;
-      });
+      .finally(() => setLoading(false));
   }, [updateModeItemId]);
-
-  useEffect(() => {
-    requestToken();
-  }, [requestToken]);
 
   const config = useMemo(
     () => ({
       token: token ?? "",
       onSuccess: async (publicToken: string) => {
+        setToken(null);
         const { onAccountsLinked, onLinkError, onSyncSuccess } = callbacks.current;
 
         if (!isUpdateMode) {
@@ -112,26 +111,39 @@ export default function usePlaidAccountLink(options: PlaidAccountLinkOptions): P
 
         onSyncSuccess?.();
       },
-      onExit: (error: { error_code?: string } | null) => {
-        // Link tokens expire after a few hours. Fetch a fresh one for the next attempt.
-        if (error?.error_code === "INVALID_LINK_TOKEN") requestToken();
-      },
+      onExit: () => setToken(null),
     }),
-    [isUpdateMode, requestToken, token]
+    [isUpdateMode, token]
   );
 
   const { open, ready } = usePlaidLink(config);
 
+  useEffect(() => {
+    if (openRequested.current && token && ready) {
+      openRequested.current = false;
+      open();
+    }
+  }, [token, ready, open]);
+
+  const preparing = loading || (Boolean(token) && !ready);
+
   return {
     onClick: () => {
-      if (tokenFailed) {
-        setTokenFailed(false);
-        requestToken();
-      } else {
+      if (preparing) return;
+      if (token && ready) {
         open();
+        return;
       }
+      openRequested.current = true;
+      requestToken();
     },
-    disabled: tokenFailed ? false : !token || !ready,
-    label: tokenFailed ? "Try again" : ready ? (isUpdateMode ? "Reconnect account" : "Connect Bank Account") : "Loading...",
+    disabled: preparing,
+    label: preparing
+      ? "Loading..."
+      : failed
+        ? "Try again"
+        : isUpdateMode
+          ? "Reconnect account"
+          : "Connect Bank Account",
   };
 }

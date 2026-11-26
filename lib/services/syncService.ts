@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "crypto";
 import { FieldValue, type CollectionReference, type DocumentReference } from "firebase-admin/firestore";
 import type { RemovedTransaction, Transaction as PlaidTransaction } from "plaid";
+import { ApiError } from "@/lib/api/handler";
 import { getAdminDb } from "@/lib/firebaseAdmin";
 import { decryptSecretWithStatus, encryptSecret } from "./encryption";
 import { errorFields, logError, logWarn } from "./logging";
@@ -48,6 +49,17 @@ export type SyncAllResult = {
   itemsInProgress: string[];
 };
 
+/** A disconnect or delete was refused because a sync of the same bank is running (409). */
+export class SyncInProgressError extends ApiError {
+  constructor() {
+    super(409, "sync_in_progress", "This bank is syncing right now. Try again in a minute.");
+    this.name = "SyncInProgressError";
+  }
+}
+
+/** The connection was disconnected before this run could start. */
+class ItemRemovedError extends Error {}
+
 function userDoc(uid: string) {
   return getAdminDb().collection("users").doc(uid);
 }
@@ -88,12 +100,27 @@ async function acquireLease(itemRef: DocumentReference): Promise<string | null> 
   const leaseId = randomUUID();
   return getAdminDb().runTransaction(async (tx) => {
     const snap = await tx.get(itemRef);
-    if (!snap.exists) throw new Error("Plaid item not found");
+    if (!snap.exists) throw new ItemRemovedError();
     const data = snap.data() as PlaidItemDoc;
     if ((data.syncLeaseUntil ?? 0) > Date.now()) return null;
     tx.update(itemRef, { syncLeaseId: leaseId, syncLeaseUntil: Date.now() + LEASE_MS });
     return leaseId;
   });
+}
+
+/**
+ * Takes the lease for a change other than a sync, so no sync writes to the
+ * connection's accounts meanwhile. Returns null if the connection is gone.
+ */
+async function leaseForChange(itemRef: DocumentReference): Promise<string | null> {
+  try {
+    const leaseId = await acquireLease(itemRef);
+    if (!leaseId) throw new SyncInProgressError();
+    return leaseId;
+  } catch (err) {
+    if (err instanceof ItemRemovedError) return null;
+    throw err;
+  }
 }
 
 async function releaseLease(itemRef: DocumentReference, leaseId: string): Promise<void> {
@@ -171,8 +198,8 @@ async function commitOps(txCollection: CollectionReference, ops: WriteOp[]): Pro
 }
 
 /** Writes Plaid's current balances to this connection's existing Account docs. */
-async function refreshBalances(uid: string, accessToken: string): Promise<void> {
-  const plaidAccounts = await fetchAccounts(accessToken);
+async function refreshBalances(uid: string, accessToken: string, skipped: ReadonlySet<string>): Promise<void> {
+  const plaidAccounts = (await fetchAccounts(accessToken)).filter((acc) => !skipped.has(acc.account_id));
   if (plaidAccounts.length === 0) return;
 
   const accountsRef = userDoc(uid).collection("accounts");
@@ -206,6 +233,7 @@ export async function syncPlaidItem(uid: string, itemId: string): Promise<SyncIt
 
     const changes = await fetchChanges(accessToken, item.cursor || "");
     const txCollection = userDoc(uid).collection("transactions");
+    const skipped = new Set(item.skippedDuplicateAccountIds ?? []);
 
     // Read every doc the plan depends on before writing, including the
     // pending versions of newly posted transactions.
@@ -222,7 +250,7 @@ export async function syncPlaidItem(uid: string, itemId: string): Promise<SyncIt
       modified: changes.modified,
       removed: changes.removed,
       existing,
-      skippedAccountIds: new Set(item.skippedDuplicateAccountIds ?? []),
+      skippedAccountIds: skipped,
       categorize: (fields) => {
         const result = applyRules({ ...fields, categoryKind: null, categoryId: null, transferAccountId: null }, rulesContext);
         return { categoryKind: result.categoryKind, categoryId: result.categoryId, transferAccountId: result.transferAccountId };
@@ -231,7 +259,7 @@ export async function syncPlaidItem(uid: string, itemId: string): Promise<SyncIt
     });
 
     await commitOps(txCollection, plan.ops);
-    await refreshBalances(uid, accessToken);
+    await refreshBalances(uid, accessToken, skipped);
 
     // The cursor moves only after every write succeeded, so a failed run is
     // retried from the same point. Old-format tokens are re-encrypted here.
@@ -249,13 +277,20 @@ export async function syncPlaidItem(uid: string, itemId: string): Promise<SyncIt
   }
 }
 
-export type ItemOutcome = SyncItemResult | { status: "needs_reauth" } | { status: "failed"; errorCode: string };
+export type ItemOutcome =
+  | SyncItemResult
+  | { status: "needs_reauth" }
+  | { status: "failed"; errorCode: string }
+  | { status: "removed" };
 
 /** Syncs one connection and records the outcome on its status doc. Never throws. */
 export async function syncItemAndRecord(uid: string, itemId: string): Promise<ItemOutcome> {
   try {
     return await syncPlaidItem(uid, itemId);
   } catch (err) {
+    // Disconnected since the sync was requested: nothing to sync or record.
+    if (err instanceof ItemRemovedError) return { status: "removed" };
+
     const plaidCode = getPlaidErrorCode(err);
     const needsReauth = plaidCode === "ITEM_LOGIN_REQUIRED";
     const errorCode = plaidCode ?? "SYNC_FAILED";
@@ -292,7 +327,7 @@ export async function syncAllPlaidItems(uid: string): Promise<SyncAllResult> {
       total.itemsNeedingReauth.push(itemDoc.id);
     } else if (outcome.status === "failed") {
       total.itemsFailed.push(itemDoc.id);
-    } else {
+    } else if (outcome.status === "in_progress") {
       total.itemsInProgress.push(itemDoc.id);
     }
   }
@@ -304,14 +339,16 @@ export async function syncAllPlaidItems(uid: string): Promise<SyncAllResult> {
  * Revokes Plaid's access to a connection, deletes its records, and converts
  * its accounts to manual accounts (history kept, balance frozen). A connection
  * that is already gone still succeeds. Returns the number of accounts converted.
+ * Throws SyncInProgressError (409) while a sync of the connection is running.
  */
 export async function disconnectPlaidItem(uid: string, itemId: string): Promise<number> {
   const db = getAdminDb();
   const itemRef = plaidItemsCollection(uid).doc(itemId);
-  const itemSnap = await itemRef.get();
 
-  if (itemSnap.exists) {
-    const { accessToken } = itemSnap.data() as PlaidItemDoc;
+  // The lease is deleted with the connection below.
+  const leaseId = await leaseForChange(itemRef);
+  if (leaseId) {
+    const { accessToken } = (await itemRef.get()).data() as PlaidItemDoc;
     try {
       await removeItem(decryptSecretWithStatus(accessToken).plaintext);
     } catch (err) {
@@ -331,4 +368,22 @@ export async function disconnectPlaidItem(uid: string, itemId: string): Promise<
   await batch.commit();
 
   return accounts.size;
+}
+
+/**
+ * Stops a connection syncing one account, before that account is deleted.
+ * Holding the lease means no sync that read the old skip list is still running.
+ * Throws SyncInProgressError (409) while a sync of the connection is running.
+ */
+export async function skipAccountInSync(uid: string, itemId: string, accountId: string): Promise<void> {
+  const itemRef = plaidItemsCollection(uid).doc(itemId);
+  const leaseId = await leaseForChange(itemRef);
+  if (!leaseId) return;
+  try {
+    await itemRef.update({ skippedDuplicateAccountIds: FieldValue.arrayUnion(accountId) });
+  } finally {
+    await releaseLease(itemRef, leaseId).catch((err: unknown) => {
+      logWarn("delete-account", "Could not release sync lease", { itemId, ...errorFields(err) });
+    });
+  }
 }

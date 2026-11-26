@@ -112,6 +112,20 @@ export function isTransfer(tx: Pick<Transaction, "categoryKind" | "plaidCategory
 
 export type CashFlow = { inflow: number; outflow: number; net: number };
 
+/**
+ * A category's planned amount for a month: its saved budget line, or the
+ * category's monthly estimate if the line was never set. The Budgets page
+ * lines show the same value.
+ */
+export function plannedAmount(
+  category: Pick<Category, "id" | "estimatedMonthly">,
+  lines: Readonly<Record<string, { planned?: number }>>
+): number {
+  const line = lines[`category_${category.id}`];
+  const value = Number(line ? line.planned ?? 0 : category.estimatedMonthly ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
 /** Inflow and outflow for one month, excluding transfers. */
 export function monthCashFlow(transactions: readonly Transaction[], monthKey: string): CashFlow {
   let inflow = 0;

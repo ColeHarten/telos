@@ -32,7 +32,7 @@ sequenceDiagram
 
 Step by step:
 
-1. **Link token.** The browser asks the server for a link token and opens Plaid Link with it. If Link fails, the button shows "Try again" instead of retrying in a loop.
+1. **Link token.** When you click the button, the browser asks the server for a link token and opens Plaid Link with it. The token is dropped when Link closes, so each attempt uses a fresh one. If the request fails, the button shows "Try again" instead of retrying in a loop. New links ask Plaid for 730 days of history (`transactions.days_requested`), the maximum; without it Plaid sends 90 days, and the length can't be changed after linking.
 2. **Exchange.** The browser sends the `public_token` to `exchange-token`. The server exchanges it for an access token and fetches the bank's accounts and name.
 3. **Duplicate check.** Linking the same bank again through normal Link creates a new Plaid item with new account ids, so Telos matches on the bank plus the account's last four digits (`mask`). Accounts with no mask match on bank, name, and type. Archived accounts count too.
    - Accounts already in Telos are skipped and recorded in `skippedDuplicateAccountIds`, so their transactions are ignored.
@@ -110,6 +110,7 @@ A linked account that you archive **keeps syncing**. It's hidden from lists and 
 
 `POST /api/plaid/disconnect-item`, through `disconnectPlaidItem`:
 
+1. Takes the connection's sync lease, so no sync writes to its accounts meanwhile. If a sync holds it, the request fails with 409 `sync_in_progress`.
 1. Revokes the item at Plaid (`itemRemove`). If Plaid already revoked it, Telos carries on.
 2. In one batch: deletes the `plaidItems` and `plaidItemStatus` docs, and turns every account at that bank into a manual account (`isManual: true`, Plaid ids cleared).
 
@@ -120,7 +121,7 @@ History is kept and balances freeze at their last value.
 `POST /api/accounts/delete` works only on **archived** accounts.
 
 1. **Check for links.** It refuses (409) if transactions transfer into the account, a transfer category points at it, or a paycheck deduction feeds it.
-2. **Stop syncing.** If it's the last account at its bank, the bank is disconnected. Otherwise the account is added to the connection's `skippedDuplicateAccountIds`, so future syncs ignore it.
+2. **Stop syncing.** If it's the last account at its bank, the bank is disconnected. Otherwise, holding the sync lease, the account is added to the connection's `skippedDuplicateAccountIds`, so future syncs ignore it. Either way, a running sync of that bank makes this fail with 409 `sync_in_progress`.
 3. **Delete** the account's own transactions in pages of 400, then the account.
 
 ## Limits worth knowing

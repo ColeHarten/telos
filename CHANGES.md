@@ -2,6 +2,43 @@
 
 Running log for the `production-hardening` branch: one section and one commit per stage.
 
+## Stage 5: Code review fixes
+
+Fixes from the Telos code review. No new dependencies; `next` and `eslint-config-next` move to 16.4.6.
+
+### Changed
+- `.github/workflows/ci.yml`: installs npm 11 before `npm ci` (Node 22's npm 10 rejected the lockfile, so CI never ran); actions moved to v5.
+- `package.json`: `next` and `eslint-config-next` 16.2.9 -> 16.4.6 (security releases).
+- `next.config.ts`: image optimizer off (`images.unoptimized`); Telos doesn't use `next/image`.
+- `.gitignore`: ignores Firebase service-account key files.
+- `lib/budgetCalculations.ts`: `plannedAmount` (saved line, else the category estimate).
+- Budgets page: totals add up the amounts shown on the lines, including unset lines showing the estimate. Loads transactions far enough back for the selected month.
+- Dashboard: planned figures use `plannedAmount`, so they match Budgets. Loads transactions far enough back for the six-month trend.
+- `AddCategoryModal.tsx` and `firestore.rules`: a category's type can't change after it's created (it corrupted past transactions and orphaned paycheck transfer categories).
+- Transactions page: "Unassigned" is always offered, so a transaction can go back to Needs Review. Summary cards leave out transfers. The automation offer appears only when the change saved and the automation doesn't already exist.
+- `useTransactions.ts`: `updateTransactionAssignment` returns whether it saved; optional `sinceMonthKey` widens the loaded window.
+- `plaidService.ts`: new links request 730 days of history (Plaid's default is 90).
+- `syncService.ts`: disconnect and per-account skip take the sync lease and fail with 409 `sync_in_progress` while a sync runs; a sync of a connection removed in the meantime records nothing; balances skip skipped accounts.
+- `app/api/accounts/delete/route.ts`: uses `skipAccountInSync`.
+- `usePlaidAccountLink.ts`: the link token is requested on click and dropped when Link closes, instead of on every page load and for every reconnect row.
+- `DeleteAccountDialog.tsx`: the safety check runs once per opening, not on every account-list update.
+- Accounts and Categories pages: errors are no longer cleared whenever data updates.
+- `tests/`: rules tests for `categoryKind` values, clearing an assignment, and locked category kind; unit tests for `plannedAmount`.
+- `docs/`: updated for all of the above, plus Sign Out on Settings.
+
+### Not in this stage
+- Sign-up allowlist and re-linking a disconnected bank: before production Plaid.
+- One shared listener for all pages, and enforcing the CSP: later.
+
+### Apply and test
+```bash
+rsync -a --delete --exclude .git --exclude node_modules --exclude .next --exclude '.env*' --exclude .vercel \
+  --exclude .firebaserc --exclude firestore.indexes.json --exclude package-lock.json \
+  --exclude public/favicon.ico --exclude app/assets/favicon.ico ./telos-stage5/ ./
+npm install
+npm run lint && npm run typecheck && npm test && npm run test:rules && npm run build
+```
+
 ## Stage 4: Tests, CI, docs, and polish
 
 **New:** `vitest.config.ts`, `tests/` (unit tests, rules tests, and a `server-only` stub), `.github/workflows/ci.yml`, `docs/architecture.md`

@@ -9,6 +9,8 @@ import {
   monthCashFlow,
   monthKeysEndingAt,
   netWorth as computeNetWorth,
+  plannedAmount,
+  shiftMonthKey,
 } from "@/lib/budgetCalculations";
 import useAccounts from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
@@ -22,7 +24,7 @@ import { Box, Card, CardContent, Chip, LinearProgress, Typography } from "@mui/m
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Line, LineChart, ResponsiveContainer, XAxis } from "recharts";
-import type { Account, BudgetLine, Transaction } from "@/lib/types/types";
+import type { Account, Transaction } from "@/lib/types/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -93,9 +95,14 @@ export default function DashboardPage() {
   const { accounts = [] } = useAccounts(user, authLoading);
   const { categories = [] } = useCategories(user, authLoading);
   const { rangeBudgets, rangeLoading, loadBudgetRange } = useBudget(user, authLoading);
-  const { transactions = [], transactionsLoading } = useTransactions(user, authLoading, accounts);
-
   const [monthKey, setMonthKey] = useState<string>(() => getCurrentMonthKey());
+  // Loads far enough back to cover the six-month trend.
+  const { transactions = [], transactionsLoading } = useTransactions(
+    user,
+    authLoading,
+    accounts,
+    shiftMonthKey(monthKey, -5)
+  );
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -108,21 +115,11 @@ export default function DashboardPage() {
   // Net worth -----------------------------------------------------------------
   const netWorth = useMemo(() => computeNetWorth(accounts), [accounts]);
 
-  // Budget lines for the selected month ----------------------------------------
-  const budgetLines = useMemo(() => {
-    const lines = (rangeBudgets?.[monthKey] ?? {}) as Record<string, BudgetLine>;
-    return Object.values(lines);
-  }, [rangeBudgets, monthKey]);
-
+  // Planned amounts for the selected month: saved lines, else the category's estimate.
   const plannedByCategoryId = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const line of budgetLines) {
-      if (line.lineType === "expense" || line.lineType === "income") {
-        map.set(line.categoryId, (map.get(line.categoryId) ?? 0) + Number(line.planned ?? 0));
-      }
-    }
-    return map;
-  }, [budgetLines]);
+    const lines: Readonly<Record<string, { planned?: number }>> = rangeBudgets?.[monthKey] ?? {};
+    return new Map(activeCategories.map((category) => [category.id, plannedAmount(category, lines)]));
+  }, [rangeBudgets, monthKey, activeCategories]);
 
   // Category actuals for the month, net of refunds.
   const actualByCategoryId = useMemo(

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { FieldValue, type DocumentReference } from "firebase-admin/firestore";
+import type { DocumentReference } from "firebase-admin/firestore";
 import { ApiError, readJsonObject, requireId, withUser } from "@/lib/api/handler";
 import { getAdminDb } from "@/lib/firebaseAdmin";
 import { logInfo } from "@/lib/services/logging";
 import { RATE_LIMITS } from "@/lib/services/rateLimit";
-import { disconnectPlaidItem, plaidItemsCollection } from "@/lib/services/syncService";
+import { disconnectPlaidItem, skipAccountInSync } from "@/lib/services/syncService";
 
 const DELETE_PAGE_SIZE = 400;
 
@@ -38,6 +38,7 @@ async function blockingReasons(userRef: DocumentReference, accountId: string): P
 // Permanently deletes an archived account and its own transactions. A linked
 // account stops syncing first: its bank is disconnected if no other account
 // uses it, otherwise the account is added to the connection's skip list.
+// Both refuse with 409 while that bank is syncing.
 export const POST = withUser({ name: "delete-account", rateLimit: RATE_LIMITS.deleteAccount }, async ({ req, user }) => {
   const accountId = requireId(await readJsonObject(req), "accountId");
 
@@ -63,9 +64,7 @@ export const POST = withUser({ name: "delete-account", rateLimit: RATE_LIMITS.de
     if (siblings.docs.every((d) => d.id === accountId)) {
       await disconnectPlaidItem(user.uid, itemId);
     } else {
-      await plaidItemsCollection(user.uid)
-        .doc(itemId)
-        .update({ skippedDuplicateAccountIds: FieldValue.arrayUnion(accountId) });
+      await skipAccountInSync(user.uid, itemId, accountId);
     }
   }
 

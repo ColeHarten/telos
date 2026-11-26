@@ -156,11 +156,31 @@ function cutoffDate(months: number): string {
   return `${cutoff.getFullYear()}-${month}-01`;
 }
 
+/** Whole months from a "YYYY-MM" key to the current month (0 for this month or later). */
+function monthsSince(monthKey: string | undefined): number {
+  if (!monthKey) return 0;
+  const [year, month] = monthKey.split("-").map(Number);
+  if (!year || !month) return 0;
+  const now = new Date();
+  return Math.max(0, (now.getFullYear() - year) * 12 + (now.getMonth() + 1 - month));
+}
+
 type Loaded = { key: string; items: RawTransaction[]; error: string | null };
 
-export default function useTransactions(user: AuthUser | null, authLoading: boolean, accounts: Account[]) {
+/**
+ * Live transactions for the last 24 months, plus 12 more per "load older".
+ * sinceMonthKey widens the window so that month is always covered, which the
+ * Budgets page and Dashboard use for the month on screen.
+ */
+export default function useTransactions(
+  user: AuthUser | null,
+  authLoading: boolean,
+  accounts: Account[],
+  sinceMonthKey?: string
+) {
   const uid = authLoading ? null : user?.uid ?? null;
-  const [months, setMonths] = useState(INITIAL_MONTHS);
+  const [pagedMonths, setMonths] = useState(INITIAL_MONTHS);
+  const months = Math.max(pagedMonths, monthsSince(sinceMonthKey));
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [olderCheck, setOlderCheck] = useState<{ key: string; hasOlder: boolean } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -277,6 +297,7 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
    *
    * The live listener shows the change immediately and reverts it if the
    * write is rejected. A genuine correction also records a learning vote.
+   * Returns whether the change was saved.
    */
   const updateTransactionAssignment = useCallback(
     async (
@@ -284,14 +305,14 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
       categoryKind: CategoryKind | undefined,
       categoryId?: string,
       transferAccountId?: string | null
-    ) => {
-      if (!user?.uid) return;
+    ): Promise<boolean> => {
+      if (!user?.uid) return false;
 
       const target = rawTransactions.find((tx) => tx.id === transactionId);
       if (!target) {
         console.error(`[useTransactions] updateTransactionAssignment: no transaction found with id "${transactionId}".`);
         setActionError("Could not find that transaction.");
-        return;
+        return false;
       }
 
       const normalizedTransferAccountId = categoryKind === "transfer" ? transferAccountId ?? null : null;
@@ -301,7 +322,7 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
       } catch (err) {
         console.error("[useTransactions] Invalid assignment:", err);
         setActionError(err instanceof Error ? err.message : "Invalid assignment.");
-        return;
+        return false;
       }
 
       try {
@@ -315,7 +336,7 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
       } catch (err) {
         console.error("Failed to update assignment:", err);
         setActionError("Failed to update assignment.");
-        return;
+        return false;
       }
 
       // Vote only for a real category that differs from before, on a
@@ -325,6 +346,7 @@ export default function useTransactions(user: AuthUser | null, authLoading: bool
       if (isRealAssignment && isActuallyDifferent && target.plaidCategoryDetailed && categoryId) {
         void recordCategorySignal(target.plaidCategoryDetailed, categoryId);
       }
+      return true;
     },
     [user, rawTransactions, recordCategorySignal]
   );

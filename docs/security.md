@@ -21,15 +21,16 @@ How Telos protects user data. Five layers, from the database out:
 | `users/{uid}` | Owner | Owner | Owner | Owner |
 | `plaidItems` | No | No | No | No |
 | `plaidItemStatus` | Owner | No | No | No |
-| `transactions` | Owner | No | Owner, category fields only | No |
+| `transactions` | Owner | No | Owner, category fields only, valid `categoryKind` | No |
 | `accounts` | Owner | Owner, manual accounts only | Owner, with limits | No |
-| `categories` | Owner | Owner, valid `kind` | Owner, valid `kind` | Owner |
+| `categories` | Owner | Owner, valid `kind` | Owner, `kind` unchanged | Owner |
 | `budgets`, `automations`, `categoryPlaidStats`, `settings` | Owner | Owner | Owner | Owner |
 | `rateLimits` (top level) | No | No | No | No |
 
 The limits in detail:
 
-- **Transactions:** an update may change only `categoryKind`, `categoryId`, `transferAccountId`, and `updatedAt`. Amounts, dates, and the rest are Plaid's.
+- **Transactions:** an update may change only `categoryKind`, `categoryId`, `transferAccountId`, and `updatedAt`, and `categoryKind` must be `income`, `expense`, `transfer`, or null. Amounts, dates, and the rest are Plaid's.
+- **Categories:** `kind` must be valid on create and can't change on update, because each transaction stores its category's kind.
 - **Account create:** `isManual` must be `true`, and `plaidItemId` and `plaidAccountId` must be empty. Only the server creates linked accounts.
 - **Account update:** may never change `isManual` or any Plaid field. On a linked account, it also may not change `startingBalance`, `currentBalance`, or `balanceUpdatedAt`.
 - **Account delete:** server only, because deleting an account also deletes its transactions and must check what links to it.

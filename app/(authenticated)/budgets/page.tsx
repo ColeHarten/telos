@@ -79,7 +79,6 @@ export default function BudgetsPage() {
   const { user, authLoading } = useAuth();
   const { categories } = useCategories(user, authLoading);
   const { accounts } = useAccounts(user, authLoading);
-  const { transactions = [], transactionsLoading } = useTransactions(user, authLoading, accounts);
   const {
     selectedMonthKey: monthKey,
     setSelectedMonthKey: setMonthKey,
@@ -89,6 +88,8 @@ export default function BudgetsPage() {
     flushSave,
     error,
   } = useBudget(user, authLoading);
+  // Loads far enough back to cover the month on screen.
+  const { transactions = [], transactionsLoading } = useTransactions(user, authLoading, accounts, monthKey);
   const isLoading = authLoading;
 
   const isCurrentMonth = monthKey === getCurrentMonthKey();
@@ -226,23 +227,18 @@ export default function BudgetsPage() {
     ]
   );
 
+  // Totals add up the amounts shown on the lines, including unset lines
+  // that show the category's estimate.
   const summary = useMemo(() => {
-    const income = incomeCategories.reduce((total, category) => {
-      return total + parseBudgetInput(budgetValues[`category_${category.id}`]);
-    }, 0);
+    const groupTotal = (title: string) =>
+      budgetGroups
+        .find((group) => group.title === title)
+        ?.items.reduce((total, item) => total + parseBudgetInput(item.value), 0) ?? 0;
 
-    const expenses = expenseCategories.reduce((total, category) => {
-      return total + parseBudgetInput(budgetValues[`category_${category.id}`]);
-    }, 0);
-
-    const savings = assetAccounts.reduce((total, account) => {
-      return total + parseBudgetInput(budgetValues[`account_${account.id}`]);
-    }, 0);
-
-    const debt = liabilityAccounts.reduce((total, account) => {
-      return total + parseBudgetInput(budgetValues[`account_${account.id}`]);
-    }, 0);
-
+    const income = groupTotal("Income");
+    const expenses = groupTotal("Expenses");
+    const savings = groupTotal("Savings");
+    const debt = groupTotal("Debt");
     const remaining = income - expenses - savings - debt;
 
     return [
@@ -258,13 +254,7 @@ export default function BudgetsPage() {
         icon: <ShowChartRoundedIcon sx={{ fontSize: 20 }} />,
       },
     ];
-  }, [
-    incomeCategories,
-    expenseCategories,
-    assetAccounts,
-    liabilityAccounts,
-    budgetValues,
-  ]);
+  }, [budgetGroups]);
 
   function handleBudgetValueChange(
     item: { id: string; categoryOrAccountId: string; lineType: BudgetLineType },

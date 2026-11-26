@@ -7,6 +7,7 @@ import {
   monthCashFlow,
   monthKeysEndingAt,
   netWorth,
+  plannedAmount,
   shiftMonthKey,
   transferActualsByAccount,
 } from "@/lib/budgetCalculations";
@@ -153,5 +154,21 @@ describe("net worth", () => {
       account({ id: "closed", currentBalance: 999, isArchived: true }),
     ];
     expect(netWorth(accounts)).toEqual({ total: 1300, cash: 1000, investments: 500, debt: 200, assets: 1500 });
+  });
+});
+
+describe("plannedAmount", () => {
+  const groceries = { id: "food", estimatedMonthly: 400 };
+
+  it("uses the saved line", () => {
+    expect(plannedAmount(groceries, { category_food: { planned: 350 } })).toBe(350);
+  });
+
+  it("falls back to the category estimate when the line was never set", () => {
+    expect(plannedAmount(groceries, {})).toBe(400);
+  });
+
+  it("keeps a saved zero", () => {
+    expect(plannedAmount(groceries, { category_food: { planned: 0 } })).toBe(0);
   });
 });

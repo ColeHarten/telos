@@ -24,7 +24,7 @@ rateLimits/{uid}_{bucket}            Rate-limit counters (server only, top level
 | `users/{uid}` | Browser | Read and write its own doc |
 | `accounts` | Both | Read; create manual accounts; edit non-Plaid fields. Never delete. |
 | `transactions` | Server | Read; change only the category fields |
-| `categories` | Browser | Read and write; `kind` must be valid |
+| `categories` | Browser | Read and write; `kind` must be valid and can't change |
 | `budgets` | Browser | Read and write |
 | `automations` | Browser | Read and write |
 | `categoryPlaidStats` | Browser | Read and write |
@@ -91,7 +91,7 @@ The browser shows `merchantName`, falling back to `rawName`. Pages read a mapped
 | Field | Type | Notes |
 |---|---|---|
 | `name` | string | |
-| `kind` | string | `income`, `expense`, or `transfer` (checked by the rules) |
+| `kind` | string | `income`, `expense`, or `transfer`. Checked by the rules, and fixed once created. |
 | `estimatedMonthly` | number | Default budget amount. For an income category with paycheck details, the computed monthly net. |
 | `sortOrder` | number | |
 | `isArchived` | boolean | |

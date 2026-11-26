@@ -105,6 +105,16 @@ describe("transactions", () => {
     );
   });
 
+  it("allows clearing the assignment", async () => {
+    await assertSucceeds(
+      updateDoc(doc(alice(), "users/alice/transactions/t1"), { categoryKind: null, categoryId: null })
+    );
+  });
+
+  it("denies an invalid categoryKind", async () => {
+    await assertFails(updateDoc(doc(alice(), "users/alice/transactions/t1"), { categoryKind: "savings" }));
+  });
+
   it("denies changing Plaid fields", async () => {
     await assertFails(updateDoc(doc(alice(), "users/alice/transactions/t1"), { amount: 1 }));
   });
@@ -140,5 +150,10 @@ describe("categories", () => {
   it("validates kind", async () => {
     await assertSucceeds(setDoc(doc(alice(), "users/alice/categories/rent"), { name: "Rent", kind: "expense" }));
     await assertFails(setDoc(doc(alice(), "users/alice/categories/bad"), { name: "Bad", kind: "savings" }));
+  });
+
+  it("allows editing a category but not changing its kind", async () => {
+    await assertSucceeds(updateDoc(doc(alice(), "users/alice/categories/food"), { name: "Groceries" }));
+    await assertFails(updateDoc(doc(alice(), "users/alice/categories/food"), { kind: "income" }));
   });
 });

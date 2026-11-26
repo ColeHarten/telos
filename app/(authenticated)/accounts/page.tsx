@@ -49,7 +49,7 @@ import {
   Typography
 } from "@mui/material";
 import ContributionEligibilityPromptDialog from "./ContributionEligibilityPromptDialog";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import AccountFormDialog from "./AccountFormDialog";
 import DeleteAccountDialog from "./DeleteAccountDialog";
 import IsolationWarningDialog from "@/components/IsolationWarningDialog";
@@ -119,10 +119,6 @@ export default function AccountsPage() {
   const [isolationReasons, setIsolationReasons] = useState<string[]>([]);
   const [isCheckingIsolation, setIsCheckingIsolation] = useState(false);
   const [isConfirmingArchive, setIsConfirmingArchive] = useState(false);
-
-  useEffect(() => {
-    setError(null);
-  }, [user, accounts]);
 
   const activeAccounts = useMemo(() => accounts.filter((account) => !account.isArchived), [accounts]);
   const archivedAccounts = useMemo(() => accounts.filter((account) => account.isArchived), [accounts]);

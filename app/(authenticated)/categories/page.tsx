@@ -39,7 +39,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import AddCategoryModal from "./AddCategoryModal";
 import PageHeader from "@/components/PageHeader";
 import IsolationWarningDialog from "@/components/IsolationWarningDialog";
@@ -93,10 +93,6 @@ export default function CategoriesPage() {
   const [isolationReasons, setIsolationReasons] = useState<string[]>([]);
   const [isCheckingIsolation, setIsCheckingIsolation] = useState(false);
   const [isConfirmingArchive, setIsConfirmingArchive] = useState(false);
-
-  useEffect(() => {
-    setError(null);
-  }, [user, categories]);
 
   const activeCategories = useMemo(() => categories.filter((c) => !c.isArchived), [categories]);
   const archivedCategories = useMemo(() => categories.filter((c) => c.isArchived), [categories]);

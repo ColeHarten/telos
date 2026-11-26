@@ -505,6 +505,7 @@ export default function AddCategoryModal({
               sx={{ "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2 } }}
             />
 
+            {/* The type is fixed once created: each transaction stores it, so changing it would misstate history. */}
             <FormControl fullWidth size="small" sx={{ "& .MuiOutlinedInput-root": { height: 40, borderRadius: 2 } }}>
               <InputLabel id="category-type-label">Type</InputLabel>
               <Select
@@ -512,7 +513,7 @@ export default function AddCategoryModal({
                 label="Type"
                 value={kind}
                 onChange={(e) => setKind(e.target.value as CategoryKind)}
-                disabled={isSaving || isAutoLinkedTransfer}
+                disabled={isSaving || isEditing}
                 renderValue={(value) => {
                   const opt = KIND_OPTIONS.find((o) => o.value === value)!;
                   return (

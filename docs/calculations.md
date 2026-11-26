@@ -71,7 +71,7 @@ A month's budget is a set of planned amounts, one per line (see [Data model](dat
 
 Budget lines save themselves a moment after you stop typing. Each line is written as its own field with a merge, so edits to different lines from two tabs both survive. While a line has unsaved changes, an update from another tab won't replace what you're typing.
 
-**Dashboard vs. Budgets.** The Dashboard's planned figures (spending vs. budget, expected income) use only amounts you've saved. A Budgets line still showing its default estimate counts as 0 on the Dashboard until you enter an amount.
+**Planned amounts.** `plannedAmount` gives a category's planned amount: the saved line, or the category's `estimatedMonthly` if the line was never set. The Budgets totals add up the amounts shown on the lines, and the Dashboard's planned figures (spending vs. budget, expected income) use `plannedAmount`, so the two pages agree.
 
 ## Paycheck
 

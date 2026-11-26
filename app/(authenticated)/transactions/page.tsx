@@ -1,11 +1,13 @@
 "use client";
 
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
+import { isTransfer } from "@/lib/budgetCalculations";
 import { useAccounts } from "@/lib/hooks/useAccounts";
 import useAuth from "@/lib/hooks/useAuth";
 import { useCategories } from "@/lib/hooks/useCategories";
 import useAutomations from "@/lib/hooks/useAutomations";
 import useTransactions from "@/lib/hooks/useTransactions";
+import { normalizeMerchant } from "@/lib/merchant";
 import AutomationPromptDialog from "./automationsPromptDialog";
 import PageHeader from "@/components/PageHeader";
 
@@ -240,7 +242,7 @@ export default function TransactionsPage() {
   } = useTransactions(user, authLoading, accounts);
 
   const { categories = [] } = useCategories(user, authLoading);
-  const { createAutomation } = useAutomations(user, authLoading);
+  const { automations, createAutomation } = useAutomations(user, authLoading);
 
   const [syncing, setSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
@@ -339,6 +341,7 @@ export default function TransactionsPage() {
 
   // Summary metrics recompute from the top-tier scope only (account + date range),
   // so list-only filters like search/status/amount don't move the cards.
+  // Transfers between your own accounts are left out, as on the Dashboard.
   const summary = useMemo(() => {
     let inflows = 0;
     let outflows = 0;
@@ -346,6 +349,7 @@ export default function TransactionsPage() {
     let outflowCount = 0;
 
     for (const transaction of scopedTransactions) {
+      if (isTransfer(transaction)) continue;
       if (transaction.amount > 0) {
         outflows += transaction.amount;
         outflowCount += 1;
@@ -395,24 +399,30 @@ export default function TransactionsPage() {
   }
 
   /**
-   * Applies a manual category assignment, then — if it succeeded — offers to
-   * turn it into a standing automation (see AutomationPromptDialog below).
-   * tx.displayName is merchantName ?? rawName, the same derivation the Plaid
-   * sync job uses server-side (see ruleEngine.ts's applyRules), so the
-   * automation's normalized key will match future transactions from the
-   * same merchant.
+   * Applies a manual category assignment ("" clears it, back to Needs Review),
+   * then offers to make it a standing automation, unless the change failed or
+   * that automation already exists. tx.displayName is derived the same way the
+   * sync job derives it, so the automation matches future transactions.
    */
   async function handleCategoryChange(tx: (typeof transactions)[number], categoryId: string) {
+    if (!categoryId) {
+      await updateTransactionAssignment(tx.id, undefined, undefined, null);
+      return;
+    }
+
     const category = categories.find((c) => c.id === categoryId);
-    // compute CategoryKind from the selected categoryId, it can be "income"|"expense"|"transfer"
-    const categoryKind = category?.kind;
-    // Only meaningful for "transfer" categories — resolved here since this
-    // page already has the full categories list.
-    const transferAccountId = category?.kind === "transfer" ? category.transferAccountId ?? null : null;
-
-    await updateTransactionAssignment(tx.id, categoryKind, categoryId, transferAccountId);
-
     if (!category) return;
+    // Only transfer categories carry a destination account.
+    const transferAccountId = category.kind === "transfer" ? category.transferAccountId ?? null : null;
+
+    const saved = await updateTransactionAssignment(tx.id, category.kind, categoryId, transferAccountId);
+    if (!saved) return;
+
+    const merchantKey = normalizeMerchant(tx.displayName);
+    const alreadyAutomated = automations.some(
+      (automation) => automation.merchantKey === merchantKey && automation.categoryId === categoryId
+    );
+    if (alreadyAutomated) return;
 
     setPendingAutomation({
       merchantLabel: tx.displayName,
@@ -986,11 +996,9 @@ export default function TransactionsPage() {
                             "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e2e8f0" },
                           }}
                         >
-                          {!tx.categoryId && (
-                            <MenuItem value="" disabled sx={{ fontSize: "0.8rem" }}>
-                              <em>Unassigned</em>
-                            </MenuItem>
-                          )}
+                          <MenuItem value="" sx={{ fontSize: "0.8rem" }}>
+                            <em>Unassigned</em>
+                          </MenuItem>
                           {categories
                             // Archived categories stop being offered for new/changed
                             // assignments — but a transaction already sitting on one

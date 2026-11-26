@@ -49,6 +49,8 @@ export async function createLinkToken(uid: string) {
     language: "en",
     products: [Products.Transactions] as Products[],
     country_codes: PLAID_COUNTRY_CODES,
+    // Plaid's maximum. The default is 90 days, and it can't be raised after linking.
+    transactions: { days_requested: 730 },
   });
 
   return res.data.link_token;

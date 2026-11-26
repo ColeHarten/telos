@@ -14,7 +14,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type IsolationCheck = {
   isIsolated: boolean;
@@ -53,6 +53,14 @@ export default function DeleteAccountDialog({
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The check runs once per opening. Reading the latest callback through a
+  // ref keeps account-list updates (a background sync) from re-running it
+  // and clearing the typed name.
+  const checkIsolation = useRef(onCheckIsolation);
+  useEffect(() => {
+    checkIsolation.current = onCheckIsolation;
+  });
+
   useEffect(() => {
     if (!open || !accountId) return;
 
@@ -62,7 +70,7 @@ export default function DeleteAccountDialog({
     setConfirmText("");
     setError(null);
 
-    onCheckIsolation(accountId)
+    checkIsolation.current(accountId)
       .then((result) => {
         if (!cancelled) setCheckResult(result);
       })
@@ -77,7 +85,7 @@ export default function DeleteAccountDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, accountId, onCheckIsolation]);
+  }, [open, accountId]);
 
   const canDelete = Boolean(checkResult?.isIsolated) && confirmText.trim() === accountName.trim();
 

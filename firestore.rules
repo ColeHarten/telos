@@ -35,7 +35,9 @@ service cloud.firestore {
       match /transactions/{transactionId} {
         allow read: if isOwner(uid);
         allow update: if isOwner(uid)
-          && changedKeys().hasOnly(['categoryKind', 'categoryId', 'transferAccountId', 'updatedAt']);
+          && changedKeys().hasOnly(['categoryKind', 'categoryId', 'transferAccountId', 'updatedAt'])
+          && (request.resource.data.get('categoryKind', null) == null
+              || request.resource.data.categoryKind in ['income', 'expense', 'transfer']);
       }
 
       match /accounts/{accountId} {
@@ -59,8 +61,11 @@ service cloud.firestore {
 
       match /categories/{categoryId} {
         allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow create: if isOwner(uid)
           && request.resource.data.get('kind', 'expense') in ['income', 'expense', 'transfer'];
+        // The kind is fixed: transactions store it, so changing it would misstate history.
+        allow update: if isOwner(uid)
+          && request.resource.data.get('kind', 'expense') == resource.data.get('kind', 'expense');
       }
 
       match /settings/{settingsId} {

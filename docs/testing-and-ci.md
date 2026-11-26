@@ -42,12 +42,13 @@ Server modules start with `import "server-only"`, which throws outside Next.js. 
 
 Runs on pushes to `main` and `production-hardening`, and on pull requests. On Ubuntu with Node 22 and Java 21, in order:
 
-1. `npm ci`
-2. `npm run lint`
-3. `npm run typecheck`
-4. `npm test`
-5. `npm run test:rules`
-6. `npm run build`, with placeholder public Firebase values (the build needs no secrets)
+1. `npm install -g npm@11` (Node 22 ships npm 10, which rejects lockfiles written by npm 11)
+2. `npm ci`
+3. `npm run lint`
+4. `npm run typecheck`
+5. `npm test`
+6. `npm run test:rules`
+7. `npm run build`, with placeholder public Firebase values (the build needs no secrets)
 
 Any failing step fails the run. Click the failed step in the **Actions** tab to see its log.
 
