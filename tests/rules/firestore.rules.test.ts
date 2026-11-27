@@ -139,6 +139,20 @@ describe("transactions", () => {
     await assertSucceeds(updateDoc(t1, { categoryKind: "transfer", categoryId: "to-cash", transferAccountId: "manual" }));
   });
 
+  it("allows money coming in to take a transfer to its own account", async () => {
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users/alice/transactions/t2"), {
+        accountId: "linked",
+        amount: -12,
+        categoryKind: null,
+        categoryId: null,
+        transferAccountId: null,
+      });
+    });
+    const t2 = doc(alice(), "users/alice/transactions/t2");
+    await assertSucceeds(updateDoc(t2, { categoryKind: "transfer", categoryId: "card-payment", transferAccountId: "linked" }));
+  });
+
   it("denies an invalid categoryKind", async () => {
     await assertFails(updateDoc(doc(alice(), "users/alice/transactions/t1"), { categoryKind: "savings" }));
   });

@@ -2,6 +2,17 @@
 
 Running log for the `production-hardening` branch: one section and one commit per stage.
 
+## Receiving-leg transfers
+
+The receiving side of a transfer, such as a card payment arriving on the card, can now take the transfer category that points at that account. Before, every transfer to a transaction's own account was refused, so that leg had no category that fit: it isn't income, and the picker hid the transfer.
+
+### Changed
+- **One rule, `transferFits`** (`lib/categorization.ts`): a transfer to the transaction's own account is allowed only for money in (a negative Plaid amount). The category picker, the detail drawer, rules, merchant memory, Plaid mappings, bulk edits, and the save check in `useTransactions` all use it.
+- **Firestore rules:** the same check, using the stored amount.
+- **Pairing:** a receiving leg pointed at its own account pairs with any account, as an uncategorized leg does.
+- **Actuals are unchanged:** a linked account already counts the money into it from its own transactions, and the destination clause skips linked accounts, so nothing counts twice.
+- **Tests:** rules (money in may point at its own account), bulk edits, and pairing.
+
 ## Stage 9: UI cleanup
 
 One look across the app. The UI only: no data, sync, or Firestore rules changes, no new dependencies, and no new indexes.

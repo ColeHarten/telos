@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTransactionsStore } from "@/components/TransactionsProvider";
 import { db } from "@/lib/firebaseClient";
-import { merchantKey, nextMemory, parseMemory, transactionInput, type TransactionUpdate } from "@/lib/categorization";
+import { merchantKey, nextMemory, parseMemory, transactionInput, type TransactionUpdate, transferFits } from "@/lib/categorization";
 import { monthsSince, type RawTransaction } from "@/lib/transactionDocs";
 import { doc, runTransaction, serverTimestamp, updateDoc, writeBatch } from "firebase/firestore";
 import type { AuthUser, Account, Transaction, CategoryKind } from "../types/types";
@@ -17,13 +17,15 @@ const BATCH_SIZE = 400;
  * fails loudly.
  *
  * transferAccountId is validated against the transaction's own origin
- * account: a transfer to the account it came from is meaningless.
+ * account: a transfer to its own account is only allowed for money in (the
+ * receiving leg).
  */
 function assertValidAssignment(
   categoryKind: CategoryKind | undefined,
   categoryId: string | undefined,
   transferAccountId: string | null,
-  originAccId: string
+  originAccId: string,
+  amount: number
 ): void {
   if (!categoryKind) {
     if (categoryId) {
@@ -42,8 +44,8 @@ function assertValidAssignment(
         `Invalid assignment: type is "transfer" but no destination account could be resolved for categoryId ("${categoryId}").`
       );
     }
-    if (transferAccountId === originAccId) {
-      throw new Error(`Invalid assignment: cannot mark a transaction as a transfer to its own origin account ("${originAccId}").`);
+    if (!transferFits(transferAccountId, originAccId, amount)) {
+      throw new Error("Only money coming into an account can be a transfer to that same account.");
     }
   }
 }
@@ -154,7 +156,7 @@ export default function useTransactions(
       const normalizedTransferAccountId = categoryKind === "transfer" ? transferAccountId ?? null : null;
 
       try {
-        assertValidAssignment(categoryKind, categoryId, normalizedTransferAccountId, target.originAccId);
+        assertValidAssignment(categoryKind, categoryId, normalizedTransferAccountId, target.originAccId, target.amount);
       } catch (err) {
         console.error("[useTransactions] Invalid assignment:", err);
         setActionError(err instanceof Error ? err.message : "Invalid assignment.");

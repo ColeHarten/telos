@@ -24,11 +24,11 @@ For each transaction, the engine tries these in order and stops at the first tha
 | 1 | **Your rules**, top first | The rule's conditions (below). Only the first matching rule applies. | `rule` |
 | 2 | **Merchant memory** | The merchant, once you've picked the same category for it twice in a row | `merchant` |
 | 3 | **Plaid mappings** on your categories | Plaid's detailed category, then its primary one | `plaid` |
-| 4 | **Nothing** | Left for Needs Review | null |
+| 4 | **Nothing** | Left for Needs review | null |
 
 At step 3, only a match Plaid is confident about (`HIGH` or `VERY_HIGH`) assigns the category. A less confident one is saved as `suggestedCategoryId`, and the Transactions page shows it as a suggestion to accept with one click, or all at once.
 
-A category is skipped, and the next step tried, when it's archived, deleted, or a transfer to the transaction's own account. So an archived category never receives new transactions automatically.
+A category is skipped, and the next step tried, when it's archived, deleted, or a transfer to the transaction's own account on money going out. So an archived category never receives new transactions automatically.
 
 The first matching rule's rename and hiding apply even when a later step sets the category. The transaction stores that rule's id in `ruleId`.
 
@@ -51,9 +51,9 @@ Every condition that's set must hold, and a rule needs at least one. Digits are 
 
 | Action | Effect |
 |---|---|
-| Set category | Assigns the category, unless it's archived, deleted, or a transfer to the transaction's own account |
+| Set category | Assigns the category, unless it's archived, deleted, or a transfer to the transaction's own account on money going out |
 | Rename to | Sets `customName`, which shows instead of the merchant |
-| Hide from budgets | Sets `hidden`: left out of budgets, cash flow, and Needs Review, but still listed |
+| Hide from budgets | Sets `hidden`: left out of budgets, cash flow, and Needs review, but still listed |
 
 **Order.** Rules run top to bottom (lowest `priority` first). A new rule goes at the top. Move rules with the arrows on the Rules page; that renumbers them 0, 1, 2, and so on.
 
@@ -80,10 +80,10 @@ Each category can list Plaid categories in `plaidCategories`, primary (`FOOD_AND
 - Opposite amounts, to the cent, in two different accounts.
 - Posted within 5 days of each other.
 - At least one leg looks like a transfer: Plaid labels it a transfer, a card or loan payment, or a loan disbursement, or you categorized it as a transfer.
-- Neither leg is categorized as income or expense, or hidden. A leg categorized as a transfer pairs only with its destination account.
+- Neither leg is categorized as income or expense, or hidden. A leg categorized as a transfer pairs only with its destination account, unless it points at its own account (the receiving leg), which pairs with any account.
 - Each transaction pairs once, closest dates first.
 
-Pairs are worked out in the browser each time transactions load and aren't stored. A paired transaction (`transferPairId`) counts as a transfer and leaves Needs Review. So do uncategorized card and loan payments. See [Calculations](calculations.md#savings-and-debt-actuals) for how transfers count toward savings and debt.
+Pairs are worked out in the browser each time transactions load and aren't stored. A paired transaction (`transferPairId`) counts as a transfer and leaves Needs review. So do uncategorized card and loan payments. See [Calculations](calculations.md#savings-and-debt-actuals) for how transfers count toward savings and debt.
 
 ## Paycheck transfers
 
@@ -108,7 +108,7 @@ Transactions already categorized as one of these transfers keep their `transferA
 The browser checks these before saving, and the Firestore rules enforce them:
 
 - A category kind needs a category id, and a category id needs a kind.
-- A transfer needs a destination account, and it can't be the account the transaction came from.
+- A transfer needs a destination account. It can be the transaction's own account only for money coming in: the receiving leg, such as a card payment arriving on the card. `transferFits` holds the rule, and the Firestore rules check the same thing.
 - Clearing an assignment sets all three fields to null.
 - `customName` is at most 120 characters, `notes` at most 1,000, `hidden` is true or false, and `categorySource` is one of the four values.
 

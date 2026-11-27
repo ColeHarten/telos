@@ -321,6 +321,12 @@ describe("bulk edits", () => {
     });
   });
 
+  it("lets money coming in take a transfer to its own account", () => {
+    const plan = planBulkCategory([tx({ id: "in", originAccId: "savings", amount: -42.5 })], "to-savings", byId);
+    expect(plan.skipped).toBe(0);
+    expect(plan.updates.map((update) => update.id)).toEqual(["in"]);
+  });
+
   it("refuses archived and missing categories", () => {
     expect(planBulkCategory([tx({})], "retired", byId)).toEqual({ updates: [], skipped: 1 });
     expect(planBulkCategory([tx({})], "nope", byId)).toEqual({ updates: [], skipped: 1 });

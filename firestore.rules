@@ -34,7 +34,8 @@ service cloud.firestore {
         && optionalText(data, 'suggestedCategoryId', 200)
         && (data.get('categoryKind', null) != 'transfer'
               || (data.get('transferAccountId', null) is string
-                  && data.transferAccountId != stored.get('accountId', null)));
+                  && (data.transferAccountId != stored.get('accountId', null)
+                      || stored.get('amount', 0) < 0)));
     }
 
     match /users/{uid} {

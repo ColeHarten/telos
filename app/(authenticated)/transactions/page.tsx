@@ -17,7 +17,7 @@ import {
   planBulkHidden,
   planRuleApplication,
   type TransactionChanges,
-} from "@/lib/categorization";
+ transferFits } from "@/lib/categorization";
 import { plaidCategoryLabel } from "@/lib/plaidCategories";
 import type { Account, Rule, Transaction } from "@/lib/types/types";
 import { formatCurrency, formatSignedCurrency } from "@/lib/utils";
@@ -510,9 +510,9 @@ export default function TransactionsPage() {
     if (saved > 0) setNotice(`Rule applied to ${plural(saved, "transaction", "transactions")}.`);
   }
 
-  // A transfer category can't send money to the account it came from.
+  // A transfer to the transaction's own account only fits money coming in.
   const excludeOwnTransfer = (tx: Transaction) => (category: { kind: string; transferAccountId?: string | null }) =>
-    category.kind === "transfer" && category.transferAccountId === tx.originAccId;
+    category.kind === "transfer" && !transferFits(category.transferAccountId, tx.originAccId, tx.amount);
 
   // ---- Active filters, shown as chips you can clear one at a time.
   const amountFilterLabel =

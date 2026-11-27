@@ -3,7 +3,7 @@
 import { formatTransactionAmount } from "@/lib/utils";
 import CategoryPicker from "@/components/CategoryPicker";
 import MerchantAvatar from "@/components/MerchantAvatar";
-import { CUSTOM_NAME_MAX, NOTES_MAX, type TransactionChanges } from "@/lib/categorization";
+import { CUSTOM_NAME_MAX, NOTES_MAX, type TransactionChanges, transferFits } from "@/lib/categorization";
 import { plaidCategoryLabel } from "@/lib/plaidCategories";
 import type { Account, Category, Rule, Transaction } from "@/lib/types/types";
 import BoltIcon from "@mui/icons-material/Bolt";
@@ -153,7 +153,7 @@ function DrawerBody({
               onChange={(categoryId) => onCategoryChange(tx, categoryId ?? "")}
               label="Category"
               placeholder="Needs review"
-              exclude={(category) => category.kind === "transfer" && category.transferAccountId === tx.originAccId}
+              exclude={(category) => category.kind === "transfer" && !transferFits(category.transferAccountId, tx.originAccId, tx.amount)}
             />
             {suggestion && (
               <Chip

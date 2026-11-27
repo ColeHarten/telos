@@ -19,8 +19,8 @@ import type {
  *   1. Your rules, by priority. Only the first matching rule applies.
  *   2. Merchant memory: a merchant you put in the same category twice in a row.
  *   3. The Plaid mappings on your categories. A confident match assigns the
- *      category; a less confident one is only suggested in Needs Review.
- *   4. Nothing: the transaction waits in Needs Review.
+ *      category; a less confident one is only suggested in Needs review.
+ *   4. Nothing: the transaction waits in Needs review.
  *
  * A category is skipped (and the next step tried) when it is archived,
  * deleted, or a transfer to the transaction's own account.
@@ -56,7 +56,7 @@ export type CategorizeResult = Assignment & {
   categorySource: CategorySource | null;
   /** The first rule that matched, whether or not it set the category. */
   ruleId: string | null;
-  /** A less confident Plaid match, shown in Needs Review for you to accept. */
+  /** A less confident Plaid match, shown in Needs review for you to accept. */
   suggestedCategoryId: string | null;
   customName: string | null;
   hidden: boolean;
@@ -111,16 +111,28 @@ export function buildCategorizeContext(
   };
 }
 
-/** The category to assign, or null when it is missing, archived, or a transfer to the same account. */
+/**
+ * Whether a transfer to transferAccountId fits a transaction in accountId.
+ * A transfer to the transaction's own account only makes sense for money in
+ * (the receiving leg, such as a card payment arriving on the card). Plaid
+ * amounts are positive for money out.
+ */
+export function transferFits(transferAccountId: string | null | undefined, accountId: string, amount: number): boolean {
+  if (!transferAccountId) return false;
+  return transferAccountId !== accountId || amount < 0;
+}
+
+/** The category to assign, or null when it is missing, archived, or a transfer that doesn't fit this transaction. */
 export function usableCategory(
   categoriesById: ReadonlyMap<string, Category>,
   categoryId: string | null | undefined,
-  accountId: string
+  accountId: string,
+  amount: number
 ): Category | null {
   if (!categoryId) return null;
   const category = categoriesById.get(categoryId);
   if (!category || category.isArchived) return null;
-  if (category.kind === "transfer" && (!category.transferAccountId || category.transferAccountId === accountId)) {
+  if (category.kind === "transfer" && !transferFits(category.transferAccountId, accountId, amount)) {
     return null;
   }
   return category;
@@ -205,7 +217,7 @@ function plaidCategoryFor(ctx: CategorizeContext, input: CategorizeInput): Categ
   for (const code of [input.plaidDetailed, input.plaidPrimary]) {
     if (!code) continue;
     const mapped = ctx.plaidMap.get(code);
-    const category = mapped ? usableCategory(ctx.categoriesById, mapped.id, input.accountId) : null;
+    const category = mapped ? usableCategory(ctx.categoriesById, mapped.id, input.accountId, input.amount) : null;
     if (category) return category;
   }
   return null;
@@ -222,13 +234,13 @@ export function categorizeTransaction(input: CategorizeInput, ctx: CategorizeCon
     hidden: rule?.actions.hide ?? false,
   };
 
-  const ruleCategory = rule ? usableCategory(ctx.categoriesById, rule.actions.categoryId, input.accountId) : null;
+  const ruleCategory = rule ? usableCategory(ctx.categoriesById, rule.actions.categoryId, input.accountId, input.amount) : null;
   if (ruleCategory) return { ...base, ...assignmentFor(ruleCategory), categorySource: "rule" };
 
   const key = merchantKey(input);
   const remembered = key ? ctx.memory.get(key) : undefined;
   if (remembered && remembered.streak >= MEMORY_MIN_STREAK) {
-    const category = usableCategory(ctx.categoriesById, remembered.categoryId, input.accountId);
+    const category = usableCategory(ctx.categoriesById, remembered.categoryId, input.accountId, input.amount);
     if (category) return { ...base, ...assignmentFor(category), categorySource: "merchant" };
   }
 
@@ -302,7 +314,7 @@ export function planRuleApplication(
     if (pick) userPicks += 1;
 
     let changes: TransactionChanges = {};
-    const category = usableCategory(categoriesById, rule.actions.categoryId, tx.originAccId);
+    const category = usableCategory(categoriesById, rule.actions.categoryId, tx.originAccId, tx.amount);
     if (category && (!pick || includeUserPicks)) {
       const same = tx.categoryId === category.id && tx.categorySource === "rule" && tx.ruleId === rule.id;
       if (!same) {
@@ -325,7 +337,7 @@ export function planAcceptSuggestions(
   const updates: TransactionUpdate[] = [];
   for (const tx of transactions) {
     if (tx.categoryId || !tx.suggestedCategoryId) continue;
-    const category = usableCategory(categoriesById, tx.suggestedCategoryId, tx.originAccId);
+    const category = usableCategory(categoriesById, tx.suggestedCategoryId, tx.originAccId, tx.amount);
     if (!category) continue;
     updates.push({
       id: tx.id,
@@ -447,7 +459,7 @@ export function planBulkCategory(
   const updates: TransactionUpdate[] = [];
   let skipped = 0;
   for (const tx of transactions) {
-    const category = usableCategory(categoriesById, categoryId, tx.originAccId);
+    const category = usableCategory(categoriesById, categoryId, tx.originAccId, tx.amount);
     if (!category) {
       skipped += 1;
       continue;

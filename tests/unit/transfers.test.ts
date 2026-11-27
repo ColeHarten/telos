@@ -44,6 +44,14 @@ describe("pairTransfers", () => {
     expect(pairs.size).toBe(0);
   });
 
+  it("pairs a receiving leg categorized to its own account", () => {
+    const pairs = pairTransfers([
+      leg("out", { originAccId: "checking", amount: 100, categoryKind: "transfer", transferAccountId: "card" }),
+      leg("in", { originAccId: "card", amount: -100, categoryKind: "transfer", transferAccountId: "card" }),
+    ]);
+    expect(pairs.get("out")).toBe("in");
+  });
+
   it("skips the same account, other amounts, and gaps over five days", () => {
     const pairs = pairTransfers([
       leg("out", {}),

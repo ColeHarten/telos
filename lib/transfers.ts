@@ -57,6 +57,16 @@ function canPair(tx: PairInput): boolean {
   return !tx.categoryKind || tx.categoryKind === "transfer";
 }
 
+/**
+ * Whether a leg's transfer category allows a partner in partnerAccountId. A
+ * leg with no destination, or one pointed at its own account (the receiving
+ * side of a payment), can pair with any account.
+ */
+function pointsAt(tx: PairInput, partnerAccountId: string): boolean {
+  if (!tx.transferAccountId || tx.transferAccountId === tx.originAccId) return true;
+  return tx.transferAccountId === partnerAccountId;
+}
+
 function looksLikeTransfer(tx: PairInput): boolean {
   return tx.categoryKind === "transfer" || hasPlaidTransferLabel(tx);
 }
@@ -91,8 +101,7 @@ export function pairTransfers(transactions: readonly PairInput[]): Map<string, s
     for (const other of byCents.get(-leg.cents) ?? []) {
       if (pairs.has(other.tx.id) || other.tx.originAccId === leg.tx.originAccId) continue;
       if (!looksLikeTransfer(leg.tx) && !looksLikeTransfer(other.tx)) continue;
-      if (leg.tx.transferAccountId && leg.tx.transferAccountId !== other.tx.originAccId) continue;
-      if (other.tx.transferAccountId && other.tx.transferAccountId !== leg.tx.originAccId) continue;
+      if (!pointsAt(leg.tx, other.tx.originAccId) || !pointsAt(other.tx, leg.tx.originAccId)) continue;
       const gap = Math.abs(leg.day - other.day);
       if (gap > PAIR_WINDOW_DAYS || gap >= bestGap) continue;
       best = other;
