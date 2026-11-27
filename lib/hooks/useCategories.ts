@@ -11,6 +11,7 @@ import {
   deleteDoc,
   serverTimestamp,
   writeBatch,
+  getCountFromServer,
   getDocs,
   limit,
   query,
@@ -410,6 +411,68 @@ export function useCategories(user: AuthUser | null, authLoading: boolean) {
     return missing.length;
   }, [user, categories]);
 
+  /** How many transactions and rules use a category, for the delete confirmation. */
+  const countCategoryUsage = useCallback(
+    async (categoryId: string): Promise<{ transactions: number; rules: number }> => {
+      if (!user) throw new Error("Not signed in");
+      const [transactions, rules] = await Promise.all([
+        getCountFromServer(query(collection(db, "users", user.uid, "transactions"), where("categoryId", "==", categoryId))),
+        getCountFromServer(query(collection(db, "users", user.uid, "rules"), where("actions.categoryId", "==", categoryId))),
+      ]);
+      return { transactions: transactions.data().count, rules: rules.data().count };
+    },
+    [user]
+  );
+
+  /**
+   * Permanently deletes an archived category. Its transactions go back to
+   * Needs review, rules that set it are switched off, and transfer categories
+   * managed by it (paycheck deductions) are deleted with it.
+   */
+  const deleteCategoryPermanently = useCallback(
+    async (categoryId: string): Promise<void> => {
+      if (!user) throw new Error("Not signed in");
+      const target = categories.find((c) => c.id === categoryId);
+      if (!target) throw new Error("Category not found.");
+      if (!target.isArchived) throw new Error("Archive the category before deleting it.");
+
+      const [txSnap, rulesSnap] = await Promise.all([
+        getDocs(query(collection(db, "users", user.uid, "transactions"), where("categoryId", "==", categoryId))),
+        getDocs(query(collection(db, "users", user.uid, "rules"), where("actions.categoryId", "==", categoryId))),
+      ]);
+
+      type Write = (batch: ReturnType<typeof writeBatch>) => void;
+      const writes: Write[] = [];
+      for (const txDoc of txSnap.docs) {
+        writes.push((batch) =>
+          batch.update(txDoc.ref, {
+            categoryKind: null,
+            categoryId: null,
+            transferAccountId: null,
+            categorySource: null,
+            ruleId: null,
+          })
+        );
+      }
+      for (const ruleDoc of rulesSnap.docs) {
+        writes.push((batch) => batch.update(ruleDoc.ref, { enabled: false, updatedAt: serverTimestamp() }));
+      }
+      for (const dependent of categories.filter((c) => c.sourceIncomeCategoryId === categoryId)) {
+        writes.push((batch) => batch.delete(doc(db, "users", user.uid, "categories", dependent.id)));
+      }
+      // The category itself goes last, so a failed batch never leaves
+      // transactions pointing at a category that no longer exists.
+      writes.push((batch) => batch.delete(doc(db, "users", user.uid, "categories", categoryId)));
+
+      for (let i = 0; i < writes.length; i += 450) {
+        const batch = writeBatch(db);
+        for (const write of writes.slice(i, i + 450)) write(batch);
+        await batch.commit();
+      }
+    },
+    [user, categories]
+  );
+
   return {
     categories,
     categoriesLoading,
@@ -420,6 +483,8 @@ export function useCategories(user: AuthUser | null, authLoading: boolean) {
     restoreCategory,
     checkCategoryIsolation,
     deleteCategory,
+    countCategoryUsage,
+    deleteCategoryPermanently,
     reconcileContributionTransfers,
     addStarterCategories,
   };

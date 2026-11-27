@@ -9,6 +9,7 @@ import { STARTER_CATEGORIES } from "@/lib/starterCategories";
 import { formatCurrency } from "@/lib/utils";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
+import DeleteForeverRoundedIcon from "@mui/icons-material/DeleteForeverRounded";
 import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
@@ -24,6 +25,10 @@ import {
   Box,
   Button,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   InputAdornment,
   Menu,
@@ -72,6 +77,8 @@ export default function CategoriesPage() {
     archiveCategory,
     restoreCategory,
     checkCategoryIsolation,
+    countCategoryUsage,
+    deleteCategoryPermanently,
     reconcileContributionTransfers,
     addStarterCategories,
     categoriesLoading,
@@ -101,6 +108,10 @@ export default function CategoriesPage() {
   const [isolationReasons, setIsolationReasons] = useState<string[]>([]);
   const [isCheckingIsolation, setIsCheckingIsolation] = useState(false);
   const [isConfirmingArchive, setIsConfirmingArchive] = useState(false);
+  // Permanent delete (archived categories only).
+  const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
+  const [deleteUsage, setDeleteUsage] = useState<{ transactions: number; rules: number } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const activeCategories = useMemo(() => categories.filter((c) => !c.isArchived), [categories]);
   const archivedCategories = useMemo(() => categories.filter((c) => c.isArchived), [categories]);
@@ -319,6 +330,33 @@ export default function CategoriesPage() {
   function handleCancelArchiveDialog() {
     setIsolationCheckCategory(null);
     setIsolationReasons([]);
+  }
+
+  async function handleOpenDelete(category: Category) {
+    setError(null);
+    setDeleteTarget(category);
+    setDeleteUsage(null);
+    try {
+      setDeleteUsage(await countCategoryUsage(category.id));
+    } catch (usageError) {
+      console.error(usageError);
+      setDeleteTarget(null);
+      setError("Could not check where this category is used.");
+    }
+  }
+
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      await deleteCategoryPermanently(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch (deleteError) {
+      console.error(deleteError);
+      setError(deleteError instanceof Error ? deleteError.message : "Could not delete category.");
+    } finally {
+      setIsDeleting(false);
+    }
   }
 
   async function handleRestoreCategory(category: Category) {
@@ -622,9 +660,47 @@ export default function CategoriesPage() {
                 </MenuItem>
               )
             )}
+            {rowMenuCategory && rowMenuCategory.isArchived && (
+              <MenuItem onClick={() => { handleOpenDelete(rowMenuCategory); handleCloseRowMenu(); }} sx={{ gap: 1.5, py: 1.25, color: "error.main" }}>
+                <DeleteForeverRoundedIcon sx={{ fontSize: 18 }} />
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>Delete permanently</Typography>
+              </MenuItem>
+            )}
           </>
         )}
       </Menu>
+
+      <Dialog open={Boolean(deleteTarget)} onClose={() => !isDeleting && setDeleteTarget(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete {deleteTarget?.name} permanently?</DialogTitle>
+        <DialogContent>
+          {deleteUsage === null ? (
+            <Typography variant="body2" color="text.secondary">Checking where it's used…</Typography>
+          ) : (
+            <Stack spacing={1}>
+              <Typography variant="body2">
+                {deleteUsage.transactions === 0
+                  ? "No transactions use this category."
+                  : `${deleteUsage.transactions} transaction${deleteUsage.transactions === 1 ? "" : "s"} will go back to Needs review.`}
+              </Typography>
+              {deleteUsage.rules > 0 && (
+                <Typography variant="body2">
+                  {`${deleteUsage.rules} rule${deleteUsage.rules === 1 ? "" : "s"} that set${deleteUsage.rules === 1 ? "s" : ""} it will be switched off.`}
+                </Typography>
+              )}
+              {deleteTarget && categories.some((c) => c.sourceIncomeCategoryId === deleteTarget.id) && (
+                <Typography variant="body2">Its paycheck transfer categories will be deleted too.</Typography>
+              )}
+              <Typography variant="body2" color="text.secondary">This can't be undone.</Typography>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteTarget(null)} disabled={isDeleting}>Cancel</Button>
+          <Button color="error" variant="contained" onClick={handleConfirmDelete} disabled={isDeleting || deleteUsage === null}>
+            {isDeleting ? "Deleting…" : "Delete permanently"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }

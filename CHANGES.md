@@ -2,6 +2,10 @@
 
 Running log for the `production-hardening` branch: one section and one commit per stage.
 
+## Delete categories permanently
+
+Archived categories now have **Delete permanently** in their menu. A confirmation shows how many transactions and rules use the category. On delete, those transactions go back to Needs review, rules that set it are switched off (not deleted), and paycheck transfer categories managed by it are deleted too. The writes run in batches of 450, with the category deleted last. Active categories still only archive. No Firestore rules or index changes (`getCountFromServer` on single-field equality uses the automatic indexes).
+
 ## Receiving-leg transfers
 
 The receiving side of a transfer, such as a card payment arriving on the card, can now take the transfer category that points at that account. Before, every transfer to a transaction's own account was refused, so that leg had no category that fit: it isn't income, and the picker hid the transfer.
