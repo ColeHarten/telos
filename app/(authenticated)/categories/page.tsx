@@ -674,7 +674,7 @@ export default function CategoriesPage() {
         <DialogTitle>Delete {deleteTarget?.name} permanently?</DialogTitle>
         <DialogContent>
           {deleteUsage === null ? (
-            <Typography variant="body2" color="text.secondary">Checking where it's used…</Typography>
+            <Typography variant="body2" color="text.secondary">Checking where it&apos;s used…</Typography>
           ) : (
             <Stack spacing={1}>
               <Typography variant="body2">
@@ -690,7 +690,7 @@ export default function CategoriesPage() {
               {deleteTarget && categories.some((c) => c.sourceIncomeCategoryId === deleteTarget.id) && (
                 <Typography variant="body2">Its paycheck transfer categories will be deleted too.</Typography>
               )}
-              <Typography variant="body2" color="text.secondary">This can't be undone.</Typography>
+              <Typography variant="body2" color="text.secondary">This can&apos;t be undone.</Typography>
             </Stack>
           )}
         </DialogContent>
