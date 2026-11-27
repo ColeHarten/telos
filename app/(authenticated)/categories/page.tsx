@@ -470,7 +470,7 @@ export default function CategoriesPage() {
             </Button>
           }
         >
-          Start with {STARTER_CATEGORIES.length} common categories, each mapped to Plaid&apos;s categories, so most
+          Start with {STARTER_CATEGORIES.length} common categories, each mapped to bank categories, so most
           transactions are categorized from your first sync. You can edit or archive any of them.
         </Alert>
       )}

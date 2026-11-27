@@ -219,7 +219,7 @@ export default function DashboardPage() {
     },
     {
       label: "Review new transactions",
-      detail: "Categorize what your rules and Plaid didn't, once your history has imported.",
+      detail: "Categorize what your rules didn't, once your history has imported.",
       done: transactions.length > 0 && needsReviewTotal === 0,
       href: "/transactions",
     },

@@ -126,7 +126,7 @@ export class SyncInProgressError extends ApiError {
  */
 export class OtherEnvironmentError extends ApiError {
   constructor() {
-    super(409, "wrong_environment", "This bank was connected in a different Plaid environment, so it can't be changed from here.");
+    super(409, "wrong_environment", "This bank was connected in a different environment, so it can't be changed from here.");
     this.name = "OtherEnvironmentError";
   }
 }

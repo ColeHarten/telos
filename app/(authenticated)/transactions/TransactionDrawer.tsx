@@ -226,7 +226,7 @@ function DrawerBody({
             {tx.authorizedDate && tx.authorizedDate !== tx.date && <Detail label="Authorized">{formatDate(tx.authorizedDate)}</Detail>}
             {tx.merchantName && <Detail label="Merchant">{tx.merchantName}</Detail>}
             {description && <Detail label="Description">{description}</Detail>}
-            <Detail label="Plaid category">
+            <Detail label="Bank category">
               {plaidLabel || "None"}
               {tx.plaidConfidence ? ` (${tx.plaidConfidence.toLowerCase().replace(/_/g, " ")})` : ""}
             </Detail>

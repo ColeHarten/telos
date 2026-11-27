@@ -44,7 +44,7 @@ export default function ConnectBankDialog({ open, onClose, connections, accounts
       <DialogContent>
         <Stack spacing={2}>
           <Typography variant="body2" sx={{ color: "grey.700" }}>
-            Each bank login you connect uses one of your Plaid connections, and disconnecting a bank doesn&apos;t give
+            Each bank login you connect uses one of your bank connections, and disconnecting a bank doesn&apos;t give
             its connection back. If the bank is already listed below, use Manage accounts on its card to add accounts,
             or Reconnect if it stopped syncing. Connecting the same login twice can break the first connection.
           </Typography>
@@ -76,7 +76,7 @@ export default function ConnectBankDialog({ open, onClose, connections, accounts
 
           {atLimit && (
             <Alert severity="warning">
-              Every connection on your Plaid plan is in use, so Plaid will refuse a new bank.
+              Every bank connection is in use, so a new bank can&apos;t be connected.
             </Alert>
           )}
 
@@ -133,7 +133,7 @@ export default function ConnectBankDialog({ open, onClose, connections, accounts
           startIcon={link.disabled ? <CircularProgress size={14} color="inherit" /> : undefined}
           variant="contained"
         >
-          {link.disabled ? link.label : "Continue to Plaid"}
+          {link.disabled ? link.label : "Continue"}
         </Button>
       </DialogActions>
     </Dialog>

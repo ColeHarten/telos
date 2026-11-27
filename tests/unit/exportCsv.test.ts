@@ -67,7 +67,7 @@ describe("buildTransactionsCsv", () => {
     );
     const lines = csv.split("\r\n");
     expect(lines[0]).toBe(
-      '"Date","Account","Description","Merchant","Original description","Amount","Category","Category type","Plaid category","Pending","Transaction ID"'
+      '"Date","Account","Description","Merchant","Original description","Amount","Category","Category type","Bank category","Pending","Transaction ID"'
     );
     expect(lines[1]).toBe('"2026-01-05","Checking","Payroll","","",2500,"","","",false,"b"');
     expect(lines[2]).toBe('"2026-01-02","Checking","Store","","",-10,"Food","expense","",false,"a"');

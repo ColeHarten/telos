@@ -29,7 +29,7 @@ export const CSV_HEADER: CsvCell[] = [
   "Amount",
   "Category",
   "Category type",
-  "Plaid category",
+  "Bank category",
   "Pending",
   "Transaction ID",
 ];

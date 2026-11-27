@@ -852,7 +852,7 @@ export default function TransactionsPage() {
             </Button>
           }
         >
-          Plaid suggests a category for {plural(suggestionUpdates.length, "uncategorized transaction", "uncategorized transactions")}.
+          Telos suggests a category for {plural(suggestionUpdates.length, "uncategorized transaction", "uncategorized transactions")}.
           Accept them below one at a time, or all at once.
         </Alert>
       )}
@@ -1094,7 +1094,7 @@ export default function TransactionsPage() {
                                   <Typography variant="caption" sx={{ color: "text.secondary", display: "block" }}>
                                     {tx.notes
                                       ? tx.notes
-                                      : plaidCategoryLabel(tx.plaidCategoryDetailed ?? tx.plaidCategoryPrimary) || "No Plaid category"}
+                                      : plaidCategoryLabel(tx.plaidCategoryDetailed ?? tx.plaidCategoryPrimary) || "No bank category"}
                                   </Typography>
                                 </Box>
                               </Stack>
@@ -1102,7 +1102,7 @@ export default function TransactionsPage() {
 
                             <TableCell>
                               <Typography variant="body2" sx={{ color: "grey.700" }}>
-                                {tx.originAccName || "Plaid account"}
+                                {tx.originAccName || "Bank account"}
                               </Typography>
                             </TableCell>
 

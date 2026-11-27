@@ -729,14 +729,14 @@ export default function AddCategoryModal({
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Plaid categories"
+                  label="Bank categories"
                   placeholder={plaidCategories.length ? "" : "e.g., Food and drink › Groceries"}
                   sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
                 />
               )}
             />
             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
-              Transactions Plaid puts in these land here automatically. A detailed category beats a broad one.
+              Transactions your bank puts in these land here automatically. A detailed category beats a broad one.
             </Typography>
           </Box>
 

@@ -93,7 +93,7 @@ function statusOf(connection: PlaidConnection, otherEnv: boolean): Status {
 function statusMessage(connection: PlaidConnection, otherEnv: boolean, currentEnv: string | null): { text: string; color: string } | null {
   if (otherEnv) {
     return {
-      text: `Linked in Plaid ${connection.plaidEnv}. This server uses ${currentEnv ?? "another environment"}, so it leaves this bank alone.`,
+      text: `Linked in the ${connection.plaidEnv} environment. This server uses ${currentEnv ?? "another environment"}, so it leaves this bank alone.`,
       color: "text.secondary",
     };
   }
@@ -104,7 +104,7 @@ function statusMessage(connection: PlaidConnection, otherEnv: boolean, currentEn
     return { text: `The last sync failed (${connection.lastSyncError}). Telos retries on its own; Refresh tries now.`, color: "error.main" };
   }
   if (isImporting(connection)) {
-    return { text: "Plaid is still sending this bank's history. It usually takes a few minutes, and up to a few hours at some banks.", color: "primary.main" };
+    return { text: "Your bank is still sending its history. It usually takes a few minutes, and up to a few hours at some banks.", color: "primary.main" };
   }
   if (isConsentExpiringSoon(connection)) {
     const days = consentDaysLeft(connection) ?? 0;
@@ -286,7 +286,7 @@ function ConnectionCard({ connection, accounts, usage, onDisconnect, onError, on
           disabled={connection.needsReauth}
           sx={{ gap: 1 }}
         >
-          <RestartAltRoundedIcon sx={{ fontSize: 16 }} /> Rebuild from Plaid
+          <RestartAltRoundedIcon sx={{ fontSize: 16 }} /> Rebuild history
         </MenuItem>
         <MenuItem
           onClick={() => {
@@ -300,10 +300,10 @@ function ConnectionCard({ connection, accounts, usage, onDisconnect, onError, on
       </Menu>
 
       <Dialog open={rebuildOpen} onClose={() => setRebuildOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Rebuild {name} from Plaid?</DialogTitle>
+        <DialogTitle>Rebuild {name} history?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" sx={{ color: "grey.700" }}>
-            Telos imports this bank&apos;s full history from Plaid again and removes transactions Plaid no longer has.
+            Telos imports this bank&apos;s full history again and removes transactions the bank no longer reports.
             Your categories are kept, the bank stays connected, and no new connection is used.
           </Typography>
         </DialogContent>
@@ -330,7 +330,7 @@ function ConnectionCard({ connection, accounts, usage, onDisconnect, onError, on
             that keep their history, and balances stop updating.
           </Typography>
           <Alert severity="warning" sx={{ mt: 2 }}>
-            Plaid doesn&apos;t give the connection back: linking {name} again uses another one
+            Disconnecting doesn&apos;t give the connection back: linking {name} again uses another one
             {usage ? ` (${usage.used} of ${usage.limit} used)` : ""}. If the bank stopped syncing, use Reconnect instead.
           </Alert>
           <TextField
@@ -372,7 +372,7 @@ export default function ConnectionsPanel({ connections, ...rest }: ConnectionsPa
         <Typography sx={{ fontWeight: 700, color: "text.primary", fontSize: "0.95rem" }}>Bank connections</Typography>
         {rest.usage && (
           <Typography variant="caption" sx={{ color: "grey.400", fontSize: "0.75rem" }}>
-            {rest.usage.used} of {rest.usage.limit} Plaid connections used{rest.usage.env === "sandbox" ? " (sandbox)" : ""}
+            {rest.usage.used} of {rest.usage.limit} bank connections used{rest.usage.env === "sandbox" ? " (sandbox)" : ""}
           </Typography>
         )}
       </Stack>

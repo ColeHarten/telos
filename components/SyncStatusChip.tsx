@@ -26,7 +26,7 @@ function statusFor(connections: PlaidConnection[], syncing: boolean): Status {
     };
   }
   if (connections.some((connection) => isImporting(connection, now))) {
-    return { label: "Importing history…", tooltip: "Plaid is still sending older transactions. Telos checks every few minutes.", tone: "busy" };
+    return { label: "Importing history…", tooltip: "Your bank is still sending older transactions. Telos checks every few minutes.", tone: "busy" };
   }
   return {
     label: `Synced ${formatSyncAge(oldestSync(connections), now)}`,
