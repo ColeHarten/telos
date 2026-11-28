@@ -94,3 +94,15 @@ Only connections are irreversible: each new bank login uses one of the plan's co
 ### Backups
 
 What can't be rebuilt from Plaid is your own work (categories, assignments, budgets, rules, merchant memory), the balance snapshots, and the `plaidItems` docs with `ENCRYPTION_KEY`. The daily backups cover the database; the password manager covers the key. To restore, create a new database from a backup with `gcloud firestore databases restore`, or copy documents back from it.
+
+## Home Screen app (iPhone)
+
+Open Telos in Safari, tap Share, then Add to Home Screen. It opens full screen with its own icon and stays signed in. There's nothing to install or renew.
+
+Google's sign-in popup doesn't work from a Home Screen app, so there Telos signs in with a redirect. For that to work in Safari, Firebase's sign-in handler is served from your own domain:
+
+1. In Vercel, set `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` to your app's domain (for example `telos-xxx.vercel.app`), then redeploy.
+2. In Google Cloud, under APIs & Services, Credentials, open the OAuth client Firebase uses ("Web client (auto created by Google Service)") and add `https://<your-domain>/__/auth/handler` to Authorized redirect URIs.
+3. In Firebase Authentication settings, check your domain is under Authorized domains.
+
+`next.config.ts` forwards `/__/auth/*` to `<project-id>.firebaseapp.com`. Sign-in in a normal browser tab still uses the popup.

@@ -14,9 +14,16 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup } from "firebase/auth";
+import { getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+
+/** True when Telos was opened from the Home Screen rather than in a browser tab. */
+function isHomeScreenApp(): boolean {
+  if (typeof window === "undefined") return false;
+  const iosStandalone = (window.navigator as { standalone?: boolean }).standalone === true;
+  return iosStandalone || window.matchMedia("(display-mode: standalone)").matches;
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -31,12 +38,25 @@ export default function LoginPage() {
     return () => unsubscribe();
   }, [router]);
 
+  // Coming back from a Home Screen sign-in redirect: surface any error.
+  useEffect(() => {
+    getRedirectResult(auth).catch((err) => {
+      console.error(err);
+      setError("Could not sign in with Google.");
+    });
+  }, []);
+
   async function handleGoogleSignIn() {
     try {
       setError(null);
       setIsSigningIn(true);
 
       const provider = new GoogleAuthProvider();
+      if (isHomeScreenApp()) {
+        // Leaves the page; onAuthStateChanged sends you on once you're back.
+        await signInWithRedirect(auth, provider);
+        return;
+      }
       await signInWithPopup(auth, provider);
 
       router.push("/dashboard");

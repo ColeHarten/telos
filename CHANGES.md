@@ -2,6 +2,10 @@
 
 Running log for the `production-hardening` branch: one section and one commit per stage.
 
+## Home Screen app (PWA)
+
+Telos can be added to the iPhone Home Screen and opens full screen with its own icon. See docs/operations.md for the one-time sign-in setup. No new dependencies and no service worker.
+
 ## Delete categories permanently
 
 Archived categories now have **Delete permanently** in their menu. A confirmation shows how many transactions and rules use the category. On delete, those transactions go back to Needs review, rules that set it are switched off (not deleted), and paycheck transfer categories managed by it are deleted too. The writes run in batches of 450, with the category deleted last. Active categories still only archive. No Firestore rules or index changes (`getCountFromServer` on single-field equality uses the automatic indexes).

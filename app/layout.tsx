@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Manrope } from "next/font/google";
 import Providers from "./providers";
 
@@ -13,6 +13,20 @@ export const metadata: Metadata = {
   icons: {
     icon: "/favicon.ico?v=1.0",
   },
+  // Home Screen app on iOS: full screen, its own name, and a light status bar.
+  appleWebApp: {
+    capable: true,
+    title: "Telos",
+    statusBarStyle: "default",
+  },
+  formatDetection: { telephone: false },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#ffffff",
 };
 
 export default function RootLayout({

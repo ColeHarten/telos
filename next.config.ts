@@ -14,7 +14,7 @@ const contentSecurityPolicy = [
   "img-src 'self' data: blob: https://lh3.googleusercontent.com https://plaid-merchant-logos.plaid.com https://plaid-category-icons.plaid.com https://plaid-counterparty-logos.plaid.com",
   "font-src 'self' data:",
   "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.plaid.com",
-  "frame-src https://cdn.plaid.com https://*.firebaseapp.com https://accounts.google.com",
+  "frame-src 'self' https://cdn.plaid.com https://*.firebaseapp.com https://accounts.google.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -30,8 +30,15 @@ const securityHeaders = [
   { key: enforceCsp ? "Content-Security-Policy" : "Content-Security-Policy-Report-Only", value: contentSecurityPolicy },
 ];
 
+// Sign-in redirects go through /__/auth on your own domain (set
+// NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN to that domain). See docs/operations.md.
+const firebaseAuthHost = `${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.firebaseapp.com`;
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  async rewrites() {
+    return [{ source: "/__/auth/:path*", destination: `https://${firebaseAuthHost}/__/auth/:path*` }];
+  },
   // Telos doesn't use next/image, so the image optimizer endpoint stays off.
   images: { unoptimized: true },
   async headers() {
