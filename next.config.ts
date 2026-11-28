@@ -37,7 +37,11 @@ const firebaseAuthHost = `${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.firebas
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   async rewrites() {
-    return [{ source: "/__/auth/:path*", destination: `https://${firebaseAuthHost}/__/auth/:path*` }];
+    return [
+      { source: "/__/auth/:path*", destination: `https://${firebaseAuthHost}/__/auth/:path*` },
+      // The sign-in handler also loads /__/firebase/init.json from the same domain.
+      { source: "/__/firebase/:path*", destination: `https://${firebaseAuthHost}/__/firebase/:path*` },
+    ];
   },
   // Telos doesn't use next/image, so the image optimizer endpoint stays off.
   images: { unoptimized: true },

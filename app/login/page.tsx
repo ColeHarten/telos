@@ -40,9 +40,10 @@ export default function LoginPage() {
 
   // Coming back from a Home Screen sign-in redirect: surface any error.
   useEffect(() => {
-    getRedirectResult(auth).catch((err) => {
+    getRedirectResult(auth).catch((err: unknown) => {
       console.error(err);
-      setError("Could not sign in with Google.");
+      const code = (err as { code?: string }).code;
+      setError(code ? `Could not sign in with Google (${code}).` : "Could not sign in with Google.");
     });
   }, []);
 
